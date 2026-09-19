@@ -1,0 +1,18 @@
+# course material and source drafts (kept locally, not published)
+*.pdf
+*.docx
+*.png
+
+# media never goes in the repo
+*.mp4
+*.mkv
+*.wav
+*.mp3
+*.m4a
+work/
+
+# secrets and python
+.env
+__pycache__/
+*.pyc
+.venv/
