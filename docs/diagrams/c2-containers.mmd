@@ -1,0 +1,39 @@
+%% C4 Level 2 - Containers
+flowchart TB
+    user["<b>Creator / Reviewer</b><br/>[Person]"]
+
+    subgraph dubbe["DUBBE - runs on Google Colab free tier or a local PC"]
+        cli["<b>dubbe CLI</b><br/>[Python 3.10+]<br/>Runs stages in order, skips stages<br/>whose output already exists"]
+        ffmpeg["<b>ffmpeg</b><br/>[Executable, subprocess]<br/>Extract audio, time-stretch,<br/>mix and mux into MP4"]
+        models["<b>Model runtime</b><br/>[PyTorch, in-process]<br/>WhisperX, NLLB-200, Kokoro TTS,<br/>quality estimator (Target)"]
+        work[("<b>Work folder</b><br/>[WAV, JSON files]<br/>audio.wav, segments.json,<br/>tts/*.wav, timing.json")]
+        out[("<b>Output folder</b><br/>[Files]<br/>dubbed.mp4, report.html")]
+        cache[("<b>Model cache</b><br/>[Local disk, Hugging Face cache]<br/>Downloaded weights")]
+    end
+
+    hf["<b>Hugging Face Hub</b><br/>[External system]"]
+    llm["<b>LLM API - optional, TBD</b><br/>[External system]"]
+
+    user -- "dubbe input.mp4" --> cli
+    user -- "Edits translations<br/>in segments.json" --> work
+    user -- "Watches video,<br/>reads report" --> out
+    cli -- "Runs commands" --> ffmpeg
+    cli -- "Calls ASR / MT / TTS" --> models
+    cli -- "Reads and writes<br/>each stage's result" --> work
+    cli -- "Writes final files" --> out
+    ffmpeg -- "Reads / writes audio" --> work
+    models -- "Loads weights" --> cache
+    cache -. "First run: download" .-> hf
+    cli -. "Target only, if permitted" .-> llm
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#438dd5,stroke:#2e6295,color:#fff
+    classDef store fill:#438dd5,stroke:#2e6295,color:#fff
+    classDef external fill:#8a8a8a,stroke:#6b6b6b,color:#fff
+    classDef optional fill:#bdbdbd,stroke:#8a8a8a,color:#222,stroke-dasharray:5 5
+    class user person
+    class cli,ffmpeg,models container
+    class work,out,cache store
+    class hf external
+    class llm optional
+    style dubbe fill:#f4f8fc,stroke:#1168bd,stroke-dasharray:6 4,color:#1168bd

@@ -84,7 +84,7 @@ Human watchability evaluation. **Left out:** voice-characteristic preservation a
 
 | Source | Licence | Access | Notes |
 |---|---|---|---|
-| KOCW (Korea OpenCourseWare) lectures | CC BY-NC-SA | Public, **not yet selected** | Non-commercial OK for capstone; dubbed derivative must be shared under same licence and attributed |
+| KOCW (Korea OpenCourseWare) lectures | Varies per course (CC) | Public, **not yet selected** | Dubbing is a derivative: reject No-Derivatives (ND) courses; share-alike terms apply to any published dubbed clip. Details in [data-sources.md](data-sources.md) |
 | K-MOOC / university YouTube channels filtered to CC-BY | CC BY | Public, **TBD** | |
 | Short instructional clips recorded by the team | Own, written consent from everyone recorded | **TBD** | Recommended by the tab: we control content and can include hard cases |
 | AI Hub Korean speech datasets | Korean-ID registration, training-only clauses | **Likely inaccessible** | Not planned |

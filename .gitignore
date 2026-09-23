@@ -16,3 +16,4 @@ work/
 __pycache__/
 *.pyc
 .venv/
+!docs/diagrams/*.png
