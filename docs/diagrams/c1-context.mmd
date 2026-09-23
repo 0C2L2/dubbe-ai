@@ -1,0 +1,23 @@
+%% C4 Level 1 - System Context
+flowchart TB
+    creator["<b>Course creator</b><br/>[Person]<br/>Has Korean course videos,<br/>wants an English version"]
+    reviewer["<b>English-speaking reviewer</b><br/>[Person]<br/>Checks flagged segments,<br/>corrects translations"]
+
+    dubbe["<b>DUBBE</b><br/>[Software system]<br/>Turns a Korean video into an English-dubbed<br/>draft plus a quality report of segments to review"]
+
+    hf["<b>Hugging Face Hub</b><br/>[External system]<br/>Hosts pretrained model weights"]
+    llm["<b>LLM API - optional, TBD</b><br/>[External system]<br/>Shorter re-translation for long segments<br/>(Target tier, only if permitted)"]
+
+    creator -- "Runs on a video file;<br/>receives dubbed.mp4 + report" --> dubbe
+    reviewer -- "Reads report, edits segments.json,<br/>re-runs from the TTS stage" --> dubbe
+    dubbe -- "Downloads ASR, MT, TTS weights<br/>(first run only, HTTPS)" --> hf
+    dubbe -. "Sends one English sentence<br/>+ length limit (HTTPS)" .-> llm
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#8a8a8a,stroke:#6b6b6b,color:#fff
+    classDef optional fill:#bdbdbd,stroke:#8a8a8a,color:#222,stroke-dasharray:5 5
+    class creator,reviewer person
+    class dubbe system
+    class hf external
+    class llm optional

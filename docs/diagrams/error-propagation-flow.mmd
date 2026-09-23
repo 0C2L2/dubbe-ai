@@ -1,0 +1,36 @@
+%% Target test T-05/T-06: isolating each stage's contribution on the gold set
+flowchart LR
+    subgraph gold["Gold set (team-made, ~20 min)"]
+        clip(["Korean clip audio"])
+        gko(["Gold Korean transcript"])
+        gen(["Gold English translation"])
+    end
+
+    asr["ASR"]
+    mtA["MT"]
+    mtB["MT"]
+    tts["TTS + timing"]
+    enw["English Whisper<br/>(re-transcribe)"]
+
+    clip --> asr --> asrtxt(["ASR transcript"]) --> mtA --> enA(["English (a)<br/>real chain"])
+    gko --> mtB --> enB(["English (b)<br/>perfect ASR"])
+    gen --> tts --> dub(["Dubbed audio (c)"]) --> enw --> heard(["What the voice said"])
+
+    asrtxt -. "CER vs gold KO" .-> m1{{"ASR error"}}
+    gko -.-> m1
+    enA -. "COMET vs gold EN" .-> m2{{"ASR's cost to translation<br/>= score(b) - score(a)"}}
+    enB -.-> m2
+    enB -. "COMET vs gold EN" .-> m3{{"MT error<br/>(with perfect input)"}}
+    heard -. "WER vs gold EN" .-> m4{{"TTS / timing error<br/>+ % stretched or overflowing"}}
+
+    m1 & m2 & m3 & m4 --> res["Share of final error<br/>per stage"]
+
+    classDef data fill:#eaf2fb,stroke:#438dd5,color:#0b3a66
+    classDef stage fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef metric fill:#fff4d6,stroke:#d9a400,color:#5c4400
+    classDef result fill:#08427b,stroke:#052e56,color:#fff
+    class clip,gko,gen,asrtxt,enA,enB,dub,heard data
+    class asr,mtA,mtB,tts,enw stage
+    class m1,m2,m3,m4 metric
+    class res result
+    style gold fill:#f7f7f7,stroke:#999,stroke-dasharray:6 4

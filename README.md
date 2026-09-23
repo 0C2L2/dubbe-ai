@@ -17,7 +17,10 @@ Every stage of a dubbing pipeline is a model, and errors compound: a misheard wo
 - [Project overview](docs/project-overview.md) — problem, users, solution, Definition of Done and our plan, data, tools
 - [Team roles and responsibilities](docs/team.md)
 - [Question log](docs/questions.md) — open questions for instructors and mentors
-- Ground rules, architecture (C1/C2), functional requirements — TBD (next submission)
+- [Architecture — C4 Level 1 and 2](docs/architecture.md)
+- [Data sources](docs/data-sources.md) — clips, licences, evaluation data, model licences
+- [Test plan](docs/test-plan.md) — how each Definition of Done item is checked
+- Ground rules, functional requirements — TBD
 
 ## Planned features
 
@@ -59,11 +62,11 @@ Starter template: [humblebeeai/module-python-template](https://github.com/humble
 
 ## Data
 
-No video or audio files are stored in this repository. Each test clip will be listed here with its source URL, licence, collection date, personal-data check, and preprocessing.
+No video or audio files are stored in this repository. Full plan and licence rules in [docs/data-sources.md](docs/data-sources.md). Each test clip will be listed here with its source URL, licence, collection date, personal-data check, and preprocessing.
 
 | Clip | Source | Licence | Date | Personal data | Preprocessing |
 |---|---|---|---|---|---|
-| TBD | KOCW / K-MOOC / team-recorded (with consent) | TBD | | | |
+| TBD | KOCW / K-MOOC / team-recorded (with consent) | Per clip; No-Derivatives licences rejected | | | |
 
 ## Setup and run
 

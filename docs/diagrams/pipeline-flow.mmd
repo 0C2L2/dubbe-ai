@@ -1,0 +1,39 @@
+%% Pipeline data flow: stages (boxes), files (rounded), quality signals (notes)
+flowchart TB
+    in(["input.mp4"])
+    s1["1. extract<br/><i>ffmpeg</i>"]
+    f1(["audio.wav<br/>16 kHz mono"])
+    s2["2. asr<br/><i>WhisperX + wav2vec2 alignment</i>"]
+    f2(["words.json<br/>word, start, end"])
+    s3["3. segment<br/><i>sentence endings + pauses</i>"]
+    f3(["segments.json<br/>one entry per sentence"])
+    s4["4. translate<br/><i>NLLB-200 distilled-600M</i>"]
+    s5["5. tts<br/><i>Kokoro-82M, preset voice</i>"]
+    f5(["tts/&lt;id&gt;.wav"])
+    s6["6. timing<br/><i>anchor to source start,<br/>stretch 0.8x-1.3x</i>"]
+    f6(["dub.wav + timing.json"])
+    s7["7. mux<br/><i>ffmpeg</i>"]
+    out(["dubbed.mp4"])
+    s8["8. report (Target)"]
+    rep(["report.html<br/>flagged segments"])
+    rev["English-speaking reviewer"]
+
+    in --> s1 --> f1 --> s2 --> f2 --> s3 --> f3 --> s4
+    s4 -- "adds English text" --> f3
+    f3 --> s5 --> f5 --> s6 --> f6 --> s7 --> out
+    in --> s7
+    f3 --> s8 --> rep --> rev
+    rev -- "edits translation, re-runs<br/>from stage 5 (--from tts)" --> f3
+
+    q2["ASR confidence:<br/>log-prob, no-speech prob"] -.- s2
+    q4["Translation quality estimate<br/>(CometKiwi / BLASER-QE)"] -.- s4
+    q6["Stretch factor,<br/>overflow ms"] -.- s6
+
+    classDef stage fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef file fill:#eaf2fb,stroke:#438dd5,color:#0b3a66
+    classDef signal fill:#fff4d6,stroke:#d9a400,color:#5c4400
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    class s1,s2,s3,s4,s5,s6,s7,s8 stage
+    class in,f1,f2,f3,f5,f6,out,rep file
+    class q2,q4,q6 signal
+    class rev person
