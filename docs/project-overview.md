@@ -46,8 +46,8 @@ The deliverable is therefore not a finished dubbed video but **a usable draft pl
 
 | | |
 |---|---|
-| **Input** | One video file (MP4), source language = Korean, single speaker, 2–10 minutes |
-| **Output 1** | `dubbed.mp4` — same video, English synthesized voice track |
+| **Input** | One video file (MP4), single speaker, 2–10 minutes; source and target language chosen per run (`--src`, `--tgt`). Built and tested first for Korean → English |
+| **Output 1** | `dubbed.mp4` — same video, synthesized voice track in the target language |
 | **Output 2** | `segments.json` — per sentence: source text, translation, timestamps, ASR confidence, translation quality estimate, time-stretch factor, review flag |
 | **Output 3** | `report.html` (Target) — the segments a human should check, and a per-stage breakdown of where quality dropped |
 
@@ -72,8 +72,8 @@ Tiers are copied from the project tab. "Plan" is ours.
 |---|---|
 | Error propagation measured: where does quality break down, how much does each stage contribute | Gold set (~20 min, human KO transcript + human EN translation). Compare: ASR CER; translation quality (reference-free QE) on gold transcript vs. on ASR transcript; stretch factor per segment. The deltas isolate each stage's contribution |
 | Timing when translation is substantially longer/shorter | Beyond 1.3×: ask the translator for a shorter rendering (length-aware prompt) — **TBD** whether this needs an LLM |
-| A second language pair | **TBD** — must be a language a teammate can evaluate (Q-005) |
-| Multiple speakers distinguished | WhisperX diarization → one preset voice per speaker |
+| A second language pair | Adding a pair = one entry in `languages.yaml` (see [architecture.md](architecture.md#multi-language-design-many--many)). Candidate: English → Korean (TTS: MeloTTS). **TBD** — needs a fluent rater and instructor confirmation (Q-005) |
+| Multiple speakers distinguished | Speaker diarization (pyannote) → one preset voice per speaker |
 | Cost per minute vs. professional dubbing, with honest quality statement | Our compute cost (free Colab ≈ $0, or rented GPU-hour) vs. ElevenLabs $0.33–2.20/min and human dubbing; quality gap from the rating study |
 
 ### Stretch (only after all Baseline items are done)
@@ -96,10 +96,10 @@ Video and audio files are **never committed** to the repository; the README reco
 | Stage | Free / open choice | Fallback |
 |---|---|---|
 | Extract / mux | ffmpeg | — |
-| ASR + word timestamps | WhisperX (faster-whisper large-v3-turbo + forced alignment) | whisper-timestamped |
+| ASR + word timestamps | faster-whisper (Whisper large-v3-turbo) with built-in word timestamps — chosen over WhisperX after a test on Korean speech (see architecture.md) | whisper-timestamped |
 | Segmentation | Whisper segments + Korean sentence enders + pause length (`kss` library) | — |
 | Translation | NLLB-200 distilled-600M (runs on Colab / CPU) | NLLB 1.3B if quality is insufficient; LLM only if permitted (Q-003) |
-| TTS (preset voices) | Kokoro-82M (Apache 2.0, CPU) | Coqui XTTS-v2 preset voices (tab suggestion), Piper |
+| TTS (preset voices) | Per target language: Kokoro-82M for English (Apache 2.0, CPU), MeloTTS for Korean (MIT) | Coqui XTTS-v2 preset voices (tab suggestion), Piper |
 | Timing | ffmpeg `atempo` + TTS speed parameter | — |
 | Quality estimate (Target) | CometKiwi-22 or BLASER 2.0-QE (reference-free) | back-translation similarity |
 
@@ -111,7 +111,7 @@ Video and audio files are **never committed** to the repository; the README reco
 
 In order (from the tab's *Known hard parts*):
 
-1. **Environment** — confirm ffmpeg + WhisperX + NLLB + TTS run end to end on one 2-minute clip in Colab free tier. Week 2–3.
+1. **Environment** — confirm ffmpeg + faster-whisper + NLLB + TTS run end to end on one 2-minute clip. **Done 2026-10-05** on a local RTX 4060.
 2. **Sentence grouping** — turning word timestamps into translatable sentences when speech has hesitations and restarts. Directly determines translation quality.
 3. **Timing mismatch** — Korean → English length ratio per sentence; decide the overflow rule and accept the trade-off.
 4. **Invisible degradation** — synthesized speech sounds fluent whether or not the translation is right; evaluation must be by English speakers, planned early.
@@ -120,7 +120,7 @@ In order (from the tab's *Known hard parts*):
 ## 10. References
 
 - HBAI Capstone Project Pool, tab C2b "Video Translation and Dubbing" — problem, DoD, resources
-- WhisperX: Bain et al., *Time-Accurate Speech Transcription of Long-Form Audio*, 2023 — https://github.com/m-bain/whisperx
+- faster-whisper (CTranslate2 Whisper) — https://github.com/SYSTRAN/faster-whisper ; WhisperX (evaluated, not used): Bain et al., 2023 — https://github.com/m-bain/whisperx
 - NLLB-200: Meta AI, *No Language Left Behind*, 2022 — https://arxiv.org/abs/2207.04672
 - Kokoro-82M TTS — https://huggingface.co/hexgrad/Kokoro-82M
 - BLASER 2.0-QE — https://huggingface.co/facebook/blaser-2.0-qe

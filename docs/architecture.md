@@ -4,6 +4,10 @@ Initial design. It will change as the pipeline is built; undecided parts are mar
 
 DUBBE is a **single Python command-line program** that runs a fixed chain of stages over one video. There is no server, web UI, or database: every stage reads and writes plain files, so each step can be inspected, edited, and re-run.
 
+## Main architecture overview
+
+![DUBBE main architecture](diagrams/architecture-overview.png)
+
 ## C1 — System Context
 
 Who uses DUBBE and what it connects to.
@@ -29,8 +33,8 @@ What runs inside DUBBE and where data lives.
 | Container | Technology | Responsibility |
 |---|---|---|
 | dubbe CLI | Python 3.10+, started from [module-python-template](https://github.com/humblebeeai/module-python-template) | Orchestrates the stages; each stage is a function that reads the previous file and writes its own. `--from <stage>` re-runs from a given stage after a human edit. |
-| ffmpeg | ffmpeg ≥ 6 | All audio/video I/O: extract 16 kHz mono WAV, `atempo` time-stretch, place segments on the timeline, mux the new track with the original picture. |
-| Model runtime | PyTorch; WhisperX, transformers (NLLB-200 distilled-600M), Kokoro-82M | ASR with word timestamps, translation, speech synthesis. Runs on Colab T4 GPU or CPU (TTS is CPU-friendly). |
+| ffmpeg | ffmpeg ≥ 7 | All audio/video I/O: extract audio, `atempo` time-stretch, duck the background under the new voice, slow the picture where needed, mux. |
+| Model runtime | PyTorch; faster-whisper, NLLB-200 (transformers), Kokoro-82M + MMS-TTS, Demucs | ASR, translation, speech synthesis, source separation, pitch analysis. One model on the GPU at a time (8 GB is enough). |
 | Work folder | Files | Intermediate results. `segments.json` is the single source of truth: one entry per sentence with source text, translation, times, and quality signals. |
 | Output folder | Files | What the user receives: `dubbed.mp4` and `report.html` (flagged segments, per-stage breakdown). |
 | Model cache | Files | Model weights; never committed to git. |
@@ -41,16 +45,49 @@ This is a preview of C3, kept here because each stage's output file is what the 
 
 ![Pipeline data flow](diagrams/pipeline-flow.png)
 
-| # | Stage | Input → output | Tool | Quality signal recorded |
+| # | Stage | Input → output | Tool | Signal recorded |
 |---|---|---|---|---|
-| 1 | extract | `input.mp4` → `audio.wav` | ffmpeg | — |
-| 2 | asr | `audio.wav` → `words.json` (word, start, end) | WhisperX + `kresnik/wav2vec2-large-xlsr-korean` alignment | ASR log-probability, no-speech probability |
-| 3 | segment | `words.json` → `segments.json` (sentences) | Rules: Korean sentence endings + pause length; `kss` TBD | sentence length, pause-split vs. punctuation-split |
-| 4 | translate | adds `en` to each segment | NLLB-200 distilled-600M | quality estimate (CometKiwi / BLASER-QE, Target) |
-| 5 | tts | each `en` → `tts/<id>.wav` | Kokoro-82M, one preset voice | synthesized duration |
-| 6 | timing | `tts/*.wav` → `dub.wav`, `timing.json` | ffmpeg `atempo`, silence padding | stretch factor, overflow (ms) |
-| 7 | mux | `input.mp4` + `dub.wav` → `dubbed.mp4` | ffmpeg | — |
-| 8 | report (Target) | `segments.json` → `report.html` | Python, plain HTML | combined review flag |
+| 1 | extract | `input.mp4` → `audio.wav` (16 kHz mono), `original.wav` (44.1 kHz stereo) | ffmpeg | — |
+| 2 | separate | `original.wav` → `background.wav`, `vocals.wav` | Demucs `htdemucs` | background dropped if > 35 dB below the original (only residue) |
+| 3 | asr | `audio.wav` (original mix) → `words.json` | faster-whisper `large-v3-turbo`, words over silence dropped | word probability (`asr_conf`) |
+| 4 | segment | `words.json` → `segments.json` | sentence endings + pause lengths per language | — |
+| 5 | voice | `vocals.wav` → speaker pitch → closest preset voice | torchaudio pitch, voice library in `languages.yaml` | pitch register, chosen voice |
+| 6 | translate | adds `tgt_text` + 4 alternatives | NLLB-200 distilled-600M, 8 beams | `mt_conf` (model's own probability) |
+| 7 | tts | each sentence → `tts/<id>.wav` | Kokoro-82M (English), MMS-TTS (Korean) | duration |
+| 8 | shorten | too-long sentences → shorter alternative, re-synthesized | NLLB alternatives | `shortened` |
+| 9 | timing | `tts/*.wav` → `dub.wav` | anchor to source start; speech ≤ 1.3× faster; optional picture slow-down; loudness matched to the original voice | `stretch`, `slow`, `overflow` |
+| 10 | mux | `input.mp4` + `dub.wav` (+ `background.wav`) → `dubbed.mp4` | ffmpeg; background ducked under the voice; video re-encoded only if slowed | — |
+| 11 | report | `segments.json` → `report.html` | plain HTML | flags: `low_asr`, `low_mt`, `overflow` |
+
+### Multi-language design (many → many)
+
+DUBBE is built for any source → any target language; the capstone builds and tests **Korean → English** first and **one second pair** (Target). Language-specific choices live in **one config file**, `languages.yaml`, never in stage code. Adding a language = adding one entry + one test clip + one fluent rater.
+
+```yaml
+ko:
+  whisper: ko
+  nllb: kor_Hang
+  tts: {engine: mms, voice: facebook/mms-tts-kor}
+  sentence_end: "[.?!]|다$|요$|까$"
+en:
+  whisper: en
+  nllb: eng_Latn
+  tts: {engine: kokoro, voice: af_heart}
+  sentence_end: "[.?!]"
+```
+
+Usage: `dubbe input.mp4 --src ko --tgt en` (or `--src auto`, using Whisper's language detection).
+
+| Stage | Scales by | Coverage | Limit |
+|---|---|---|---|
+| ASR | Whisper language code | 99 languages, word timestamps for all | Accuracy varies by language |
+| Segment | `sentence_end` rule per language | Any | Languages without punctuation-like endings fall back to pauses |
+| Translate | NLLB language code | 200, any direction, no English pivot | Quality varies by pair; non-commercial licence (see data-sources.md) |
+| TTS | Engine + voice per language | Kokoro 8 languages (no Korean; used for English), MMS-TTS 1,100+ (non-commercial; used for Korean) | **Main bottleneck** — one adapter function per TTS engine, not per language |
+| Quality report | Reference-free metrics | CometKiwi / BLASER cover 100+ languages | — |
+| Human rating | A fluent rater per target language | — | **Real limit** — cannot be automated |
+
+Only one kind of change touches code: a new **TTS engine** (one small function in `tts.py`). Everything else is config.
 
 ### Key design decisions
 
@@ -60,15 +97,21 @@ This is a preview of C3, kept here because each stage's output file is what the 
 | Each segment anchored to its **source** start time | Prevents progressive drift (Baseline DoD) — an overlong segment cannot push later ones | — |
 | Stretch limited to 0.8×–1.3×; beyond that the segment overflows into the next pause and is flagged | Project tab: beyond ~1.3× speech sounds wrong | Target: shorter re-translation instead of overflow |
 | Local open models only for Baseline | Tab requires a free path without paid APIs or a dedicated GPU | Colab free tier cannot run the chain (Q-004) |
+| Language choices in `languages.yaml`, not in code | Many-to-many is the product goal; adding a language must not require changing stages | — |
+| ASR = faster-whisper's own word timestamps, VAD filter off | Tested on FLEURS Korean: WhisperX's wav2vec2 alignment found 3/11 sentence pauses and put 5% of speech inside silences; faster-whisper found 11/11 with 0%. VAD filter and previous-text conditioning each skipped a whole sentence | Accuracy problems on real lectures |
 | Preset TTS voices, no cloning | Voice cloning is out of scope, including our own voices | — |
-| Background music/noise is dropped (voice track only) | Keeps Baseline simple | Stretch: source separation (e.g. Demucs) |
+| Background kept by source separation; ASR still reads the original mix | Phone ring survives at 0.0 dB, no voice leak (T-12); ASR on the separated voice had 2× the errors (CER 19.8 % vs 9.5 %) | — |
+| Dub voice loudness matched to the original voice | Generated voices come out at their own level and buried the music (17.5 dB vs 11.5 dB under the voice) | — |
+| Picture may slow down where the dub is longer (`--slow-video`, off by default) | Max speech speed-up 1.30× → 1.18× on the en→ko test; invisible on slides, visible on action | — |
+| Voice matching by pitch register; a preset's own label decides its group | 95 % register agreement on FLEURS; raw pitch alone crossed perceived voice type | Emotional or multi-speaker scenes (needs C7) |
 
 ### Error handling and fallbacks (initial)
 
 - A stage fails → the CLI stops, keeps all earlier files, and prints which stage failed; re-running resumes from there.
-- No GPU → ASR falls back to a smaller Whisper model on CPU (slower, lower accuracy; noted in the report).
+- No GPU → every model runs on CPU (Whisper in int8); slower, same results.
+- No real background in the source → voice-only mix (`--no-background` forces this).
 - LLM API unavailable or not permitted → keep the NLLB translation and flag the segment as overflowing.
 
 ## Open questions
 
-See [questions.md](questions.md): Q-003 (external API), Q-004 (Colab free tier capacity), Q-006 (review step: JSON edit vs. UI), Q-008 (Kokoro vs. XTTS-v2).
+See [questions.md](questions.md): Q-003 (external API), Q-004 (Colab free tier capacity), Q-006 (review step: JSON edit vs. UI), Q-008 (Kokoro vs. XTTS-v2), Q-009 (expression transfer and voice matching without cloning).

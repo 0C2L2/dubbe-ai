@@ -28,17 +28,18 @@ From the course ground rules and project tab C2b:
 | Dataset | What it gives us | Licence | Access | Status |
 |---|---|---|---|---|
 | **Team gold set** — human Korean transcript + human English translation of ~20 min of the clips above | Reference for ASR CER, translation quality, and the error-propagation study (Target) | Ours (derived from the clip's licence) | Created by the team | TBD — IBT members transcribe/translate, a second member checks |
-| [FLEURS](https://huggingface.co/datasets/google/fleurs) — Korean (`ko_kr`) test split | Read Korean speech with transcripts; the same sentences exist in English (`en_us`), so it provides free KO audio → EN reference pairs | CC BY 4.0 | Public, Hugging Face | Planned as a quick sanity benchmark before the gold set is ready; read speech, not lecture speech |
+| [FLEURS](https://huggingface.co/datasets/google/fleurs) — Korean (`ko_kr`) test split | Read Korean speech with transcripts; the same sentences exist in English (`en_us`), so it provides free KO audio → EN reference pairs | CC BY 4.0 | Public, Hugging Face | **In use** since 2026-10-05: ASR/timing/background tests and voice-register calibration (dev split; test split kept unused) |
 | Rating sheets from English-speaking reviewers | Human judgement of adequacy, fluency, sync, watchability | Ours | Team + TBD international students (Q-007) | Rubric in [test-plan.md](test-plan.md); no names stored, raters are R1, R2, … |
 
 ## 3. Pretrained models (not data we collect, but their licences apply)
 
 | Model | Stage | Licence | Note |
 |---|---|---|---|
-| Whisper large-v3-turbo via faster-whisper / WhisperX | ASR | MIT (weights), BSD-2 (WhisperX) | |
-| kresnik/wav2vec2-large-xlsr-korean | Word alignment (WhisperX default for Korean) | TBD — verify on model card | |
+| Whisper large-v3-turbo via faster-whisper | ASR + word timestamps | MIT (weights and faster-whisper) | |
 | NLLB-200 distilled-600M | Translation | **CC BY-NC 4.0** | Non-commercial only — fine for the capstone, but a commercial product would need another MT model. Stated in the cost comparison. |
-| Kokoro-82M | TTS (preset voices) | Apache 2.0 | |
+| Kokoro-82M | TTS, English (preset voices) | Apache 2.0 | |
+| facebook/mms-tts-kor (+ `uroman`) | TTS, Korean | CC BY-NC 4.0 | Non-commercial; `uroman` licence to verify |
+| Demucs `htdemucs` | Source separation (background sound) | MIT | |
 | Unbabel wmt22-cometkiwi-da / BLASER 2.0-QE (Target) | Quality estimation | CC BY-NC-SA 4.0 / TBD | CometKiwi is gated: accept terms on Hugging Face |
 
 ## Clip inventory
