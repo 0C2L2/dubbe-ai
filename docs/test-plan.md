@@ -6,7 +6,7 @@ How we will check each Definition of Done item from project tab C2b. Owner of cr
 
 - Google Colab free tier (T4 GPU) and one team laptop (CPU only) — the Baseline must work on both (Q-004).
 - Test clips and gold set: see [data-sources.md](data-sources.md).
-- Every test run records: date, git commit, clip ID, environment, and result, in `docs/test-results.md` (created when the first test runs).
+- Every test run records: date, git commit, clip ID, environment, and result, in [test-results.md](test-results.md).
 
 ## 1. Stage checks (while building)
 
@@ -19,7 +19,7 @@ Quick checks that each stage produced a sane file. Run on one 2-minute clip afte
 | segment | `segments.json` | Every word belongs to exactly one segment; no segment longer than ~20 s (TBD) |
 | translate | `en` field | Every segment has non-empty English text; no Korean characters left |
 | tts | `tts/<id>.wav` | One file per segment, non-silent |
-| timing | `timing.json` | Stretch factor per segment within 0.8–1.3, or segment flagged as overflow |
+| timing | `segments.json` (stretch, slow, placed_start) | Speech speed-up ≤ 1.3 per segment, or segment flagged as overflow |
 | mux | `dubbed.mp4` | Plays; has one video + one audio stream; duration = source ± 0.5 s |
 
 Automated unit tests (pytest) only for the pure logic that is easy to get wrong: **sentence grouping** and **timing placement**. Model stages are checked by the table above, not unit-tested.
@@ -30,7 +30,7 @@ Automated unit tests (pytest) only for the pure logic that is easy to get wrong:
 |---|---|---|---|
 | T-01 | Full pipeline end to end | Fresh clone → follow README → run `dubbe` on clips C01–C03 and T01 | Finishes without manual steps and produces `dubbed.mp4` for all 4 clips |
 | T-02 | Watchable dubbed video (KO → EN) | 2+ English-speaking raters watch each full clip and score *watchability* 1–5 | Mean ≥ 3 per clip (TBD) |
-| T-03 | No progressive drift over several minutes | From `timing.json`: offset = dubbed segment start − source segment start, for every segment of a ≥ 5-min clip; plot offset over time | No segment starts > 0.5 s late (TBD) **and** offsets in the last minute are not larger than in the first minute |
+| T-03 | No progressive drift over several minutes | `scripts/drift_check.py` on `segments.json`: offset = dubbed segment start − where it should start, for every segment of a ≥ 5-min clip; plot offset over time | No segment starts > 0.5 s late (TBD) **and** offsets in the last minute are not larger than in the first minute |
 | T-04 | Quality assessed by a target-language speaker | Raters score a sample of segments with the rubric below | Rubric completed by ≥ 2 raters for ≥ 30 segments; results in the README |
 
 ### Rating rubric (per segment)
@@ -58,6 +58,9 @@ How T-05 and T-06 separate each stage's share of the final error:
 | T-08 | Timing when translation is much longer/shorter | Count segments needing > 1.3× or < 0.8×; apply the fallback; re-rate timing on those segments | % segments within limits before vs. after; timing-OK rate on those segments |
 | T-09 | Second language pair | Repeat T-01, T-02, T-04 for the second pair | Same criteria; language TBD (Q-005) |
 | T-10 | Multiple speakers distinguished | Team clip T02 with two speakers | Each segment gets the right speaker label ≥ 90 % (TBD); two distinct voices in output |
+| T-12 | Background sound kept (beyond DoD) | `scripts/background_check.py`: FLEURS clip + 8 phone rings between sentences, dubbed | Ring level within −3 dB of the original; ≤ 1 source-language word/min recognised in `background.wav` |
+| T-13 | Expressive voice (plan C9, not built) | Emotion agreement source vs. dub, rising pitch on questions, UTMOS, A/B listening | See plan C9 |
+| T-14 | Voice matching (plan C10) | `scripts/voice_check.py`: pitch-register call vs. FLEURS speaker gender (proxy), calibrated on Korean, tested on English | ≥ 90 % on the held-out language; two-speaker clip gets two voices (needs C7) |
 | T-11 | Cost per minute vs. professional dubbing | Record wall-clock time per minute of video on Colab and CPU; convert to a GPU-hour price; compare with ElevenLabs ($0.33–2.20/min) and human dubbing quotes | Cost table + one honest sentence on the quality gap, using T-02/T-04 scores |
 
 **Sanity benchmark before the gold set exists:** run T-05's ASR and MT parts on FLEURS Korean test sentences (read speech, so expect better numbers than on lectures).

@@ -17,3 +17,10 @@ __pycache__/
 *.pyc
 .venv/
 !docs/diagrams/*.png
+*.egg-info/
+data/
+
+# local-only folders: course material, superseded drafts
+course/
+archive/
+.pytest_cache/

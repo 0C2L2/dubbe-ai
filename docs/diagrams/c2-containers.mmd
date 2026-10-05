@@ -5,7 +5,7 @@ flowchart TB
     subgraph dubbe["DUBBE - runs on Google Colab free tier or a local PC"]
         cli["<b>dubbe CLI</b><br/>[Python 3.10+]<br/>Runs stages in order, skips stages<br/>whose output already exists"]
         ffmpeg["<b>ffmpeg</b><br/>[Executable, subprocess]<br/>Extract audio, time-stretch,<br/>mix and mux into MP4"]
-        models["<b>Model runtime</b><br/>[PyTorch, in-process]<br/>WhisperX, NLLB-200, Kokoro TTS,<br/>quality estimator (Target)"]
+        models["<b>Model runtime</b><br/>[PyTorch, in-process]<br/>faster-whisper, NLLB-200, Kokoro / MMS,<br/>Demucs,<br/>quality estimator (Target)"]
         work[("<b>Work folder</b><br/>[WAV, JSON files]<br/>audio.wav, segments.json,<br/>tts/*.wav, timing.json")]
         out[("<b>Output folder</b><br/>[Files]<br/>dubbed.mp4, report.html")]
         cache[("<b>Model cache</b><br/>[Local disk, Hugging Face cache]<br/>Downloaded weights")]

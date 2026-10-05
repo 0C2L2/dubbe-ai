@@ -1,0 +1,58 @@
+%% DUBBE - main architecture overview
+flowchart TB
+    creator["<b>Course creator</b><br/>[Person]<br/>uploads a lecture video,<br/>picks source + target language"]
+
+    subgraph dubbe["DUBBE - Python CLI, runs on Colab free tier or a local PC"]
+        direction TB
+        subgraph pipe["1 - Dubbing pipeline"]
+            direction LR
+            s1["<b>Extract</b><br/>ffmpeg"] --> s2["<b>Separate</b><br/>Demucs<br/>voice / background"] --> s3["<b>ASR</b><br/>faster-whisper<br/>word timestamps"] --> s4["<b>Segment</b><br/>sentence rule<br/>per language"] --> s5["<b>Voice</b><br/>closest preset<br/>by pitch"] --> s6["<b>Translate</b><br/>NLLB-200<br/>any to any"] --> s7["<b>TTS</b><br/>Kokoro / MMS<br/>preset voice"] --> s8["<b>Timing</b><br/>speed-up, slow-down,<br/>loudness match"] --> s9["<b>Mux</b><br/>voice over<br/>ducked background"]
+        end
+        langs[("<b>languages.yaml</b><br/>per language: Whisper code,<br/>sentence rule, NLLB code,<br/>TTS engine + voice")]
+        seg[("<b>segments.json</b><br/>per sentence: source text, translated text,<br/>timestamps, quality signals")]
+        subgraph qa["2 - Quality layer: what makes DUBBE distinct"]
+            direction LR
+            q1["ASR<br/>confidence"] --> rep
+            q2["Translation<br/>quality estimate"] --> rep
+            q3["Stretch /<br/>overflow"] --> rep
+            rep["<b>Report</b><br/>flags risky segments,<br/>shows which stage failed"]
+        end
+        langs -- "picks models per language" --> pipe
+        pipe -- "every stage records its result" --> seg
+        seg --> qa
+    end
+
+    out1(["<b>dubbed.mp4</b><br/>dubbed draft"])
+    out2(["<b>report.html</b><br/>short review list"])
+    reviewer["<b>Reviewer fluent in<br/>the target language</b><br/>[Person]"]
+    subgraph ext["External services"]
+        hf["<b>Hugging Face Hub</b><br/>model weights,<br/>first-run download"]
+        llm["<b>LLM API</b> - optional, TBD<br/>shorter re-translation<br/>(Target, if permitted)"]
+    end
+
+    creator -- "input.mp4" --> pipe
+    pipe -- "final video" --> out1
+    qa --> out2
+    out1 --> reviewer
+    out2 --> reviewer
+    reviewer -. "edits translation, re-runs from TTS" .-> seg
+    dubbe -. "HTTPS" .-> ext
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef stage fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef file fill:#eaf2fb,stroke:#438dd5,color:#0b3a66
+    classDef signal fill:#fff4d6,stroke:#d9a400,color:#5c4400
+    classDef report fill:#d98e00,stroke:#a86d00,color:#fff
+    classDef external fill:#8a8a8a,stroke:#6b6b6b,color:#fff
+    classDef optional fill:#bdbdbd,stroke:#8a8a8a,color:#222,stroke-dasharray:5 5
+    class creator,reviewer person
+    class s1,s2,s3,s4,s5,s6,s7,s8,s9 stage
+    class seg,out1,out2,langs file
+    class q1,q2,q3 signal
+    class rep report
+    class hf external
+    class llm optional
+    style dubbe fill:#f4f8fc,stroke:#1168bd,stroke-dasharray:6 4,color:#1168bd
+    style pipe fill:#ffffff,stroke:#438dd5,color:#0b3a66
+    style ext fill:#fafafa,stroke:#999,stroke-dasharray:6 4,color:#555
+    style qa fill:#fffbef,stroke:#d9a400,color:#5c4400
