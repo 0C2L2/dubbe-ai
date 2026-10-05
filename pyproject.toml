@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dubbe"
+version = "0.1.0"
+description = "Video dubbing pipeline with a per-segment quality report"
+requires-python = ">=3.10,<3.13"  # kokoro needs <3.13
+dependencies = ["pyyaml", "numpy", "soundfile"]
+
+[project.optional-dependencies]
+# versions verified together on 2026-10-05 (Python 3.12, torch 2.8.0+cu128, RTX 4060); torch is installed separately for CUDA, see README
+models = ["faster-whisper==1.2.1", "transformers==5.18.0", "sentencepiece==0.2.2", "kokoro==0.9.4", "uroman", "demucs==4.1.0"]
+dev = ["pytest"]
+
+[project.scripts]
+dubbe = "dubbe.cli:main"
+
+[tool.setuptools.package-data]
+dubbe = ["languages.yaml"]

@@ -1,0 +1,64 @@
+# Everything language-specific lives here. Adding a language = adding one entry.
+
+defaults:
+  close_pause: 0.3   # s of silence needed after a sentence ending to close the sentence
+  break_pause: 0.8   # s of silence that closes a sentence on its own
+  max_dur: 15.0      # longer sentences are split at their longest pause
+  max_words: 40
+  min_dur: 1.0       # shorter fragments are merged into a neighbour
+  max_stretch: 1.3   # project tab: beyond ~1.3x sped-up speech sounds wrong
+  shorten_min_conf_ratio: 0.85  # shorter alternative translation must keep >= 85% of the best confidence
+  max_video_slow: 1.0  # >1 (e.g. 1.2) slows the picture where dubbed speech is longer, so speech is sped up less;
+                       # barely visible on slides/talking heads, noticeable on action (--slow-video 1.2)
+  register_split_hz: 122  # lower vs higher voice; calibrated on FLEURS ko, 95% on held-out FLEURS en (C10)
+  keep_background: true
+  background_floor_db: 35  # background stem this far below the original = only separation residue -> voice-only mix  # separate music/effects and keep them under the dub (--no-background to skip)
+  silence_db: -60    # ASR words quieter than this are dropped (Whisper invents text over silence)
+  # review flags - first guesses, tune on the gold set (test plan T-07)
+  min_asr_conf: 0.8  # mean word probability
+  min_mt_conf: 0.5   # NLLB sequence probability
+  max_overflow: 0.05 # s past the next segment's start
+
+ko:
+  whisper: ko
+  nllb: kor_Hang
+  sentence_end: '[.?!]$|(다|요|까|죠)$'
+  join: " "
+  tts: {engine: mms, voice: facebook/mms-tts-kor, voices: {facebook/mms-tts-kor: {f0: 170, register: higher}}}   # MMS-TTS, CC BY-NC 4.0; Whisper round-trip: intelligible, small slips
+
+en:
+  whisper: en
+  nllb: eng_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts:
+    engine: kokoro
+    voice: af_heart   # used when voice matching has no library
+    voices:   # measured median pitch (scripts/tag_voices.py); register = the preset's own f/m label, not pitch
+      # left out: af_nicole (whispering style), am_santa (novelty voice)
+      af_alloy: {f0: 138, register: higher}
+      af_aoede: {f0: 157, register: higher}
+      af_bella: {f0: 123, register: higher}
+      af_heart: {f0: 159, register: higher}
+      af_jessica: {f0: 175, register: higher}
+      af_kore: {f0: 123, register: higher}
+      af_nova: {f0: 156, register: higher}
+      af_river: {f0: 170, register: higher}
+      af_sarah: {f0: 162, register: higher}
+      af_sky: {f0: 130, register: higher}
+      am_adam: {f0: 116, register: lower}
+      am_echo: {f0: 110, register: lower}
+      am_eric: {f0: 152, register: lower}
+      am_fenrir: {f0: 130, register: lower}
+      am_liam: {f0: 115, register: lower}
+      am_michael: {f0: 106, register: lower}
+      am_onyx: {f0: 90, register: lower}
+      am_puck: {f0: 111, register: lower}
+      bf_alice: {f0: 180, register: higher}
+      bf_emma: {f0: 173, register: higher}
+      bf_isabella: {f0: 171, register: higher}
+      bf_lily: {f0: 140, register: higher}
+      bm_daniel: {f0: 114, register: lower}
+      bm_fable: {f0: 128, register: lower}
+      bm_george: {f0: 126, register: lower}
+      bm_lewis: {f0: 91, register: lower}
