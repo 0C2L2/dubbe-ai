@@ -45,7 +45,7 @@ Tiers follow the project tab's Definition of Done. ✅ built and tested · 🟡 
 - ✅ Long translations: shorter alternative wording + optional picture slow-down (`--slow-video 1.2`)
 - 🟡 Second language pair: English → Korean runs (MMS voice); needs a fluent Korean rater and approval (Q-005)
 - ⬜ Multiple speakers distinguished
-- ⬜ Cost per minute vs. professional dubbing (run times are already logged in `run.json`)
+- 🟡 Cost per minute vs. professional dubbing: computed for every run (`stats.json`, report, web page); price assumptions in `languages.yaml` still need sources
 
 **Stretch / beyond the DoD**
 - ✅ Background sound kept (music, effects, a phone ringing) under the new voice
@@ -102,7 +102,8 @@ Requirements: ffmpeg on PATH; **Python 3.10–3.12** (Kokoro needs < 3.13); NVID
 py -3.12 -m venv .venv && .venv/Scripts/activate   # Linux/macOS: python3.12 -m venv .venv && source .venv/bin/activate
 # GPU: install CUDA PyTorch first (the default Windows torch is CPU-only); skip this line for CPU-only
 pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
-pip install -e ".[models,dev]"
+pip install -e ".[models,gui,dev]"
+dubbe-gui                                       # simplest way to try it: local web page at http://127.0.0.1:7860
 pytest                                          # unit tests: sentence grouping, timing
 dubbe lecture.mp4 --src ko --tgt en             # -> work/lecture.ko-en/dubbed.mp4
                                                 # + report.html: segments a human should check, and why

@@ -11,13 +11,19 @@ defaults:
   max_video_slow: 1.0  # >1 (e.g. 1.2) slows the picture where dubbed speech is longer, so speech is sped up less;
                        # barely visible on slides/talking heads, noticeable on action (--slow-video 1.2)
   register_split_hz: 122  # lower vs higher voice; calibrated on FLEURS ko, 95% on held-out FLEURS en (C10)
-  keep_background: true
-  background_floor_db: 35  # background stem this far below the original = only separation residue -> voice-only mix  # separate music/effects and keep them under the dub (--no-background to skip)
+  keep_background: true   # separate music/effects and keep them under the dub (--no-background to skip)
+  background_floor_db: 35  # background stem this far below the original = only separation residue -> voice-only mix
   silence_db: -60    # ASR words quieter than this are dropped (Whisper invents text over silence)
   # review flags - first guesses, tune on the gold set (test plan T-07)
   min_asr_conf: 0.8  # mean word probability
   min_mt_conf: 0.5   # NLLB sequence probability
   max_overflow: 0.05 # s past the next segment's start
+  # price ASSUMPTIONS for the cost stats (test plan T-11) - edit for your setup and cite sources in the report
+  cost:
+    gpu_watts: 115                 # RTX 4060 Laptop maximum power; treated as drawn the whole run (upper bound)
+    electricity_usd_per_kwh: 0.15  # assumption
+    cloud_gpu_usd_per_hour: 0.35   # assumption: on-demand T4-class cloud GPU
+    elevenlabs_usd_per_min: [0.33, 2.20]  # ElevenLabs Dubbing API range quoted in project tab C2b
 
 ko:
   whisper: ko

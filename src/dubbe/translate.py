@@ -49,6 +49,8 @@ def run(video: Path, work: Path, cfg: dict) -> None:
             s["alts"] = [{"text": t, "conf": c} for t, c in sorted(alts.items(), key=lambda x: -x[1])]
             s["tgt_text"] = s["alts"][0]["text"]
             s["mt_conf"] = s["alts"][0]["conf"]
+            # tokens processed (nothing is billed: the model runs locally), for the stats / API comparison
+            s["mt_tokens"] = [int(inputs["attention_mask"][k].sum()), len(tok(s["tgt_text"])["input_ids"])]
 
     del model
     free_gpu()
