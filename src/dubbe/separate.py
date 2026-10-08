@@ -18,6 +18,8 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     from demucs.apply import apply_model
     from demucs.pretrained import get_model
 
+    if not (work / "original.wav").exists():  # work folder from before this stage existed
+        ffmpeg("-i", str(video), "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(work / "original.wav"))
     model = get_model("htdemucs")  # Demucs v4, MIT licence
     audio, sr = sf.read(work / "original.wav", dtype="float32")  # 44.1 kHz stereo from extract
     x = torch.from_numpy(audio.T.copy())[None]
