@@ -1,0 +1,71 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import orb_art, stars, voice_card %}
+{% block title %}{{ v.name }} — Voice Marketplace — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow"><a href="/app/market">Marketplace</a>{% if v.category %} · <a href="/app/market?cat={{ v.category | urlencode }}">{{ v.category }}</a>{% endif %}</span>
+{% if v.shared != "listed" %}<p class="notice">Not listed ({{ {"no": "private", "pending": "in review", "rejected": "not accepted"}[v.shared] }}): only you and admins see this page.</p>{% endif %}
+
+<div class="mk-head">
+  {{ orb_art(v.id, "lg", "/app/voices/" ~ v.id ~ "/sample", "Play " ~ v.name, "orb-" ~ v.id) }}
+  <div>
+    <h1 class="app-h1" style="margin-bottom:4px">{{ v.name }}</h1>
+    <p class="muted" style="margin:0 0 16px">by <b>{{ v.owner_name or "a DUBBE user" }}</b> · recorded in {{ NAMES[v.lang] }} · speaks every DUBBE language</p>
+    <div class="mk-stats">
+      <div><b>{{ ("%.1f ★" | format(v.rating)) if v.rating else "New" }}</b><span>{{ v.reviews }} review{{ "s" if v.reviews != 1 }}</span></div>
+      <div><b>{{ v.uses }}</b><span>uses by others</span></div>
+      <div><b>{{ v.saves }}</b><span>added</span></div>
+      <div><b>{{ v.category or "—" }}</b><span>category</span></div>
+    </div>
+    <div class="actions">
+      {% if v.owner_id == user.id %}<a role="button" href="/app/studio/{{ v.id }}">Edit in Voice Studio</a>
+      {% elif v.saved %}<a role="button" href="/app/tts?voice=clone:{{ v.id }}&lang={{ v.lang }}">Use in Text to Speech</a>
+        <form method="post" action="/app/market/{{ v.id }}/remove" class="inline"><button class="secondary">Remove from my voices</button></form>
+      {% elif v.shared == "listed" %}<form method="post" action="/app/market/{{ v.id }}/add" class="inline"><button>Get — add to my voices</button></form>{% endif %}
+      <button class="secondary play-btn" data-play="/app/voices/{{ v.id }}/sample"><span class="play"></span>Play sample</button>
+    </div>
+  </div>
+</div>
+
+<section class="app-sec">
+  <h2>About this voice</h2>
+  <p style="max-width:46rem">{{ v.description or "No description yet." }}</p>
+  <p class="mk-tags">{% for t in (v.tags.split(",") if v.tags else []) %}<span class="chip grey">{{ t }}</span> {% endfor %}</p>
+  <div class="card mk-trust"><b>How this voice got here</b>
+    <ul class="small">
+      <li>A clone of the publisher's own voice, recorded live in the browser and checked by speech recognition — no uploads.</li>
+      <li>The publisher chose to share it; an admin listened to it before it was listed. The publisher can stop sharing at any time.</li>
+      <li>Everything it says carries an inaudible watermark and the AI label. Never use it to pretend to be the publisher
+        (<a href="/use-policy">use policy</a>). <a href="/contact?topic=Report misuse">Report this voice</a></li>
+    </ul></div>
+</section>
+
+<section class="app-sec" id="reviews">
+  <h2>Ratings and reviews</h2>
+  <div class="mk-rating">
+    <div class="mk-big">{% if v.rating %}<b>{{ "%.1f" | format(v.rating) }}</b>{% else %}<b class="none">Not rated yet</b>{% endif %}{{ stars(v.rating) }}
+      <span class="muted small">{{ v.reviews }} review{{ "s" if v.reviews != 1 }}</span></div>
+    <div class="mk-hist">{% for n in [5, 4, 3, 2, 1] %}
+      <div><span>{{ n }}</span><i><s style="width:{{ (hist.get(n, 0) * 100 / v.reviews) | round(1) if v.reviews else 0 }}%"></s></i></div>{% endfor %}</div>
+  </div>
+  {% if v.saved and v.owner_id != user.id %}
+  <form method="post" action="/app/market/{{ v.id }}/review" class="card mk-review-form">
+    <b>{{ "Your review" if mine else "Rate this voice" }}</b>
+    <fieldset class="star-input" aria-label="Stars">{% for n in [5, 4, 3, 2, 1] %}
+      <input type="radio" name="stars" id="s{{ n }}" value="{{ n }}" {{ 'checked' if mine and mine.stars == n }} required><label for="s{{ n }}" title="{{ n }} star{{ 's' if n > 1 }}">★</label>{% endfor %}</fieldset>
+    <textarea name="body" rows="3" maxlength="500" placeholder="What did you use it for? How does it sound?">{{ mine.body if mine }}</textarea>
+    <button>{{ "Update review" if mine else "Post review" }}</button>
+  </form>
+  {% elif v.owner_id != user.id %}<p class="muted small">Get the voice to rate it.</p>{% endif %}
+  {% for r in reviews %}
+  <article class="mk-rev"><header>{{ stars(r.stars) }} <b>{{ r.name or "A DUBBE user" }}</b> <span class="muted small">{{ r.created_at | date }}</span></header>
+    {% if r.body %}<p>{{ r.body }}</p>{% endif %}</article>
+  {% else %}<p class="muted">No reviews yet.</p>{% endfor %}
+</section>
+
+{% if more %}
+<section class="app-sec">
+  <h2>More from {{ v.owner_name or "this publisher" }}</h2>
+  <div class="mk-grid">{% for x in more %}{{ voice_card(x, user.id) }}{% endfor %}</div>
+</section>
+{% endif %}
+{% endblock %}

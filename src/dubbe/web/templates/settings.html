@@ -1,0 +1,36 @@
+{% extends "app_base.html" %}
+{% block title %}Settings — DUBBE{% endblock %}
+{% block main %}
+<h1>Settings</h1>
+<p class="muted">Signed in as {{ user.email }}{{ " · email confirmed" if user.verified_at else " · email not confirmed yet" }}.</p>
+
+<article>
+  <header><strong>Name</strong></header>
+  <form method="post" action="/app/settings">
+    <input type="hidden" name="action" value="name">
+    <input name="name" value="{{ user.name }}" aria-label="Name" autocomplete="name">
+    <button class="secondary">Save</button>
+  </form>
+</article>
+
+<article>
+  <header><strong>Password</strong></header>
+  <form method="post" action="/app/settings">
+    <input type="hidden" name="action" value="password">
+    <label>Current password <input type="password" name="current" required autocomplete="current-password"></label>
+    <label>New password <input type="password" name="new" minlength="10" required autocomplete="new-password">
+      <small>At least 10 characters. You will be signed out everywhere.</small></label>
+    <button class="secondary">Change password</button>
+  </form>
+</article>
+
+<article>
+  <header><strong>Delete account</strong></header>
+  <p>Deletes your account, every project, video, dub and rating. This cannot be undone.</p>
+  <form method="post" action="/app/settings" data-confirm="Delete your account and all files? This cannot be undone.">
+    <input type="hidden" name="action" value="delete">
+    <label>Password <input type="password" name="current" required autocomplete="current-password"></label>
+    <button class="secondary outline">Delete my account</button>
+  </form>
+</article>
+{% endblock %}

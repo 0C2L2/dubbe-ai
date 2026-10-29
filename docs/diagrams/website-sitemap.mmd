@@ -1,0 +1,56 @@
+%% DUBBE website - site map (public / account / app / admin)
+flowchart LR
+    subgraph pub["Public — no sign-in"]
+        direction TB
+        home["Home /"]
+        feat["How it works /features"]
+        pair["Korean → English · English → Korean<br/>/translate-video/..."]
+        edu["For education /education"]
+        ex["Examples /examples"]
+        res["Measured results /results"]
+        price["Plans /pricing"]
+        about["About /about"]
+        contact["Contact /contact<br/>(incl. report misuse)"]
+        faq["Help /help"]
+        safety["Safety /safety"]
+        legal["Terms · Use policy · Privacy<br/>/terms /use-policy /privacy"]
+    end
+
+    subgraph auth["Account"]
+        direction TB
+        signup["Sign up /signup"]
+        signin["Sign in /signin"]
+        verify["Verify email /verify"]
+        forgot["Forgot / reset password<br/>/forgot /reset"]
+    end
+
+    subgraph app["App — signed in"]
+        direction TB
+        dash["Dashboard /app"]
+        new["New dub /app/new"]
+        job["Progress /app/jobs/:id"]
+        review["Review editor /app/p/:id"]
+        export["Export /app/p/:id/export"]
+        usage["Plan & usage /app/plan"]
+        settings["Settings /app/settings"]
+        voices["Voices /app/voices<br/>(gated, Q-010)"]
+    end
+
+    subgraph admin["Admin — team only"]
+        direction TB
+        adm["Users · jobs · messages ·<br/>worker status · evaluation"]
+    end
+
+    home --> price & ex & feat & pair & edu
+    price -- "Start free" --> signup
+    contact -. "message saved +<br/>email to team" .-> adm
+    signup --> verify --> dash
+    signin --> dash
+    signin --> forgot
+    dash --> new --> job --> review --> export
+    dash --> usage & settings
+
+    classDef page fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef gated fill:#bdbdbd,stroke:#8a8a8a,color:#222,stroke-dasharray:5 5
+    class home,feat,pair,edu,ex,res,price,about,contact,faq,safety,legal,signup,signin,verify,forgot,dash,new,job,review,export,usage,settings,adm page
+    class voices gated

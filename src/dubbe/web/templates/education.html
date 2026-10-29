@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}DUBBE for lecturers and schools{% endblock %}
+{% block main %}
+<section class="hero">
+  <h1>Lectures in a second language — checked before students see them</h1>
+  <p class="lead">A wrong sentence in a lecture is worse than a wrong sentence in an ad: students learn it. DUBBE dubs
+    lectures between {{ NAMES | length }} languages (Korean ↔ English tested most) and shows you which sentences to check first.</p>
+  <p class="actions"><a href="/signup" role="button">Start free</a><a href="/contact?topic=school" role="button" class="secondary">School / team: contact us</a></p>
+</section>
+
+<h2>Why lecturers use review flags</h2>
+<div class="cards">
+  <article><b>Start with the flagged sentences</b><p>On our test clips DUBBE flagged 3 of 15 and 11 of 42 sentences,
+    so a teaching assistant knows where to start. Flags miss some confident mistakes — a final listen is still needed.</p></article>
+  <article><b>Terms stay right</b><p>Correct a technical term once in the editor; your text is never re-translated.</p></article>
+  <article><b>Subtitles too</b><p>SRT and WebVTT in both languages for your learning platform, timed to the dubbed video.</p></article>
+</div>
+
+<h2>Built for course videos</h2>
+<ul>
+  <li><b>Long videos without drift</b> — every sentence is placed where it was said.</li>
+  <li><b>Slides stay in sync</b> — DUBBE can slow the picture slightly instead of rushing the voice.</li>
+  <li><b>Your files, not a platform's</b> — download an MP4 for any learning platform (YouTube's free auto-dubbing
+    only works for videos published on YouTube).</li>
+  <li><b>Privacy</b> — videos are deleted after your plan's retention period, or whenever you delete them.
+    <a href="/privacy">Privacy notice</a></li>
+</ul>
+
+<h2>For schools</h2>
+<p>Students and staff with a school email address (for example <code>.ac.kr</code> or <code>.edu</code>) will get extra
+  free minutes — the amount is being decided. Departments that want to dub a whole course can
+  <a href="/contact?topic=school">contact us</a>.</p>
+<p class="notice draft">DUBBE is a student project and non-commercial during the beta: the translation model is licensed
+  for non-commercial use only. Teaching use is fine; selling the dubbed videos is not.</p>
+{% endblock %}

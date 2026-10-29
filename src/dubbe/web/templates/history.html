@@ -1,0 +1,15 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import task_item %}
+{% block title %}History — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Library</span><h1 class="app-h1">History</h1>
+<nav class="pills filter" aria-label="Filter">
+  <a href="/app/history" class="{{ 'on' if not kind }}">All</a>
+  {% for k, name in TOOLS.items() %}<a href="/app/history?kind={{ k }}" class="{{ 'on' if kind == k }}">{{ name }}</a>{% endfor %}
+</nav>
+{% for x in items %}{{ task_item(x) }}{% else %}
+<div class="empty"><p>Nothing here yet. Results from Text to Speech, Speech to Text, Translate and Voice Isolator are kept here
+  for {{ PLANS[user.plan].keep_days }} days.</p><a href="/app/tts" role="button">Try Text to Speech</a></div>
+{% endfor %}
+<p class="muted small" style="margin-top:20px">Dubbed videos are under <a href="/app/projects">Projects</a>.</p>
+{% endblock %}

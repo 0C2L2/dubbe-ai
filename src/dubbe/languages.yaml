@@ -11,12 +11,22 @@ defaults:
   max_video_slow: 1.0  # >1 (e.g. 1.2) slows the picture where dubbed speech is longer, so speech is sped up less;
                        # barely visible on slides/talking heads, noticeable on action (--slow-video 1.2)
   register_split_hz: 122  # lower vs higher voice; calibrated on FLEURS ko, 95% on held-out FLEURS en (C10)
+  speaker_threshold: 0.3  # speaker detection (C7): cosine distance between sentence voice fingerprints; test-results C21
   keep_background: true   # separate music/effects and keep them under the dub (--no-background to skip)
   background_floor_db: 35  # background stem this far below the original = only separation residue -> voice-only mix
   silence_db: -60    # ASR words quieter than this are dropped (Whisper invents text over silence)
+  # natural delivery (timing stage, test-results C20)
+  follow_delivery: true  # each dubbed sentence follows the original's loudness and pitch relative to the speaker
+  delivery_max_db: 6     # at most this much louder / softer than the dub's median sentence
+  delivery_pitch: 0.5    # share of the original sentence's pitch movement (semitones) given to the dub ...
+  delivery_max_st: 1.5   # ... at most this much
+  # delivery tags heard in the original (emotion stage, test-results C22); a reviewer's tags always win
+  auto_tags: true
+  emotion_min: 0.9   # emotion model this sure -> [excited] [angry] [sad]: 82 % of its tags right on CREMA-D (34 % found)
+  sound_min: 0.3     # AudioSet probability -> [laugh] [sigh] [gasp] [cough] [whisper]; narration / read speech stayed < 0.2
   # review flags - first guesses, tune on the gold set (test plan T-07)
   min_asr_conf: 0.8  # mean word probability
-  min_mt_conf: 0.5   # NLLB sequence probability
+  min_mt_conf: 0.6   # NLLB 3.3B mean token probability; flags 34 % of ko->en test sentences (33 % with 600M at 0.5), chrF++ 42 flagged vs 56 not (C23)
   max_overflow: 0.05 # s past the next segment's start
   # price ASSUMPTIONS for the cost stats (test plan T-11) - edit for your setup and cite sources in the report
   cost:
@@ -26,13 +36,54 @@ defaults:
     elevenlabs_usd_per_min: [0.33, 2.20]  # ElevenLabs Dubbing API range quoted in project tab C2b
 
 ko:
+  name: Korean
   whisper: ko
+  asr_model: large-v3   # read Korean (FLEURS, 100): CER 5.3 % vs 7.7 % turbo; conversation (KsponSpeech, 150): 11.7 vs 11.5 %; 2x slower (C23)
   nllb: kor_Hang
+  min_mt_conf: 0.5   # Korean output scores lower: flags 41 % of en->ko test sentences (43 % with 600M at 0.35), chrF++ 27 flagged vs 37 not (C23)
   sentence_end: '[.?!]$|(다|요|까|죠)$'
   join: " "
-  tts: {engine: mms, voice: facebook/mms-tts-kor, voices: {facebook/mms-tts-kor: {f0: 170, register: higher}}}   # MMS-TTS, CC BY-NC 4.0; Whisper round-trip: intelligible, small slips
+  tts:
+    engine: chatterbox_ml   # Chatterbox Multilingual (MIT) in .venv-chatterbox, built-in voice only (no prompt = no cloning);
+    voice: built-in         # Whisper round-trip CER 4.1 % vs MMS 15.3 %; 5.1 s per sentence on the RTX 4060 (C9a, 2026-10-15)
+    lang: ko
+    clone: chatterbox_ml   # a consented voice clone (web/clones.py) speaks Korean with Multilingual
+    voices: &chatterbox_voices   # built-in: measured with voice.median_f0, no f/m label. The rest: the English presets speaking Korean (Chatterbox
+              # Multilingual with a Kokoro reference, tts.preset_prompt): Whisper heard 8 Korean sentences as well as the built-in voice
+              # (2.3 % CER) for 20, 3-6 % for bm_daniel, bm_george, af_aoede, af_heart, af_bella; af_alloy left out at first (29 %, babbles
+              # after the sentence). f0 measured on their Korean speech; register = the preset's own label (test-results C24)
+      built-in: {f0: 113, register: lower}
+      <<: &english_presets
+        af_alloy: {f0: 137, register: higher, prompt: kokoro}   # back 2026-10-19 with tts.cut_babble: Korean 29.3 -> 8.1 %, Spanish 4.2 % (C24)
+        af_aoede: {f0: 154, register: higher, prompt: kokoro}
+        af_bella: {f0: 170, register: higher, prompt: kokoro}
+        af_heart: {f0: 170, register: higher, prompt: kokoro}
+        af_jessica: {f0: 177, register: higher, prompt: kokoro}
+        af_kore: {f0: 134, register: higher, prompt: kokoro}
+        af_nova: {f0: 147, register: higher, prompt: kokoro}
+        af_river: {f0: 160, register: higher, prompt: kokoro}
+        af_sarah: {f0: 163, register: higher, prompt: kokoro}
+        af_sky: {f0: 143, register: higher, prompt: kokoro}
+        am_adam: {f0: 111, register: lower, prompt: kokoro}
+        am_echo: {f0: 104, register: lower, prompt: kokoro}
+        am_eric: {f0: 136, register: lower, prompt: kokoro}
+        am_fenrir: {f0: 118, register: lower, prompt: kokoro}
+        am_liam: {f0: 115, register: lower, prompt: kokoro}
+        am_michael: {f0: 114, register: lower, prompt: kokoro}
+        am_onyx: {f0: 91, register: lower, prompt: kokoro}
+        am_puck: {f0: 105, register: lower, prompt: kokoro}
+        bf_alice: {f0: 167, register: higher, prompt: kokoro}
+        bf_emma: {f0: 165, register: higher, prompt: kokoro}
+        bf_isabella: {f0: 174, register: higher, prompt: kokoro}
+        bf_lily: {f0: 160, register: higher, prompt: kokoro}
+        bm_daniel: {f0: 115, register: lower, prompt: kokoro}
+        bm_fable: {f0: 112, register: lower, prompt: kokoro}
+        bm_george: {f0: 124, register: lower, prompt: kokoro}
+        bm_lewis: {f0: 99, register: lower, prompt: kokoro}
+    fallback: {engine: mms, voice: facebook/mms-tts-kor, voices: {facebook/mms-tts-kor: {f0: 170, register: higher}}}   # when .venv-chatterbox is missing; MMS-TTS, CC BY-NC 4.0
 
 en:
+  name: English
   whisper: en
   nllb: eng_Latn
   sentence_end: '[.?!]$'
@@ -40,6 +91,8 @@ en:
   tts:
     engine: kokoro
     voice: af_heart   # used when voice matching has no library
+    clone: chatterbox        # a consented voice clone (web/clones.py) speaks English with Turbo
+    expressive: chatterbox   # whole video switches to Chatterbox Turbo (built-in voice) when a reviewer adds a vocal tag it can do; needs .venv-chatterbox
     voices:   # measured median pitch (scripts/tag_voices.py); register = the preset's own f/m label, not pitch
       # left out: af_nicole (whispering style), am_santa (novelty voice)
       af_alloy: {f0: 138, register: higher}
@@ -68,3 +121,154 @@ en:
       bm_fable: {f0: 128, register: lower}
       bm_george: {f0: 126, register: lower}
       bm_lewis: {f0: 91, register: lower}
+
+# The other languages Chatterbox Multilingual speaks, with the same voices as Korean (its built-in voice and the English
+# presets; pitch measured on Korean speech). Recognition (Whisper) and translation (NLLB) cover them all; measured on
+# FLEURS in test-results C25. Hebrew left out (C25). Japanese and Chinese words are joined without spaces.
+ar:
+  name: Arabic
+  whisper: ar
+  nllb: arb_Arab
+  sentence_end: '[.?!؟]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: ar, clone: chatterbox_ml, voices: *chatterbox_voices}
+da:
+  name: Danish
+  whisper: da
+  nllb: dan_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: da, clone: chatterbox_ml, voices: *chatterbox_voices}
+de:
+  name: German
+  whisper: de
+  asr_model: large-v3   # whole-file CER on FLEURS: 1.8% vs 3.5% for turbo (C25)
+  nllb: deu_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: de, clone: chatterbox_ml, voices: *chatterbox_voices}
+el:
+  name: Greek
+  whisper: el
+  asr_model: large-v3   # whole-file CER on FLEURS: 3.2% vs 4.3% for turbo (C25)
+  nllb: ell_Grek
+  sentence_end: '[.;!;]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: el, clone: chatterbox_ml, voices: *chatterbox_voices}
+es:
+  name: Spanish
+  whisper: es
+  nllb: spa_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: es, clone: chatterbox_ml, voices: *chatterbox_voices}
+fi:
+  name: Finnish
+  whisper: fi
+  asr_model: large-v3   # whole-file CER on FLEURS: 4.5% vs 8.5% for turbo (C25)
+  nllb: fin_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: fi, clone: chatterbox_ml, voices: *chatterbox_voices}
+fr:
+  name: French
+  whisper: fr
+  asr_model: large-v3   # whole-file CER on FLEURS: 4.1% vs 10.0% for turbo (C25)
+  nllb: fra_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: am_michael, lang: fr, clone: chatterbox_ml, voices: *english_presets}   # built-in voice CER 66% vs 0.7% for the English preset (C25)
+hi:
+  name: Hindi
+  whisper: hi
+  asr_model: large-v3   # whole-file CER on FLEURS: 13.0% vs 16.8% for turbo (C25)
+  nllb: hin_Deva
+  sentence_end: '[.?!।]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: am_michael, lang: hi, clone: chatterbox_ml, voices: *english_presets}   # built-in voice CER 20% vs 6.0% for the English preset (C25)
+it:
+  name: Italian
+  whisper: it
+  nllb: ita_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: it, clone: chatterbox_ml, voices: *chatterbox_voices}
+ja:
+  name: Japanese
+  whisper: ja
+  nllb: jpn_Jpan
+  sentence_end: '[。？！.?!]$'
+  join: ""
+  tts: {engine: chatterbox_ml, voice: built-in, lang: ja, clone: chatterbox_ml, voices: *chatterbox_voices}
+ms:
+  name: Malay
+  whisper: ms
+  nllb: zsm_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: ms, clone: chatterbox_ml, voices: *chatterbox_voices}
+nl:
+  name: Dutch
+  whisper: nl
+  nllb: nld_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: nl, clone: chatterbox_ml, voices: *chatterbox_voices}
+"no":   # quoted: YAML reads a bare no as false
+  name: Norwegian
+  whisper: "no"
+  nllb: nob_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: "no", clone: chatterbox_ml, voices: *chatterbox_voices}
+pl:
+  name: Polish
+  whisper: pl
+  nllb: pol_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: pl, clone: chatterbox_ml, voices: *chatterbox_voices}
+pt:
+  name: Portuguese
+  whisper: pt
+  nllb: por_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: pt, clone: chatterbox_ml, voices: *chatterbox_voices}
+ru:
+  name: Russian
+  whisper: ru
+  nllb: rus_Cyrl
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: ru, clone: chatterbox_ml, voices: *chatterbox_voices}
+sv:
+  name: Swedish
+  whisper: sv
+  asr_model: large-v3   # whole-file CER on FLEURS: 2.9% vs 6.4% for turbo (C25)
+  nllb: swe_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: sv, clone: chatterbox_ml, voices: *chatterbox_voices}
+sw:
+  name: Swahili
+  whisper: sw
+  nllb: swh_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: am_michael, lang: sw, clone: chatterbox_ml, voices: *english_presets}   # built-in voice CER 29% vs 6.6% for the English preset (C25)
+tr:
+  name: Turkish
+  whisper: tr
+  asr_model: large-v3   # whole-file CER on FLEURS: 17.2% vs 23.3% for turbo (C25)
+  nllb: tur_Latn
+  sentence_end: '[.?!]$'
+  join: " "
+  tts: {engine: chatterbox_ml, voice: built-in, lang: tr, clone: chatterbox_ml, voices: *chatterbox_voices}
+zh:
+  name: Chinese
+  whisper: zh
+  nllb: zho_Hans
+  sentence_end: '[。？！.?!]$'
+  join: ""
+  tts: {engine: chatterbox_ml, voice: built-in, lang: zh, clone: chatterbox_ml, voices: *chatterbox_voices}

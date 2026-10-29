@@ -25,7 +25,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     # WhisperX's wav2vec2 alignment (11/11 vs 3/11 known pauses on FLEURS ko, 2026-10-05)
     # VAD filter and previous-text conditioning both made it skip whole sentences (12/12 vs 11/12, CER 9.9% vs ~20%)
     dev = device()
-    model = WhisperModel("large-v3-turbo", device=dev, compute_type="float16" if dev == "cuda" else "int8")
+    model = WhisperModel(cfg["src"].get("asr_model", "large-v3-turbo"), device=dev, compute_type="float16" if dev == "cuda" else "int8")
     # the original mix, not the separated voice stem: separation artefacts doubled the error rate
     # (FLEURS ko + phone rings: CER 9.5% on the mix vs 19.8% on vocals.wav, 2026-10-06)
     wav = work / "audio.wav"

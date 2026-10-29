@@ -12,8 +12,8 @@ Related: [architecture.md](architecture.md) (C4, stages, `languages.yaml`) · [t
 |---|---|---|
 | Language | Python 3.11 | Colab default is fine |
 | Audio / video | ffmpeg ≥ 6 (system binary) | Called with `subprocess.run` |
-| ASR + word timestamps | `faster-whisper` (`large-v3-turbo`, built-in word timestamps) | GPU float16; CPU int8 fallback |
-| Translation | `transformers` + `facebook/nllb-200-distilled-600M` | `sentencepiece` needed |
+| ASR + word timestamps | `faster-whisper` (`large-v3` for Korean, `large-v3-turbo` for English since 2026-10-16, test-results C23; built-in word timestamps) | GPU float16; CPU int8 fallback |
+| Translation | `ctranslate2` + NLLB-200 3.3B int8 (`KomorebiAI/nllb-200-3.3B-int8-ct2`, tokenizer `facebook/nllb-200-3.3B`); was `nllb-200-distilled-600M` until 2026-10-16 (test-results C23) | `sentencepiece` needed |
 | TTS | `kokoro` (English); `melotts` (Korean, Target) | Kokoro needs `espeak-ng` (apt) |
 | Audio arrays | `numpy`, `soundfile` | Mixing the dub track |
 | Config | `pyyaml` | `languages.yaml` |
@@ -255,8 +255,9 @@ From `run.json`: seconds of compute per minute of video, on Colab T4 and on CPU.
 Built 2026-10-06 with Meta MMS-TTS Korean (`facebook/mms-tts-kor`, CC BY-NC 4.0, local, needs `uroman`) instead of MeloTTS (hard to install on Windows). Whisper round-trip of the synthetic Korean was near word-perfect. Still needed for T-09: a fluent Korean rater and a licensed English clip.
 Original plan: English → Korean: add `melotts` adapter to `tts.py`, check `languages.yaml` entries, add an English test clip (e.g. MIT OCW, licence checked), repeat T-01/T-02/T-04 with a fluent Korean rater. No pipeline code changes beyond the adapter — this is the proof that the many → many design works.
 
-### C7. Multiple speakers (T-10) — optional
-pyannote speaker diarization (gated → `HF_TOKEN`) → `speaker` per word → per segment by majority. `languages.yaml` voice list → map speaker N to voice N.
+### C7. Multiple speakers (T-10) — **built** (`speakers.py`)
+Built 2026-10-15 without pyannote (no gated model, no `HF_TOKEN`): one voice fingerprint per sentence (`microsoft/wavlm-base-plus-sv`), sentences grouped by voice (average linkage, cosine threshold 0.3 in `languages.yaml`), S1 = the person who speaks most. Each speaker gets their own voice (C10), and transcripts can be downloaded by speaker. The reviewer renames, merges ("same person as…") or splits ("+ New speaker") in the editor; corrections are kept on re-runs. With the uploader's consent, a speaker can be cloned from the video for that project only (C13). The website also has it as its own tool, **Speaker Detection** (who speaks when, transcript by speaker, a speaker cloned into the uploader's voices with consent: private, never listed). Result: test results C21 — right on clearly different voices, merges similar ones (two men in the Breaking Bad scene). The fingerprints stay in memory; only the speaker label per sentence is saved.
+Original plan: pyannote speaker diarization (gated → `HF_TOKEN`) → `speaker` per word → per segment by majority. `languages.yaml` voice list → map speaker N to voice N.
 
 ### C8. Keep background sound (music, effects, a phone ringing) — **built** (`separate.py`, `mux.py`)
 Result 2026-10-06 (`scripts/background_check.py`, T-12): FLEURS Korean + 8 phone rings between sentences → ring level in the dub −0.0 dB vs. original (pass: within −3 dB); Korean Whisper on `background.wav` found 0 words (no voice leak); separation 9.5 s for 2:43 on an RTX 4060.
@@ -324,8 +325,8 @@ Note: the voice stem was rejected for ASR (artefacts doubled CER), but emotion a
 **Steps (in order, each one usable on its own)**
 1. **Punctuation fidelity — cheapest win (~½ day).** If the source sentence is a question/exclamation and the translation lost its `?`/`!`, restore it before TTS. Rising intonation on questions comes back for free with both Kokoro and MMS.
 2. **Speed and energy from the source (~½ day).** Per segment: TTS `speed` from the source speaking rate (Kokoro has `speed`; MMS has `speaking_rate`), gain from the source energy. Excited fast speech stays fast; a quiet aside stays quiet.
-3. **A better Korean voice — bake-off (1–2 days).** MMS is the most robotic part. Candidates with built-in voices and local, free licences: MeloTTS Korean (MIT), CosyVoice instruct mode with a preset Korean speaker (Apache 2.0; can take an emotion instruction), Chatterbox Multilingual with its stock voice (MIT; has an "exaggeration" knob). Score each on: Whisper round-trip error (intelligibility, already used), automatic naturalness MOS (UTMOS), speed on the RTX 4060, install pain on Windows, and a short listening test. Licences and Korean support to be verified during the bake-off.
-4. **Emotion transfer (2–3 days).** `express` stage + mapping from emotion label/intensity to whatever the chosen engine supports: CosyVoice instruction text ("speak sadly"), Chatterbox exaggeration value, Kokoro speed/gain only. Low-confidence emotions → neutral (a wrong emotion is worse than none).
+3. **A better Korean voice — bake-off (1–2 days).** *Decided 2026-10-15: Chatterbox Multilingual, built-in voice (MIT) — Whisper round-trip CER 4.1 % vs MMS 15.3 %, 5.1 s per sentence (test-results C9a/C9b); MMS stays as the fallback. A native-speaker listening test is still open.* MMS is the most robotic part. Candidates with built-in voices and local, free licences: MeloTTS Korean (MIT), CosyVoice instruct mode with a preset Korean speaker (Apache 2.0; can take an emotion instruction), Chatterbox Multilingual with its stock voice (MIT; has an "exaggeration" knob). Score each on: Whisper round-trip error (intelligibility, already used), automatic naturalness MOS (UTMOS), speed on the RTX 4060, install pain on Windows, and a short listening test. Licences and Korean support to be verified during the bake-off.
+4. **Emotion transfer (2–3 days).** *Emotion labels built 2026-10-16 as the `emotion` stage (after `speakers`): every source sentence gets the tags heard in it — emotion, laughs/sighs/gasps/coughs, whisper, question — shown dashed in the editor for the reviewer to keep or untick (test-results C22). The detection works on acted English (82 % of emotion tags right at 0.9); its effect on the dub did not show in a machine listener, and Chatterbox's exaggeration did nothing measurable in Korean.* *Partly built 2026-10-15 as delivery transfer (no emotion labels): each dubbed sentence follows the original's loudness and pitch (test-results C20). Breaths copied from the original were tried and removed after listening: too loud, they stood out.* `express` stage + mapping from emotion label/intensity to whatever the chosen engine supports: CosyVoice instruction text ("speak sadly"), Chatterbox exaggeration value, Kokoro speed/gain only. Low-confidence emotions → neutral (a wrong emotion is worse than none).
 5. **Evaluate (1 day)** — see tests below; keep each step only if it helps.
 
 **Timing with expression — the main trade-off.** Expressive speech is slower and has more pauses, and the time is already tight: on the 5:26 English → Korean video, 23 of 42 sentences were longer than their slot even with the flat voice (median 1.01×). Rule: **timing beats expression.** Order of tools, most natural-sounding first:
@@ -405,13 +406,110 @@ tts(text, chosen preset) ──► optional small pitch shift toward the speaker
 
 **Effort:** about 2–3 days single-speaker, +1 day once C7 diarization exists. **When:** Stretch, after the Target items; pairs naturally with C7 (multiple speakers) and C9 (expressive voice).
 
+### Product direction proposals (2026-10-14) — C11–C14
+
+Decisions from the team: **no lip sync for now**; cloud GPUs (Nosana or similar) are acceptable, so local-only is no longer a requirement. Status below is "planned"; items marked **gated** need an instructor answer before any code is written.
+
+#### C11. Doubtful parts coloured on the video timeline — **built 2026-10-14** (`report.timeline_html`, in report.html and the web page)
+- **What:** under the dubbed video, a bar the length of the video with one block per sentence, coloured by its flag (translation / ASR / timing / OK); hover shows source and translation, click jumps the video there. Like YouTube's chapter segments, but coloured by doubt.
+- **Where:** `report.html` (plain HTML5 `<video>` + a `<div>` bar, a few lines of JavaScript) and the same HTML in the web page.
+- **Prerequisite — flag quality:** the bar only helps if flags mean something. Today: FLEURS 5/15 flagged (4 really wrong), en→ko 33/42 flagged (threshold too strict for that pair) — a mostly red bar is noise. Set thresholds **per language pair** on the gold set first (T-07).
+- **Effort:** ~1 day. **Test:** block positions match segment times; clicking seeks; colours match `segments.json` flags.
+
+#### C12. Cloud deployment (Nosana or similar) — planned
+- **What:** run the same pipeline on a rented GPU instead of the user's machine. Nosana lists RTX 4090 at $0.40/h and A100 80 GB at $0.90/h (their page, 2026-10). Our measured speed is 26 s of processing per minute of video on an RTX 4060 → about **$0.003 per video minute** on a 4090 at that speed (4090 is faster, so this is an upper bound before overheads).
+- **Steps:** (1) Docker image with ffmpeg and model weights baked in (~10 GB; otherwise every job downloads ~5 GB first), (2) job definition: input video URL → outputs uploaded to storage, (3) a small web front (the course's FastAPI template) that submits jobs and shows results, (4) keep `dubbe` runnable locally as the free path.
+- **Costs to measure, not assume:** container start + model load time per job (dominates for short videos), storage/egress, idle time.
+- **Risks:** Nosana hosts are third-party machines — uploading unpublished lectures there is a data-protection decision (Q-003, Q-012); the course provides no budget ("don't default to paying") — Baseline must stay runnable for free; the "runs locally" point in the competitor analysis becomes "can run locally or on cheap GPUs".
+- **Effort:** ~1 week.
+
+#### C13. Clone your own voice — **built 2026-10-15** (approved, Q-010; `web/clones.py`, Voices → Clone my voice)
+- **As built:** live browser recording of three sentences picked at that moment (no uploads), valid 30 min; Whisper must hear them (CER ≤ 0.3, ≥ 8 s of voice); recording stored encrypted (Fernet, `DUBBE_VOICE_KEY`; without it cloning is off) and decrypted only for one job; engine Chatterbox Turbo (English) / Multilingual (Korean) with the recording as prompt; Perth watermark + AI label in the file comment. Tested 2026-10-15 with a synthetic stand-in (Kokoro bm_george): speaker similarity to the recording 0.96 (English) and 0.89 (Korean) vs 0.52–0.60 for the built-in voices (Chatterbox's voice encoder); check took 63 s.
+- **Team decision 2026-10-14:** build it, with consent from the user for their own voice only. The course rule is unchanged, so instructor approval (Q-010) is still needed before it counts in the graded scope.
+- **Conflict:** project tab Risk: "Voice cloning is out of scope … This applies even to your own team members' voices." Building this without written instructor approval risks the grade.
+- **If approved, minimum safe design:** only the user's **own** voice; consent check before cloning — the user reads a random sentence on camera/mic, Whisper verifies the text, a speaker-similarity check verifies it is the same voice as the reference clip (ElevenLabs uses a similar "Voice Captcha"); every cloned dub carries the model watermark (Chatterbox embeds one by default) **and** a visible/audible "AI-dubbed voice" notice (Korea AI Basic Act, in force since 2026-01-22: realistic synthetic content needs a clear label); voice reference stored encrypted, deletable on request (voice can be biometric data under PIPA → separate consent).
+- **Model:** Chatterbox Multilingual (MIT, Korean supported, watermark) or CosyVoice (Apache-2.0, Korean). Not XTTS-v2 (non-commercial licence). Added as one more engine in `tts.py`.
+- **Does not solve multiple speakers.** Cloning decides *which voice*; diarization decides *who speaks when*. Multi-speaker still needs C7 (pyannote). Cloning the *other* people in a video means cloning people who did not consent — exactly what the course and the law restrict.
+- **Effort:** ~1 week (engine 1 day, consent check 2 days, labelling 0.5 day, evaluation 1–2 days).
+
+#### C15. Record your own voice for lines — planned (no cloning needed)
+- **What:** for any sentence — typically lines of other people in the video, who never consented to being cloned — the user records the line with their own microphone; the recording replaces the synthesized audio for that sentence (`tts/<id>.wav`, `recorded: true` in `segments.json`) and goes through the same timing and mixing. ElevenLabs' Dubbing Studio has comparable voiceover tracks.
+- **Why:** solves consent for third parties without cloning anyone; works with the course rule as it stands.
+- **Limits:** manual work per line (defeats automation for long videos); still needs speaker detection (C7) to know which lines belong to whom; recordings are personal data → stay in `work/`, never in the repo.
+- **Effort:** 1–2 days (record button per sentence in the web page, store, rerun from `timing`).
+
+#### C16. Rate parts of the video on the timeline — **built 2026-10-14** (`ratings.py`, web page tab "Review & rate", `scripts/ratings_summary.py`); tested in a browser: click a block → video jumps + sentence selected; evaluation mode greys all flags
+- **What:** click a sentence block on the coloured timeline (C11) → mark what is wrong (wrong meaning / wrong word / missing / mispronounced / cut off / timing) → score 0–100; saved to `ratings.json` per rater. This is the WMT human-evaluation method (Error Span Annotation, see [evaluation-research.md](evaluation-research.md)).
+- **Evaluation mode:** flags **hidden** and a random sample of sentences — otherwise raters follow the flags and the ratings cannot test the flags (T-07).
+- **Counts for the Baseline item only if** raters understand the target language, and ≥ 2 raters per sentence for reported numbers (agreement between raters is low even for experts).
+- **Effort:** 2–3 days (needs the web page: a static `report.html` cannot save ratings).
+
+#### C17. Error propagation with a teacher system — **built 2026-10-14** (`propagation.py`, `scripts/eval_propagation.py`); first run on FLEURS with the human reference, ElevenLabs reference still pending Q-013
+- **Result (FLEURS ko→en, 12 sentences, chrF):** ASR CER 9.9 %; translation 49.4 as delivered vs 60.1 with the correct transcript → ASR errors cost **10.8 points**; translator alone 39.9 points from the human reference; TTS re-transcription WER **2.6 %**. Blame per sentence: 7 ok, 2 ASR, 2 translation, 1 both. Example: ASR "가나 안에는" for "가나안에는" → "Ghana" instead of Canaan. Limitation: chrF misses meaning errors ("below sea level" for "below freezing" scored ok) → add COMET / LLM judge next.
+- **Teacher:** ElevenLabs dubbing API returns its source transcript and per-segment translation, so we get a teacher output **per stage**. Allowed for **evaluation only** — its Prohibited Use Policy forbids using output to train or fine-tune models.
+- **Design:** oracle substitution — run A (all ours), B (teacher transcript → our translation), C (teacher transcript + teacher translation) → A vs B = our ASR's damage, B vs C = our translation's damage; TTS errors by re-transcribing our dub. Details in [evaluation-research.md](evaluation-research.md) §3.
+- **Teacher ≠ truth:** validate the teacher on ~50 human-checked sentences first; otherwise report "agreement with ElevenLabs", not accuracy. Triangulate with reference-free metrics (MetricX-24-QE, CometKiwi) and an LLM judge with a fixed prompt.
+- **Cost:** ElevenLabs automatic dubbing ≈ 3,000 credits/min → a 20–30 min test set fits one month of the Creator plan ($22, 121k credits). Course gives no budget and test clips would be uploaded to ElevenLabs (Q-013); opt out of ElevenLabs training on our data.
+- **Effort:** ~1 week.
+
+#### C18. Bigger or fine-tuned models — planned (after C17 measures where errors come from); the concrete plan is now C20
+- **Bigger off-the-shelf first:** translation with an open LLM on a rented GPU (e.g. Gemma-3-27B fits one 80 GB GPU, ~$0.90/h on Nosana), compared on the same test set. WMT25 has no Korean–English human results, so measure, don't assume. Hunyuan-MT is excluded (licence excludes South Korea).
+- **Fine-tuning only with a legal data source:** in-domain Korean–English pairs; commercial teacher output (ElevenLabs, most LLM APIs) is not allowed as training data. Open-weight teachers with permissive licences are.
+- **Decide with C17's numbers:** improve the stage that causes most of the damage.
+
+#### C19. Delivery tags per sentence ([whisper], [laugh], [slow] …) — **built 2026-10-14** (`tags.py`, Review tab)
+- Reviewer ticks tags for a sentence → "Re-dub with my changes" re-runs from TTS with the same options. Timeline block shows ✦, tooltip lists tags.
+- **Work with every voice and language (DUBBE applies them):** [slow] / [fast] (0.85× / 1.15× speed), [soft] / [loud] (−6 / +4 dB), [pause] (0.5 s before), [question] (forces a "?" ending → rising pitch). Tested: [slow] took a sentence from 7.22 s to 8.42 s.
+- **Vocal tags need an expressive engine:** [whisper], [laugh], [sigh], [gasp], [cough], [excited], [sad], [angry]. Kokoro and MMS perform none → recorded as "not performed" in `segments.json`, the report and the page instead of being dropped silently.
+- **Expressive engine — built 2026-10-15:** Chatterbox Turbo (MIT, English) in its own environment `.venv-chatterbox` (chatterbox-tts 0.1.7 pins torch 2.6.0, numpy < 2, transformers 5.2.0 — would break the main one), called by the `chatterbox` adapter in `tts.py` through `chatterbox_worker.py`; weights ~3.3 GB. Built-in voice only (no reference clip, no cloning); output carries Resemble's watermark. When an English video has a vocal tag the engine can do, the **whole** video switches to it (one voice per video); without the environment it stays on Kokoro and tags are "not performed". Tokens from its `added_tokens.json`: whisper→[whispering], laugh, sigh, gasp, cough, angry; no token for excited or sad. Measured on FLEURS (15 sentences): no tag read aloud as a word; [sigh] audible (Whisper hears "Huh."); [laugh] at the start lowers voiced frames 99 → 76–81 % (something non-speech, needs a listener), at the end nothing; **[whispering] is not a real whisper** (same sentence 98 % and 78 % voiced in two runs; a whisper is mostly unvoiced); TTS stage **122.9 s vs 6.5 s** with Kokoro. Korean vocal tags: only ElevenLabs v3 found (paid, external; Q-013). **Update 2026-10-15:** [whisper], [excited], [sad], [angry] and [question] are now made by DUBBE on the audio for every voice (C19b in test-results); Chatterbox is used only for [laugh], [sigh], [gasp], [cough].
+
+#### C14. Voice marketplace — **built 2026-10-15 without payouts** (Q-011 under review; Voices page, admin tab "Voice clones")
+- **As built:** owner opts in with a separate agreement → admin listens and lists or rejects → other users pick it in Text to Speech or a dub's editor (any language); owner can stop sharing at any time (no new uses), admin can take it out or delete it after a report; every use is counted (`voice_uses`) and the owner sees what they would earn at $0.03 / 1,000 characters. No payments, payouts, tax or licensing contracts.
+- **Store front (`/app/market`, after Google Play / plugin marketplaces):** search (name, description, tags, publisher), filters by recording language and category (6), sort by popular / newest / top rated, featured row, voice cards with cover art and ratings, DUBBE originals row (the 27 presets); listing page per voice with sample, stats (rating, uses by others, added), description and tags, trust notes, "Get — add to my voices" (only added voices appear in the voice pickers), 1–5-star ratings with a histogram and reviews (one per user, only after getting it, not by the owner), more from the publisher; publishers write the listing (description, category, up to 3 tags) when they publish and can edit it.
+- **Voice Studio (`/app/studio`, the publisher's console):** totals over all their voices (uses and adds by others, rating, would earn), each voice with a stepper Recorded → Checked → Listing → In review → Live; the voice page shows the check while it runs, then a listing editor with a live preview of the store card and the listing page, counters, at most 3 tags, Save draft / Publish, the admin's reason after a rejection, latest reviews. Recording a voice leads straight into it. Promotion: sidebar section with a "New" badge, a trending strip and a tile on the app home, "more voices" links next to the voice pickers, a teaser with the real count on the public home page. "Get" works in place (button turns into "Open", toast); the orb of a voice moves from its card to its page (cross-document View Transitions; off with reduced motion).
+- **Reality check:** ElevenLabs already runs this (Voice Library: Professional Voice Clones shared after a voice check and manual review; owners paid ≈ $0.03 per 1,000 characters; ~$22M paid out in total; ~10,000 voices). A marketplace needs identity and consent verification, payments and payouts (e.g. Stripe Connect), tax handling, licensing terms, revocation/takedown, abuse moderation — none of which is graded AI work in this course, and all of it depends on C13 being allowed.
+- **Proposal:** business-model slide + clickable mock-up + the consent/licensing rules written down; no build in this semester.
+
+#### C20. Language quality upgrade — fine-tuned and distilled models for all languages, plus Uzbek — planned 2026-10-19 (decisions open)
+- **Goal:** the best quality we can reach in all 22 languages and in Uzbek (not supported yet), measured, not assumed.
+- **Where it runs — decided:** a rented GPU **by the hour, for training only**; DUBBE keeps running on our laptop (RTX 4060, 8 GB). Running DUBBE on a rented GPU all month (≈ $900–1,500/month for an always-on 80 GB GPU; ≈ half for a 48 GB one) is out of our budget. Consequence: every trained model must run in 8 GB — models run one stage at a time, so each stage may use the whole GPU.
+- **Why not cut the "language part" out of a big model:** a model's skills are spread over all its weights; deleting parts breaks it. The working alternatives:
+  1. **Translation-only models that already exist** (checked 2026-10-19 on Hugging Face; 4-bit versions ≈ 5 GB fit the laptop):
+
+     | Model | Size | Korean | Uzbek | Licence (model card) |
+     |---|---|---|---|---|
+     | TranslateGemma (Google) | 4B / 12B | 55 languages, list not on the card — test | ? | Gemma terms |
+     | Seed-X (ByteDance) | 7B | ✓ | ✗ | "other" — check |
+     | Aya Expanse (Cohere) | 8B | ✓ | ✗ | CC BY-NC |
+     | Tower-Plus (Unbabel) | 9B | ✓ | ✗ | CC BY-NC-SA |
+     | NLLB (now) / MADLAD | 3.3B / 3–10B | ✓ | ✓ | CC BY-NC / Apache 2.0 |
+
+     Hunyuan-MT stays excluded (licence excludes South Korea, C18).
+  2. **Distillation:** a large open model, rented for hours, translates lecture and dialogue text with the conversation around each line (the "teacher"); the winning small model is fine-tuned on it (LoRA, the "student"). Teacher licences must allow it — not ElevenLabs or commercial APIs (C17, C18).
+  3. **Vocabulary trimming:** drop the tokens of languages we do not use — smaller, same quality for ours.
+  4. **4-bit compression** (GGUF via `llama-cpp-python`, one new dependency).
+- **Phases:**
+
+  | # | Phase | Where | Time |
+  |---|---|---|---|
+  | 0 | Translation shoot-out: the models above vs NLLB-3.3B on the 529 Korean–English pairs (test-results C23) and FLEURS for every language, with and without conversation context; quality, speed, memory. Uzbek baselines: Whisper vs two Uzbek fine-tunes (`hostmepanda/whisper-large-v3-turbo-uzbek-ct2`, MIT; `navai-uz/whisper-medium-uzbek`, Apache 2.0), NLLB / MADLAD en↔uz, available Uzbek voices | laptop, free | 2–3 days |
+  | 1 | Translation distillation for all our pairs incl. Uzbek; LoRA on the Phase 0 winner; 4-bit; measured again | rented, ~20–40 GPU-h | 3–4 days |
+  | 2 | Recognition: fine-tune Whisper where it is weak (test-results C23, C25): Uzbek, Swahili 26 %, Turkish 17 %, Hindi 13 %, Korean conversation 11.5 %, Malay 10 %, Chinese 9 %, Japanese 7 %, Hebrew 29 % (to bring it back). Kept only if it beats the base model on held-out data (the Korean fine-tune we tried was 3× worse) | rented, ~20–40 GPU-h | 3–5 days |
+  | 3 | Voices: fine-tune Chatterbox Multilingual per language, in order of need — Uzbek (no voice yet), Hebrew (needs `dicta_onnx`), Japanese 9.6 %, Swahili 6.6 %, Hindi 6.0 %, Greek 6.0 %, Polish 5.4 %, then Korean for naturalness | rented, ~40–80 GPU-h | 1–2 weeks |
+  | 4 | Proof on the laptop: real dubs per upgraded language, native-listener tests, test results, site texts | laptop | 3–4 days |
+
+  GPU: one RTX 4090 (24 GB, roughly $0.3–0.7/h) for most training; an A100 80 GB (roughly $1–2/h) only for a few hours if the teacher is large. Total ≈ 100–200 GPU-hours ≈ **$50–300 once** (prices to check when renting). ≈ 3–4 weeks of calendar time.
+- **Uzbek:** Whisper and NLLB (`uzn_Latn`) already cover it; Chatterbox does not. Voice options: (a) `Tohirju/chatterbox-mtl-uzbek` — a Chatterbox Multilingual fine-tune (MIT, gated: needs a Hugging Face account and an access request; its card claims 14.8 % median word errors on FLEURS-uz with its own recogniser, uses the Turkish language token; 0 downloads — verify); (b) Meta MMS-TTS Uzbek (one robotic voice, Cyrillic only, CC BY-NC); (c) our own Chatterbox fine-tune with a real Uzbek token and letters (oʻ gʻ). Training data: ISSAI Uzbek Speech Corpus (MIT, ≈ 9.5 GB; a CC BY 4.0 copy has 100,767 training utterances), Common Voice Uzbek (CC0, from Mozilla), FLEURS-uz (CC BY 4.0, test split held out); YouTube-sourced sets are left out (rights of the audio unclear). For the best voice: 3–5 h of clean recordings from each of 2–4 consenting native speakers, with written consent (training on a voice is cloning, same rules as C13).
+- **Rules:** only public datasets and consented recordings go to a rented machine — never users' videos or clones; trained models stay non-commercial (NLLB licence); every result measured on held-out tests against Phase 0 and kept only if better; "best" claimed only where native listeners confirmed it — automatic checks (Whisper round trip, speaker similarity, a naturalness score) elsewhere; no audio or data in the repo.
+- **Decisions open:** start Phase 0; Uzbek recordings yes/no and who; which languages have native listeners; instructor approval for training on a rented GPU and for the recordings (Q-014).
+
 ---
 
 ## Phase D — Stretch (only if chosen Target items are done)
 
 - Larger human watchability study.
 - Qwen3 vs. NLLB comparison on the gold set.
-- Fine-tuning / distillation — only with instructor approval.
+- Fine-tuning / distillation — only with instructor approval; plan in C20 (Q-014).
 - Out of scope: voice cloning, lip sync.
 
 ## Phase E — Mid-course review (≈ Week 9) and final delivery (Weeks 14–15)

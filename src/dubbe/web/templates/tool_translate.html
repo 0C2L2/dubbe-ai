@@ -1,0 +1,31 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item %}
+{% block title %}Translate — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Create</span><h1 class="app-h1">Translate</h1>
+<form method="post" action="/app/translate" class="tool">
+  <div class="tool-main">
+    <div class="lang-row">
+      <select name="src" aria-label="From" data-src>{% for l in langs %}<option value="{{ l }}" {{ 'selected' if (form.src or 'ko') == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select>
+      <button type="button" class="secondary icon" data-swap aria-label="Swap languages">⇄</button>
+      <select name="tgt" aria-label="To" data-tgt>{% for l in langs %}<option value="{{ l }}" {{ 'selected' if (form.tgt or 'en') == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select>
+    </div>
+    <textarea name="text" rows="11" maxlength="{{ MAX_CHARS.translate }}" required aria-label="Text to translate"
+      placeholder="Paste a script, slide notes or a transcript. Each sentence is translated and checked on its own.">{{ form.text or "" }}</textarea>
+    <div class="editor-foot"><span><span data-count>0</span> / {{ "{:,}".format(MAX_CHARS.translate) }} characters</span></div>
+  </div>
+  <aside class="tool-side">
+    <div class="feature-list">
+      <div>{{ icon("shield") }}<span><b>Confidence per sentence</b> the model's own certainty; low ones are marked</span></div>
+      <div>{{ icon("list") }}<span><b>Alternatives</b> two other wordings for each sentence</span></div>
+    </div>
+    <button class="block" style="margin-top:18px">Translate</button>
+    <p class="muted small" style="margin-top:14px">NLLB-200 (non-commercial licence). A confident translation can still be wrong —
+      read the result. Free during the beta (up to {{ "{:,}".format(MAX_CHARS.translate) }} characters).</p>
+  </aside>
+</form>
+<section class="app-sec">
+  <div class="row-head"><h2>Recent</h2><a href="/app/history?kind=translate">All translations →</a></div>
+  {% for x in recent %}{{ task_item(x) }}{% else %}<p class="muted">Nothing yet — your translations appear here.</p>{% endfor %}
+</section>
+{% endblock %}

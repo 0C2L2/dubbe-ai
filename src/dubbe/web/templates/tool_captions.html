@@ -1,0 +1,32 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item, dropzone %}
+{% block title %}Subtitles — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Create</span><h1 class="app-h1">Subtitles</h1>
+<form method="post" action="/app/captions" enctype="multipart/form-data" class="tool">
+  <div class="tool-main">
+    {{ dropzone("cc", "Drop a video here, or click to choose", "MP4, MOV, MP3, WAV, M4A, OGG or FLAC · up to 2 GB · " ~ ("no limits (admin)" if admin else left ~ " min left this month"),
+                ".mp4,.mov,.m4v,.mp3,.wav,.m4a,.ogg,.flac,audio/*,video/*", left) }}
+    <div class="feature-list">
+      <div>{{ icon("users") }}<span><b>A colour per speaker</b> white, yellow, cyan, green — the broadcast convention</span></div>
+      <div>{{ icon("cc") }}<span><b>Every format</b> SRT for any platform, coloured SRT, WebVTT and ASS</span></div>
+      <div>{{ icon("film") }}<span><b>Burned in</b> on request: an MP4 with the captions in the picture</span></div>
+    </div>
+  </div>
+  <aside class="tool-side">
+    <label>Spoken language
+      <select name="src">{% for l in langs %}<option value="{{ l }}" {{ 'selected' if (form.src or 'ko') == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select></label>
+    <label>Also translated into
+      <select name="to"><option value="">No translation</option>{% for l in langs %}<option value="{{ l }}" {{ 'selected' if form.to == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select></label>
+    <label><input type="checkbox" name="rights" required> I own this file or may use it.</label>
+    <button class="block">Make subtitles</button>
+    <p class="muted small" style="margin-top:14px">Speech recognition, then speakers told apart by voice — similar voices can be taken
+      for one person. Name the speakers, then burn the captions into the video if you need them in the picture. Counts the file's
+      length against your monthly minutes. A dub's captions: Download → Make the video with captions.</p>
+  </aside>
+</form>
+<section class="app-sec">
+  <div class="row-head"><h2>Recent</h2><a href="/app/history?kind=captions">All subtitles →</a></div>
+  {% for x in recent %}{{ task_item(x) }}{% else %}<p class="muted">Nothing yet — your subtitles appear here.</p>{% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_parts.html" import sentence_carousel %}
+{% block title %}Examples — DUBBE{% endblock %}
+{% block main %}
+<h1>Examples</h1>
+<p class="muted">Only clips we are allowed to publish are shown here. Each dub is exactly what DUBBE produced — no
+  human corrections — so you can see the flagged sentences and judge the result yourself.</p>
+{% for e in examples %}
+<article>
+  <header><strong>{{ e.title }}</strong></header>
+  <p>Original: <video src="/examples/{{ e.slug }}/original" controls preload="metadata" style="width:100%;max-height:320px;background:#000"></video></p>
+  <p>Dubbed, with review flags (click a block to jump):</p>
+  {{ e.timeline | safe }}
+  <details><summary>All sentences ({{ e.segs | length }})</summary>
+    <table class="small"><thead><tr><th>#</th><th>Original</th><th>Dub</th><th>Check</th></tr></thead><tbody>
+    {% for s in e.segs %}<tr><td>{{ s.id }}</td><td>{{ s.src_text }}</td><td>{{ s.tgt_text }}</td>
+      <td>{% for f in s.flag or [] %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% else %}<span class="chip ok">OK</span>{% endfor %}</td></tr>{% endfor %}
+    </tbody></table></details>
+  <footer><small class="muted">{{ e.credit }}</small></footer>
+</article>
+{{ sentence_carousel(e) }}
+{% else %}
+<p class="notice">No example has been dubbed on this installation yet. (Run <code>python scripts/make_fleurs_clip.py</code>
+  and dub it into <code>work/</code> to show the FLEURS example.)</p>
+{% endfor %}
+<p>More examples will be added when we have lecture clips with the speaker's written consent.</p>
+<p><a href="/signup" role="button">Try your own video</a></p>
+{% endblock %}

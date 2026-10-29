@@ -1,0 +1,36 @@
+{% extends "app_base.html" %}
+{% block title %}Clone my voice — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow"><a href="/app/voices">Voices</a></span><h1 class="app-h1">Clone my voice</h1>
+{% if error %}<p class="notice error">{{ error }}</p>{% else %}
+<form class="tool" method="post" action="/app/voices/{{ v.id }}/record" enctype="multipart/form-data" data-recorder>
+  <div class="tool-main">
+    <div class="card">
+      <span class="eyebrow">Read this aloud</span>
+      <p class="script" lang="{{ v.lang }}">{{ v.script }}</p>
+      <div class="rec-bar">
+        <button type="button" data-rec><span class="rec-dot"></span>Record</button>
+        <button type="button" class="secondary" data-stop disabled>Stop</button>
+        <span class="rec-time" data-time>0:00</span>
+      </div>
+      <audio controls data-playback hidden></audio>
+      <p class="muted small">A quiet room and your normal voice, about 15 seconds. The sentences were picked just now and are valid for
+        30 minutes. Files cannot be uploaded: only a voice recorded live here can be cloned.</p>
+      <p class="small" data-rec-msg role="status"></p>
+    </div>
+  </div>
+  <aside class="tool-side">
+    <label>Name of the voice <input name="name" maxlength="60" required placeholder="e.g. My voice"></label>
+    <p class="muted small" style="margin-top:-8px">Sentences in {{ NAMES[v.lang] }} ·
+      {% set other = "ko" if v.lang == "en" else "en" %}<a href="/app/voices/new?lang={{ other }}">read in {{ NAMES[other] }} instead</a></p>
+    <label class="rights"><input type="checkbox" name="own" required><span>This is <b>my own voice</b>, and I am recording it now.</span></label>
+    <label class="rights"><input type="checkbox" name="consent" required><span>I agree that DUBBE keeps an <b>encrypted recording of
+      my voice</b> to make a clone of it — for my own use, and for other users only if I later choose to share it. I can delete it at
+      any time (<a href="/privacy">privacy</a>).</span></label>
+    <button class="block" data-submit disabled>Check and create my voice</button>
+    <p class="muted small" style="margin-top:12px">The clone speaks every DUBBE language; your accent may carry over. Everything it says
+      is watermarked and labelled as AI.</p>
+  </aside>
+</form>
+{% endif %}
+{% endblock %}

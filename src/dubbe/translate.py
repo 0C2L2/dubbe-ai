@@ -1,57 +1,44 @@
+import math
 from pathlib import Path
 
 from . import device, free_gpu, read_json, write_json
 
-MODEL = "facebook/nllb-200-distilled-600M"
+# NLLB-200 3.3B (CC BY-NC 4.0) in int8 for CTranslate2, the engine faster-whisper already uses: 3.4 GB on disk, ~3.5 GB of
+# GPU memory. Against the distilled 600M it scored 3-4 chrF++ higher on TED talks, everyday sentences and FLEURS, in both
+# directions, and fixed "Newt Churchill" and "below sea level" (test-results C23). The int8 conversion is not Meta's own:
+# CTranslate2 reads its weights in C++ (no Python code from the download runs); the tokenizer is Meta's.
+MODEL = "KomorebiAI/nllb-200-3.3B-int8-ct2"
+TOKENIZER = "facebook/nllb-200-3.3B"
 N_ALTS = 4
-BATCH = 8  # sentences per generate call
-
-
-def confidence(model, inputs, seqs, pad_id: int, chunk: int = 8) -> list[float]:
-    """Mean per-token probability of each generated sequence (length-normalised, 0..1),
-    from one teacher-forced forward pass. generate(output_scores=True) would give the same
-    number but keeps a 256k-vocab score table per beam per step and ran out of 8 GB GPU memory."""
-    import torch
-
-    rep = {k: v.repeat_interleave(len(seqs) // len(inputs["input_ids"]), 0) for k, v in inputs.items()}
-    out = []
-    for i in range(0, len(seqs), chunk):
-        dec, labels = seqs[i:i + chunk, :-1], seqs[i:i + chunk, 1:]
-        with torch.no_grad():
-            logits = model(**{k: v[i:i + chunk] for k, v in rep.items()}, decoder_input_ids=dec).logits
-        lp = logits.float().log_softmax(-1).gather(-1, labels.unsqueeze(-1)).squeeze(-1)
-        mask = labels != pad_id
-        out += ((lp * mask).sum(1) / mask.sum(1)).exp().tolist()
-    return out
 
 
 def run(video: Path, work: Path, cfg: dict) -> None:
-    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+    import ctranslate2
+    from huggingface_hub import snapshot_download
+    from transformers import AutoTokenizer
 
     data = read_json(work / "segments.json")
     todo = [s for s in data["segments"] if not s["edited"]]  # human edits always win
     dev = device()
-    tok = AutoTokenizer.from_pretrained(MODEL, src_lang=cfg["src"]["nllb"])
-    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL).to(dev)
-    tgt_id = tok.convert_tokens_to_ids(cfg["tgt"]["nllb"])
+    tok = AutoTokenizer.from_pretrained(TOKENIZER, src_lang=cfg["src"]["nllb"])
+    tr = ctranslate2.Translator(snapshot_download(MODEL), device=dev, compute_type="int8_float16" if dev == "cuda" else "int8")
+    src = [tok.convert_ids_to_tokens(tok.encode(s["src_text"])) for s in todo]
+    # N best beams per sentence: the best is used, the rest let the shorten stage pick a shorter wording. The score is the
+    # log-probability divided by the length (length_penalty 1, the default), so exp() is the confidence as before: the
+    # mean token probability, 0..1
+    res = tr.translate_batch(src, target_prefix=[[cfg["tgt"]["nllb"]]] * len(src), beam_size=8, num_hypotheses=N_ALTS,
+                             return_scores=True, max_batch_size=16, max_decoding_length=256) if src else []
+    for s, toks, r in zip(todo, src, res):
+        alts = {}
+        for hyp, score in zip(r.hypotheses, r.scores):
+            text = tok.decode(tok.convert_tokens_to_ids(hyp[1:]), skip_special_tokens=True).strip()  # [1:]: the language token
+            alts.setdefault(text, round(math.exp(score), 3))
+        s["alts"] = [{"text": t, "conf": c} for t, c in sorted(alts.items(), key=lambda x: -x[1])]
+        s["tgt_text"] = s["alts"][0]["text"]
+        s["mt_conf"] = s["alts"][0]["conf"]
+        # tokens processed (nothing is billed: the model runs locally), for the stats / API comparison
+        s["mt_tokens"] = [len(toks), len(tok(s["tgt_text"])["input_ids"])]
 
-    for i in range(0, len(todo), BATCH):
-        batch = todo[i:i + BATCH]
-        inputs = tok([s["src_text"] for s in batch], return_tensors="pt", padding=True).to(dev)
-        # N best beams per sentence: the best is used, the rest let the shorten stage pick a shorter wording
-        seqs = model.generate(**inputs, forced_bos_token_id=tgt_id, num_beams=8, num_return_sequences=N_ALTS)
-        texts = tok.batch_decode(seqs, skip_special_tokens=True)
-        confs = confidence(model, inputs, seqs, tok.pad_token_id)
-        for k, s in enumerate(batch):
-            alts = {}
-            for text, c in zip(texts[k * N_ALTS:(k + 1) * N_ALTS], confs[k * N_ALTS:(k + 1) * N_ALTS]):
-                alts.setdefault(text.strip(), round(c, 3))
-            s["alts"] = [{"text": t, "conf": c} for t, c in sorted(alts.items(), key=lambda x: -x[1])]
-            s["tgt_text"] = s["alts"][0]["text"]
-            s["mt_conf"] = s["alts"][0]["conf"]
-            # tokens processed (nothing is billed: the model runs locally), for the stats / API comparison
-            s["mt_tokens"] = [int(inputs["attention_mask"][k].sum()), len(tok(s["tgt_text"])["input_ids"])]
-
-    del model
+    del tr
     free_gpu()
     write_json(work / "segments.json", data)

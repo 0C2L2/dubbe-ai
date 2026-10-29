@@ -39,4 +39,5 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     free_gpu()
     # voice stem at 16 kHz mono for pitch analysis (voice stage) - not for ASR, see asr.py
     ffmpeg("-i", str(work / "vocals44.wav"), "-ac", "1", "-ar", "16000", str(work / "vocals.wav"))
-    (work / "vocals44.wav").unlink()
+    if not cfg.get("keep_voice_hq"):  # the website's voice isolator keeps the full-quality voice
+        (work / "vocals44.wav").unlink()

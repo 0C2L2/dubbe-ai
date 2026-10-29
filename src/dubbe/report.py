@@ -10,9 +10,12 @@ STAGE = {"low_asr": "ASR", "low_mt": "Translation", "overflow": "Timing"}
 
 def flags(s: dict, cfg: dict) -> list[str]:
     f = []
-    if s.get("asr_conf") is not None and s["asr_conf"] < cfg["min_asr_conf"]:
+    # per-language thresholds: confidences differ by language (en->ko median 0.40 vs ko->en 0.53 on our clips)
+    min_asr = cfg.get("src", {}).get("min_asr_conf", cfg["min_asr_conf"])
+    min_mt = cfg.get("tgt", {}).get("min_mt_conf", cfg["min_mt_conf"])
+    if s.get("asr_conf") is not None and s["asr_conf"] < min_asr:
         f.append("low_asr")
-    if s.get("mt_conf") is not None and s["mt_conf"] < cfg["min_mt_conf"]:
+    if s.get("mt_conf") is not None and s["mt_conf"] < min_mt:
         f.append("low_mt")
     if (s.get("overflow") or 0) > cfg["max_overflow"]:
         f.append("overflow")
@@ -54,7 +57,7 @@ def stats(video: Path, work: Path, data: dict, cfg: dict) -> dict:
                    "max_speed_up": max((s.get("stretch") or 1) for s in segs) if segs else 1,
                    "picture_slowed": sum((s.get("slow") or 1) > 1 for s in segs),
                    "shortened": sum(bool(s.get("shortened")) for s in segs)},
-        "voice": data.get("speakers", {}).get("S1", {}).get("voice"),
+        "voice": data.get("tts_used", {}).get("voice") or data.get("speakers", {}).get("S1", {}).get("voice"),
         "dub_gain_db": data.get("dub_gain_db"),
         "cost_usd": cost(compute_s, video_s, cfg["cost"]),
     }
@@ -62,6 +65,121 @@ def stats(video: Path, work: Path, data: dict, cfg: dict) -> dict:
 
 def _t(sec: float) -> str:
     return f"{int(sec // 60)}:{sec % 60:04.1f}"
+
+
+COLOR = {"low_mt": "#e5484d", "low_asr": "#f76b15", "overflow": "#e2a336"}  # first flag decides the colour
+
+
+def placed(s: dict) -> tuple[float, float]:
+    """Where a sentence's dub sits on the dubbed video: start and length in seconds (timeline, subtitles)."""
+    a = s.get("placed_start") if s.get("placed_start") is not None else s["start"]
+    return a, (s.get("tts_dur") or s["end"] - s["start"]) / (s.get("stretch") or 1)
+
+
+def transcript(segs: list[dict], field: str, speakers: dict | None = None) -> str:
+    """Plain transcript, one line per sentence with its time and - when there are several - who says it."""
+    names = {k: v.get("name") or k for k, v in (speakers or {}).items()}
+    many = len({s.get("speaker", "S1") for s in segs}) > 1
+    return "\n".join(f"[{_t(s['start'])}] " + (f"{names.get(s.get('speaker', 'S1'), s.get('speaker', 'S1'))}: " if many else "")
+                     + (s.get(field) or "").strip() for s in segs if (s.get(field) or "").strip())
+
+
+# caption colour per speaker: the BBC subtitle guidelines' order (white, yellow, cyan, green), then four more
+CAPTION_COLORS = ["#FFFFFF", "#FFFF00", "#00FFFF", "#00FF00", "#FF80FF", "#FFB040", "#80B0FF", "#FF8080"]
+# fonts for burned-in captions, checked on Windows with ffmpeg's libass (Korean, Japanese, Chinese, Arabic, Hindi);
+# ponytail: Windows font names - a Linux server needs e.g. Noto Sans CJK here
+CAPTION_FONTS = {"ko": "Malgun Gothic", "ja": "Yu Gothic", "zh": "Microsoft YaHei", "hi": "Nirmala UI"}
+
+
+def speaker_colors(segs: list[dict]) -> dict:
+    """Speaker -> caption colour, S1 (who speaks most) white; empty with one speaker (no colours needed)."""
+    ids = sorted({s.get("speaker", "S1") for s in segs}, key=lambda k: (len(k), k))
+    return {sp: CAPTION_COLORS[i % len(CAPTION_COLORS)] for i, sp in enumerate(ids)} if len(ids) > 1 else {}
+
+
+def subtitles(segs: list[dict], field: str, vtt: bool = False, speakers: dict | None = None) -> str:
+    """SRT or WebVTT. On a dub: where each sentence's dub is placed; on a plain transcript: where it was said.
+    With speakers (and more than one of them): each speaker's lines in their colour — SRT <font color> (VLC, many TVs),
+    WebVTT a voice tag with a class and a STYLE block (browsers)."""
+    def ts(sec: float) -> str:
+        h, rest = divmod(round(sec * 1000), 3_600_000)
+        m, rest = divmod(rest, 60_000)
+        return f"{h:02}:{m:02}:{rest // 1000:02}{'.' if vtt else ','}{rest % 1000:03}"
+
+    colors = speaker_colors(segs) if speakers is not None else {}
+    names = {k: (v.get("name") or k) for k, v in (speakers or {}).items()}
+    cues = [s for s in segs if (s.get(field) or "").strip()]
+    out = ["WEBVTT", ""] if vtt else []
+    if vtt and colors:
+        out += ["STYLE"] + [f"::cue(.{sp.lower()}) {{ color: {c}; }}" for sp, c in colors.items()] + [""]
+    for n, s in enumerate(cues, 1):
+        a, d = placed(s)
+        text, sp = s[field].strip(), s.get("speaker", "S1")
+        if colors:
+            text = (f"<v.{sp.lower()} {names.get(sp, sp)}>{text}</v>" if vtt else f'<font color="{colors[sp]}">{text}</font>')
+        out += ([] if vtt else [str(n)]) + [f"{ts(a)} --> {ts(a + d)}", text, ""]
+    return "\n".join(out)
+
+
+def ass(segs: list[dict], field: str, speakers: dict | None = None, lang: str = "en") -> str:
+    """Advanced SubStation Alpha: one style per speaker in its colour (white with one speaker), for players that read it
+    (VLC, mpv) and for burning the captions into the video (ffmpeg's libass)."""
+    colors = speaker_colors(segs) or {s.get("speaker", "S1"): CAPTION_COLORS[0] for s in segs}
+    names = {k: (v.get("name") or k) for k, v in (speakers or {}).items()}
+    font = CAPTION_FONTS.get(lang, "Arial")
+
+    def t(sec: float) -> str:
+        cs = round(sec * 100)
+        return f"{cs // 360000}:{cs // 6000 % 60:02}:{cs // 100 % 60:02}.{cs % 100:02}"
+
+    def bgr(hex_: str) -> str:  # ASS colours are &H00BBGGRR
+        return f"&H00{hex_[5:7]}{hex_[3:5]}{hex_[1:3]}"
+
+    out = ["[Script Info]", "ScriptType: v4.00+", "PlayResX: 1920", "PlayResY: 1080", "WrapStyle: 0", "",
+           "[V4+ Styles]", "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
+           "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"]
+    out += [f"Style: {sp},{font},58,{bgr(c)},&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,90,90,60,1"
+            for sp, c in colors.items()]
+    out += ["", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    for s in segs:
+        text = (s.get(field) or "").strip().replace("{", "(").replace("}", ")").replace("\n", r"\N")  # braces are ASS commands
+        if text:
+            a, d = placed(s)
+            sp = s.get("speaker", "S1")
+            out.append(f"Dialogue: 0,{t(a)},{t(a + d)},{sp},{names.get(sp, sp).replace(',', ' ')},0,0,0,,{text}")
+    return "\n".join(out) + "\n"
+
+
+def timeline_html(segs: list[dict], total: float, video_src: str, show_flags: bool = True) -> str:
+    """C11: video + a bar with one block per sentence on the dubbed video's timeline, coloured by its
+    flag (grey when flags are hidden for blind rating). Clicking a block jumps the video there and
+    writes the sentence number into an element with id `seg_pick` (the web page's rating form)."""
+    blocks = []
+    for s in segs:
+        a, d = placed(s)
+        f = s.get("flag") or []
+        color = (COLOR[f[0]] if f else "#30a46c") if show_flags else "#8b8d98"
+        why = f" — check: {', '.join(STAGE[x] for x in f)}" if show_flags and f else ""
+        tags = f"\ntags: {' '.join('[' + t + ']' for t in s.get('tags') or [])}" if s.get("tags") else ""
+        if s.get("tags_not_performed"):
+            tags += f" (not performed by this voice: {', '.join(s['tags_not_performed'])})"
+        tip = html.escape(f"#{s['id']} at {_t(a)}{why}\n{s['src_text']}\n{s['tgt_text'] or ''}{tags}", quote=True)
+        pick = (f"var p=document.querySelector('#seg_pick input');if(p){{p.value={s['id']};"
+                f"p.dispatchEvent(new Event('input',{{bubbles:true}}));}}")
+        blocks.append(f'<div class="tl-b" title="{tip}" onclick="var v=document.getElementById(\'dubv\');'
+                      f'v.currentTime={a:.2f};v.play();{pick}" style="left:{100 * a / total:.3f}%;'
+                      f'width:{max(100 * d / total, 0.5):.3f}%;background:{color}">{s["id"]}{" ✦" if s.get("tags") else ""}</div>')
+    legend = ("<span style='background:#e5484d'>translation</span><span style='background:#f76b15'>speech recognition</span>"
+              "<span style='background:#e2a336'>timing</span><span style='background:#30a46c'>OK</span>"
+              if show_flags else "<span style='background:#8b8d98'>flags hidden (blind rating)</span>")
+    return f"""<style>.tl{{position:relative;height:34px;background:#eee;border-radius:4px;margin:6px 0}}
+.tl-b{{position:absolute;top:3px;height:28px;border-radius:3px;color:#fff;font:11px system-ui;text-align:center;
+line-height:28px;cursor:pointer;overflow:hidden;opacity:.9}}.tl-b:hover{{opacity:1;outline:2px solid #000}}
+#tl-ph{{position:absolute;top:0;width:2px;height:34px;background:#000;pointer-events:none}}
+.tl-leg span{{color:#fff;font:12px system-ui;padding:2px 6px;border-radius:3px;margin-right:6px}}</style>
+<video id="dubv" src="{html.escape(video_src, quote=True)}" controls style="width:100%;max-height:480px;background:#000"
+ ontimeupdate="document.getElementById('tl-ph').style.left=(100*this.currentTime/{total:.3f})+'%'"></video>
+<div class="tl">{''.join(blocks)}<div id="tl-ph"></div></div><div class="tl-leg">{legend}</div>"""
 
 
 def _row(s: dict) -> str:
@@ -109,11 +227,12 @@ td,th{{border:1px solid #ddd;padding:6px;vertical-align:top;text-align:left}}tr.
 <h1>Review: {html.escape(video.name)} ({data['src']} → {data['tgt']})</h1>
 <p><b>{len(flagged)} of {len(segs)} segments to check</b> —
 {', '.join(f'{st_}: {n}' for st_, n in by_stage.items())}. Video: <a href="dubbed.mp4">dubbed.mp4</a></p>
-{''.join(f"<p>Voice for {k}: <b>{html.escape(v['voice'])}</b> — speaker median pitch {v['median_f0']} Hz, {v['register']} register"
-         f"{' (set by reviewer)' if v['override'] else ' (auto; may be wrong for excited speech or several speakers — to change: set voice and override: true in segments.json, run --from tts)'}</p>"
+{''.join(f"<p>Voice for {html.escape(v.get('name') or k)}: <b>{html.escape(str(v.get('voice')))}</b> — median pitch {v.get('median_f0')} Hz, {v.get('register')} register"
+         f"{' (set by reviewer)' if v.get('override') else ' (auto; change it in the review editor, or set voice and override: true in segments.json and run --from tts)'}</p>"
          for k, v in data.get('speakers', {}).items())}
 <p>To fix a segment: edit <code>tgt_text</code> in <code>segments.json</code>, set <code>"edited": true</code>,
 then run <code>dubbe {html.escape(video.name)} --src {data['src']} --tgt {data['tgt']} --from tts</code>.</p>
+<h2>Video — coloured parts need checking (hover for text, click to jump)</h2>{timeline_html(segs, st['output_seconds'], 'dubbed.mp4')}
 <h2>Stats</h2>{stats_html(st)}
 <h2>Segments to check</h2><table>{head}{''.join(map(_row, flagged)) or '<tr><td colspan=9>None</td></tr>'}</table>
 <details><summary><h2 style="display:inline">All segments</h2></summary><table>{head}{''.join(map(_row, segs))}</table></details>

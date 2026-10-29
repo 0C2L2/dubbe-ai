@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Measured results — DUBBE{% endblock %}
+{% block main %}
+<h1>Measured results</h1>
+<p class="muted">We have no customers yet, so instead of logos: what we measured, on which clips, and when. Including
+  what does not work well. Test setup: one laptop GPU (RTX 4060, 8 GB). Full log in the
+  <a href="https://github.com/0C2L2/dubbe-ai/blob/main/docs/test-results.md">repository</a>.</p>
+
+<h2>Test data</h2>
+<table class="small"><tbody>
+  <tr><td>FLEURS, read sentences in Korean and 20 more languages</td><td>public dataset (CC BY 4.0), with reference transcripts and translations</td></tr>
+  <tr><td>KsponSpeech, 150 clips of conversational Korean (14 min)</td><td>research dataset with transcripts — local test only</td></tr>
+  <tr><td>529 Korean–English sentence pairs: TED talks, everyday expressions, FLEURS</td><td>human translations (OPUS TED2020, AI Hub, FLEURS) — local test only</td></tr>
+  <tr><td>CREMA-D, 160 acted English sentences</td><td>emotion labels, for the emotion model</td></tr>
+  <tr><td>A two-person dialogue, 36 s</td><td>made with two synthetic voices — no real people</td></tr>
+  <tr><td>TV clip, Korean, 1:30 · web drama, Korean, 25 min · animated lesson, English, 5:26</td><td>copyrighted — local tests only, never published</td></tr>
+</tbody></table>
+
+<h2>What works</h2>
+<table class="small">
+  <thead><tr><th>Check</th><th>Result</th><th>Date</th></tr></thead>
+  <tbody>
+    <tr><td>Speech recognition, Korean</td><td><b>9.1 %</b> character error rate on 22 minutes of read speech (one pass, like a real video);
+      11.5 % on conversation</td><td>2026-10-16</td></tr>
+    <tr><td>Translation (NLLB-200 3.3B), 529 sentence pairs</td><td>chrF++ <b>52.3</b> Korean → English and <b>32.8</b> English → Korean
+      (49.3 and 29.4 with the smaller model it replaced); fixed "Newt Churchill" → Gingrich, "below sea level" → below freezing</td><td>2026-10-16</td></tr>
+    <tr><td>Speakers told apart</td><td>two synthetic voices, a man and a woman: <b>13 of 13</b> sentences right; FLEURS readers: the two groups
+      matched the dataset's male / female labels in 15 of 15 sentences</td><td>2026-10-16</td></tr>
+    <tr><td>A speaker's own voice, cloned from the video with consent</td><td>speaker similarity to the person <b>0.85</b> (built-in voice: 0.66)</td><td>2026-10-15</td></tr>
+    <tr><td>Korean voices</td><td>26: the built-in voice and 25 English presets speaking Korean — Whisper understood 20 of them as well as the
+      built-in voice; a two-person Korean dub, one voice per speaker: <b>0.6 %</b> character errors</td><td>2026-10-16</td></tr>
+    <tr><td>Voice running on after the sentence</td><td>French dub, two sentences ended in made-up words: <b>11.0 % → 2.1 %</b> character errors after
+      DUBBE cuts at the sentence's last word; the af_alloy voice in Korean 29.3 % → 8.1 %, so it is back in every language</td><td>2026-10-19</td></tr>
+    <tr><td>Timing drift, three clips</td><td>largest delay <b>0.00 s</b> (the lesson needed the picture slow-down option; 0.37 s without)</td><td>2026-10-06</td></tr>
+    <tr><td>Long translations (lesson)</td><td>strongest voice speed-up 1.30× → <b>1.18×</b>; sentences that did not fit 16 → 0</td><td>2026-10-06</td></tr>
+    <tr><td>Background sound</td><td>a phone ringing kept its level (<b>−0.0 dB</b>); 0 words of the original voice left over</td><td>2026-10-06</td></tr>
+    <tr><td>Voice choice by pitch</td><td>matched the speaker's gender for <b>95 %</b> of Korean and 95 % of English test speakers</td><td>2026-10-06</td></tr>
+    <tr><td>Speed</td><td><b>29 s</b> of processing per video minute into English (2:43 clip); <b>77 s</b> into Korean (5:26 clip)</td><td>2026-10-16</td></tr>
+  </tbody>
+</table>
+
+<h2 id="languages">The other 20 languages</h2>
+<p class="muted">FLEURS read speech only — no conversation, no native listener yet. Recognition: 20 sentences in one pass, with the
+  Whisper model that made fewer errors in that language. Translation: 100 sentences, chrF++ (higher is better). Voice: an English
+  preset speaking 6 sentences, Whisper listening back.</p>
+<table class="small">
+  <thead><tr><th>Language</th><th>Recognition errors</th><th>Translation from English</th><th>into English</th><th>Voice errors</th></tr></thead>
+  <tbody>
+    <tr><td>Arabic</td><td>4.4 %</td><td>53</td><td>65</td><td>2.2 %</td></tr>
+    <tr><td>Chinese</td><td>8.8 %</td><td>23*</td><td>55</td><td>6.9 %</td></tr>
+    <tr><td>Danish</td><td>3.2 %</td><td>68</td><td>71</td><td>2.6 %</td></tr>
+    <tr><td>Dutch</td><td>3.2 %</td><td>54</td><td>58</td><td>0.2 %</td></tr>
+    <tr><td>Finnish</td><td>4.5 %</td><td>52</td><td>60</td><td>1.4 %</td></tr>
+    <tr><td>French</td><td>4.1 %</td><td>70</td><td>68</td><td>0.7 %</td></tr>
+    <tr><td>German</td><td>1.8 %</td><td>63</td><td>70</td><td>2.5 %</td></tr>
+    <tr><td>Greek</td><td>3.2 %</td><td>52</td><td>62</td><td>6.0 %</td></tr>
+    <tr><td>Hindi</td><td>13.0 %</td><td>58</td><td>67</td><td>6.0 %</td></tr>
+    <tr><td>Italian</td><td>1.4 %</td><td>59</td><td>64</td><td>0.0 %</td></tr>
+    <tr><td>Japanese</td><td>6.8 %</td><td>24*</td><td>56</td><td>9.6 %</td></tr>
+    <tr><td>Malay</td><td>10.1 %</td><td>66</td><td>68</td><td>2.9 %</td></tr>
+    <tr><td>Norwegian</td><td>3.6 %</td><td>57</td><td>65</td><td>3.1 %</td></tr>
+    <tr><td>Polish</td><td>2.4 %</td><td>47</td><td>57</td><td>5.4 %</td></tr>
+    <tr><td>Portuguese</td><td>2.2 %</td><td>69</td><td>72</td><td>4.4 %</td></tr>
+    <tr><td>Russian</td><td>3.8 %</td><td>56</td><td>64</td><td>1.9 %</td></tr>
+    <tr><td>Spanish</td><td>2.4 %</td><td>55</td><td>60</td><td>3.7 %</td></tr>
+    <tr><td>Swahili</td><td>26.3 %</td><td>60</td><td>67</td><td>6.6 %</td></tr>
+    <tr><td>Swedish</td><td>2.9 %</td><td>68</td><td>72</td><td>0.6 %</td></tr>
+    <tr><td>Turkish</td><td>17.2 %</td><td>58</td><td>65</td><td>4.8 %</td></tr>
+  </tbody>
+</table>
+<p class="muted small">* chrF++ is not comparable for Japanese and Chinese (no spaces between words). Hebrew was left out: recognition
+  29 % and voices 38–47 % character errors. French, Hindi and Swahili use only the English presets — their built-in voice failed.</p>
+
+<h2>Where errors come from (FLEURS, Korean → English, with the earlier translation model)</h2>
+<p>We replaced one step at a time with a correct human reference:</p>
+<ul>
+  <li>Translation score (chrF): <b>49.4</b> with our transcript, <b>60.1</b> with a perfect transcript — recognition
+    errors cost about 11 points.</li>
+  <li>The translator itself was the larger gap — the reason it was replaced by the larger NLLB model above.</li>
+</ul>
+
+<h2>What does not work well yet</h2>
+<ul>
+  <li><b>Flags miss confident mistakes.</b> On FLEURS, 3 of 15 sentences were flagged and 2 of them were wrong — but
+    about 8 of 15 were wrong by the author's reading (for example "Ghana" for Canaan). A test with independent raters is planned.</li>
+  <li><b>Short spoken lines are still mistranslated</b> ("That would be great" → 정말 멋져요): sentences are translated one by one,
+    without the conversation around them.</li>
+  <li><b>Similar voices are taken for one speaker</b> — two men in a Korean TV scene became one. Move the sentences in the editor.</li>
+  <li><b>Emotion:</b> the emotion model is right 82 % of the time when it tags (acted English), but finds only a third of the emotional
+    sentences, is not measured on Korean, and tagged 2 of 7 calm sentences of a synthetic male voice [angry]. The [excited] / [angry]
+    effects did not change what an emotion model hears in an English dub (5 of 44 sentences with and without), and Chatterbox's
+    emotion strength setting changed nothing measurable in Korean.</li>
+  <li><b>Recognition is weak</b> for Swahili (26 %), Turkish (17 %) and Hindi (13 %) — fine as target languages, poor as sources.</li>
+  <li><b>The voice choice failed on an agitated multi-speaker TV scene</b> — the editor lets you change it.</li>
+  <li><b>Expressive tags:</b> [whisper], [excited], [sad], [angry] and [question] are made by DUBBE for every voice; for [question]
+    English uses the Chatterbox voice, whose end rose in 11 of 12 test questions. A sound classifier heard the English [cough],
+    [gasp], [laugh] and [sigh] only weakly, and the other languages' voices make none of them.</li>
+  <li>No fluent speaker has rated any target language yet; not yet tested on a second computer.</li>
+</ul>
+{% endblock %}

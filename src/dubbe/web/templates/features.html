@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_parts.html" import voice_carousel, pipeline %}
+{% block title %}How DUBBE works{% endblock %}
+{% block main %}
+<section class="hero" data-stagger>
+  <h1 data-reveal>How DUBBE works</h1>
+  <p class="lead" data-reveal>Thirteen steps run on a GPU, one after another. Each step saves its result, so a correction
+    re-runs only what comes after it.</p>
+</section>
+<div class="panel" data-reveal><div class="demo-body">{{ pipeline() }}</div></div>
+<h2>The steps</h2>
+
+<ol>
+  <li><b>Extract</b> the sound from the video.</li>
+  <li><b>Separate</b> voice from background (Demucs), so music and effects can stay under the new voice.</li>
+  <li><b>Recognise speech</b> with word timestamps (Whisper large-v3 or large-v3-turbo via faster-whisper — whichever made fewer
+    errors in that language in our tests).</li>
+  <li><b>Split into sentences</b> by punctuation and pauses.</li>
+  <li><b>Tell speakers apart</b>: a voice fingerprint per sentence (WavLM), sentences grouped by voice.</li>
+  <li><b>Hear the delivery</b>: questions, emotion (HuBERT) and sounds such as laughs and sighs (AST) in the original become tags on
+    the sentence.</li>
+  <li><b>Pick a voice</b> for each speaker that matches their pitch register — a preset voice, a clone of your own voice, or, only
+    if you confirm they agreed, the speaker's own voice cloned from the video.</li>
+  <li><b>Translate</b> each sentence (NLLB-200 3.3B), keeping several alternative wordings and a confidence for each.</li>
+  <li><b>Speak</b> the translation: Kokoro for English; Chatterbox Multilingual for the other languages, with its built-in voice or an
+    English preset speaking the language. When the voice runs on past the sentence, speech recognition finds the end and cuts there.</li>
+  <li><b>Shorten</b>: if a sentence is too long for its slot, use a shorter alternative wording that is almost as confident.</li>
+  <li><b>Time</b> each sentence to where it was said: speed up at most 1.3×, optionally slow the picture slightly.</li>
+  <li><b>Mix</b> the new voice with the background and write the video, labelled AI-generated.</li>
+  <li><b>Report</b>: flags, timeline, processing time and cost.</li>
+</ol>
+
+<h2>What the colours mean</h2>
+<p><span class="chip low_mt">translation</span> the translator was unsure of this sentence ·
+   <span class="chip low_asr">speech recognition</span> the recogniser was unsure what was said ·
+   <span class="chip overflow">timing</span> the dub does not fit its slot even after speeding up ·
+   <span class="chip ok">OK</span> no warning.</p>
+<p class="notice draft">Flags are a short list, not a guarantee. On our first test they caught 2 real errors among 3
+  flagged sentences, but missed translations that were wrong <i>and</i> confident (for example a wrong place name).
+  Listen to the whole dub before publishing it. <a href="/results">Details</a></p>
+
+<h2>Timing without drift</h2>
+<p>Every sentence starts where the original sentence started, so small differences never add up over a long video. When
+  a translation is longer than the original, DUBBE first uses a shorter wording, then speeds the voice up (at most 1.3×),
+  and — only if you allow it — slows the picture a little (up to 1.3×).</p>
+
+<h2>Background sound</h2>
+<p>Music, effects and other sounds are separated from the speaker's voice and mixed back under the dub; the
+  background is lowered only while the new voice speaks. In our test, a phone ringing between sentences kept its
+  original level (−0.0 dB) with no words of the original voice left over.</p>
+
+<h2>Your corrections</h2>
+<p>In the review editor you can change a sentence's translation, choose another voice, and add delivery tags:
+  <i>{% for t, d in TAGS.DELIVERY.items() %}[{{ t }}] {{ d }}{{ ", " if not loop.last }}{% endfor %}</i>.
+  Vocal tags such as [laugh] or [sigh] need an expressive voice; DUBBE marks them "not performed" when the voice cannot do them.
+  Tags DUBBE heard in the original are shown dashed; untick the wrong ones. Corrected sentences are never re-translated. A re-dub
+  runs only the voice, timing and mixing steps again, and uses no plan minutes. <b>Transcribe &amp; translate again</b> re-runs a
+  project with the newest models and keeps your corrections.</p>
+
+<h2 id="speakers">Several speakers</h2>
+<p>DUBBE compares the voice of every sentence and groups the sentences by speaker; the main speaker is the one who talks most.
+  Each speaker gets a different voice that matches their pitch, and the transcript and subtitles can name them. In the editor you
+  rename speakers, merge two that are one person, or move a sentence to another speaker — or to a new one. In our tests a man and
+  a woman were told apart without a mistake, but two similar men were taken for one person, so check the speaker chips.</p>
+<p>A speaker's own voice can be cloned from the video only after you confirm that person agreed. The copy is stored encrypted
+  inside the project and deleted with it; from <a href="/app/speakers">Speaker Detection</a> you can instead save it as a private
+  voice, which can never be published. Speaker Detection also works on its own: upload a video or audio and get who speaks when,
+  with a transcript by speaker.</p>
+
+{{ voice_carousel(voices, "The preset voices", "Picked by the speaker's pitch (the number under each name, measured on a test sentence). Change it in the editor, also to a clone of your own voice.") }}
+
+<h2 id="subtitles">Subtitles in colour</h2>
+<p>Captions can give each speaker their own colour — white for the main speaker, then yellow, cyan and green, the order of the BBC
+  subtitle guidelines — as SRT, WebVTT and ASS, and burned into the video when you ask. The <a href="/app/captions">Subtitles</a> tool
+  does this for any video, with an optional translation; a dub's download page does it for the dub.</p>
+
+<h2 id="languages">Languages</h2>
+<table>
+  <thead><tr><th></th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>Korean → English</td><td>Tested in depth: read speech, conversation, a TV clip, a web drama</td></tr>
+    <tr><td>English → Korean</td><td>Tested: an animated lesson, a two-person dialogue; 26 Korean voices; needs a fluent Korean reviewer</td></tr>
+    <tr><td>Voices</td><td>Every preset voice, your clones and Marketplace voices speak every language listed here.</td></tr>
+    <tr><td>Other languages</td><td>{{ NAMES | length - 2 }} more, in any pair: {{ (NAMES.values() | list)[2:] | join(", ") }}. Spoken by
+      Chatterbox Multilingual with the same 26 voices as Korean; measured on read speech (FLEURS) only — see Results.</td></tr>
+  </tbody>
+</table>
+<p><a href="/signup" role="button">Start free</a></p>
+{% endblock %}
