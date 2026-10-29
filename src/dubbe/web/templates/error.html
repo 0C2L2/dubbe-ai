@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Not found — DUBBE{% endblock %}
+{% block main %}
+<section class="narrow" style="text-align:center;padding:64px 0">
+  <span class="eyebrow">404</span>
+  <h1>Page not found</h1>
+  <p class="muted">This page does not exist, or it belongs to another account.</p>
+  <p class="actions" style="justify-content:center"><a href="/" role="button" class="secondary">Home</a>{% if user %}<a href="/app" role="button">Your projects</a>{% endif %}</p>
+</section>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Help — DUBBE{% endblock %}
+{% block main %}
+<h1>Help</h1>
+<p class="muted">Jump to: <a href="#account">Account</a> · <a href="#dubbing">Dubbing &amp; review</a> ·
+  <a href="#plans">Plans</a> · <a href="#privacy">Privacy &amp; safety</a> · <a href="#trouble">Troubleshooting</a>.
+  Not answered here? <a href="/contact">Contact us</a>.</p>
+
+<h2 id="account">Account</h2>
+<details><summary>I did not get the confirmation email</summary><p>Check the spam folder, then press "Send the link
+  again" on your projects page. Only the newest link works; it is valid for 24 hours.</p></details>
+<details><summary>I forgot my password</summary><p>Use <a href="/forgot">Forgot password</a>. The link works once,
+  for 30 minutes, and signs you out everywhere.</p></details>
+<details><summary>How do I delete my account?</summary><p><a href="/app/settings">Settings</a> → Delete account. Your
+  videos and dubs are deleted at once.</p></details>
+
+<h2 id="dubbing">Dubbing &amp; review</h2>
+<details><summary>Which languages?</summary><p>{{ NAMES | length }}, in any pair: {{ NAMES.values() | join(", ") }}.
+  Korean ↔ English is tested in depth; the others only on read speech (FLEURS) — see <a href="/results">Results</a>.</p></details>
+<details><summary>How long does a dub take?</summary><p>On our GPU about 30 seconds per video minute into English and about 80 seconds
+  into the other languages (their voice is slower), plus any wait in the queue. The progress page updates by itself.</p></details>
+<details><summary>What do the colours on the timeline mean?</summary><p>Red: the translation is doubtful. Orange: the
+  speech recognition is doubtful. Yellow: the dub does not fit its time even after speeding up. Green: no warning. Grey:
+  flags hidden (evaluation mode).</p></details>
+<details><summary>Can I trust a green sentence?</summary><p>Not fully. Flags catch doubtful sentences, but a translation
+  can be wrong and confident. Listen to the whole dub before you publish it.</p></details>
+<details><summary>How do I correct a sentence?</summary><p>Open it in the review editor, change the dub text, press Save,
+  then Re-dub. Your text is never re-translated, and re-dubs use no minutes.</p></details>
+<details><summary>What are delivery tags?</summary><p>[slow], [fast], [soft], [loud], [pause], [question], [whisper], [excited], [sad]
+  and [angry] change how a sentence is spoken, with every voice: DUBBE changes the pitch, speed, loudness or breath itself.
+  DUBBE also tags what it hears in the original — questions, emotion, laughs, sighs — shown dashed; untick the wrong ones.
+  When you add [question] yourself, an English video switches to the Chatterbox voice, which raises the end of a question.
+  [laugh], [sigh], [gasp] and [cough] are sounds only the English Chatterbox voice makes; other voices cannot, so the editor
+  says "not performed".</p></details>
+<details><summary>Can every voice speak every language?</summary><p>Yes. All {{ NAMES | length }} languages work with every preset
+  voice, every clone of your own voice and every Marketplace voice: English is spoken by Kokoro, the other languages by
+  Chatterbox, which takes the voice from a short recording. Hear any preset in any language under <a href="/app/voices">Voices</a>.
+  An English accent can carry over into other languages, more with some voices than others.</p></details>
+<details><summary>Can I get subtitles with a colour per speaker?</summary><p>Yes — <a href="/app/captions">Subtitles</a> makes them
+  from any video: each speaker gets a colour (white, yellow, cyan, green …, the broadcast convention), as SRT, WebVTT and ASS, with an
+  optional translation. Name the speakers, then burn the captions into the video if a platform cannot show caption files. For a dub:
+  Download → Make the video with captions.</p></details>
+<details><summary>Several people speak in my video</summary><p>DUBBE tells the speakers apart by voice and gives each a different
+  voice. Under <b>Speakers</b> in the editor you can rename them, merge two that are one person, and in a sentence move it to
+  another speaker or a new one. Similar voices can be taken for one person — check the coloured speaker chips.</p></details>
+<details><summary>Can a speaker keep their own voice?</summary><p>Only with their consent: in the editor, "Use their own voice…"
+  asks you to confirm the person agreed, then clones them from the video (at least 8 seconds of their speech). The copy stays in
+  that project and is deleted with it. In <a href="/app/speakers">Speaker Detection</a> you can save it as a private voice instead;
+  voices from videos can never be published.</p></details>
+<details><summary>My older project still has the old mistakes</summary><p>Press <b>Transcribe &amp; translate again</b> in the editor:
+  the project runs again with the current recognition and translation models; your corrected sentences and tags are kept.</p></details>
+<details><summary>Can it use my own voice?</summary><p>Yes. Under Voices → Clone my voice you read three sentences aloud in
+  the browser; DUBBE checks that the recording says them and makes a clone that speaks every DUBBE language. Only your own voice,
+  recorded live (no uploads); the recording is stored encrypted and deleted with the voice. Pick the clone in Text to Speech
+  or in a dub's editor. You can share it in the voice library (an admin reviews it first) and stop sharing at any time.</p></details>
+<details><summary>What is "evaluation mode"?</summary><p>It hides DUBBE's flags while you rate sentences, so your ratings
+  are not influenced by them. We use these blind ratings to measure how good the flags are.</p></details>
+
+<h2 id="plans">Plans</h2>
+<details><summary>How many minutes do I have?</summary><p>Free: 15 minutes a month, videos up to 10 minutes. See
+  <a href="/pricing">Plans</a>.</p></details>
+<details><summary>Can I use dubs commercially?</summary><p>Not during the beta — the translation model
+  is licensed for non-commercial use only.</p></details>
+
+<h2 id="privacy">Privacy &amp; safety</h2>
+<details><summary>Who can see my videos?</summary><p>Only you (and, to fix problems, the DUBBE team). There are no public
+  links.</p></details>
+<details><summary>When are my files deleted?</summary><p>When you delete the project or your account, or automatically
+  after your plan's retention period (Free: 7 days).</p></details>
+<details><summary>Is the dub marked as AI-generated?</summary><p>Yes: in the file's metadata, and on the download page.
+  Do not remove or hide that.</p></details>
+
+<h2 id="trouble">Troubleshooting</h2>
+<details><summary>My upload was refused</summary><p>Use MP4 or MOV, at most 2 GB and within your plan's length and minutes.
+  WebM and MKV are not accepted yet.</p></details>
+<details><summary>The job failed</summary><p>The progress page shows the last lines of the log and a "Try again from this
+  step" button. If it fails again, <a href="/contact">contact us</a> with the project name.</p></details>
+<details><summary>The voice is the wrong gender or style</summary><p>The voice is picked by pitch, which can go wrong with
+  excited speech or several speakers. Choose another voice in the editor and re-dub.</p></details>
+<details><summary>The flags look wrong</summary><p>Rate the sentence in the editor (what is wrong, and a score) — that is
+  exactly the data we use to improve them.</p></details>
+{% endblock %}

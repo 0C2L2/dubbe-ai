@@ -1,0 +1,27 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item, dropzone %}
+{% block title %}Voice Isolator — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Create</span><h1 class="app-h1">Voice Isolator</h1>
+<form method="post" action="/app/isolate" enctype="multipart/form-data" class="tool">
+  <div class="tool-main">
+    {{ dropzone("layers", "Drop audio or video here, or click to choose", "MP4, MOV, MP3, WAV, M4A, OGG or FLAC · up to 2 GB · " ~ ("no limits (admin)" if admin else left ~ " min left this month"),
+                ".mp4,.mov,.m4v,.mp3,.wav,.m4a,.ogg,.flac,audio/*,video/*", left) }}
+    <div class="stems">
+      <div class="stem"><div class="wave voice">{% for i in range(24) %}<i style="--i:{{ i }}"></i>{% endfor %}</div><b>Voice</b><span class="muted small">speech only, 44.1 kHz stereo</span></div>
+      <div class="stem"><div class="wave music">{% for i in range(24) %}<i style="--i:{{ i }}"></i>{% endfor %}</div><b>Background</b><span class="muted small">music, effects, room sound</span></div>
+    </div>
+  </div>
+  <aside class="tool-side">
+    <p class="muted small" style="margin-top:0">The same separation DUBBE uses to keep music under a dub (Demucs htdemucs, MIT).
+      In our test a phone ringing between sentences stayed at its original level and no words of the voice were left in the background.</p>
+    <label><input type="checkbox" name="rights" required> I own this file or may use it.</label>
+    <button class="block">Separate</button>
+    <p class="muted small" style="margin-top:14px">Counts the file's length against your monthly minutes.</p>
+  </aside>
+</form>
+<section class="app-sec">
+  <div class="row-head"><h2>Recent</h2><a href="/app/history?kind=isolate">All separations →</a></div>
+  {% for x in recent %}{{ task_item(x) }}{% else %}<p class="muted">Nothing yet — your separated tracks appear here.</p>{% endfor %}
+</section>
+{% endblock %}

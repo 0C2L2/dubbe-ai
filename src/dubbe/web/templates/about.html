@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}About — DUBBE{% endblock %}
+{% block main %}
+<h1>About DUBBE</h1>
+<p>Every step of automatic dubbing is a model, and errors compound: a misheard word becomes a confident wrong
+  translation, then fluent synthetic speech that says something wrong. DUBBE's answer is a second output next to the
+  dub — a short list of sentences a person should check, shown on the video's timeline.</p>
+<p>DUBBE is a capstone project of the Applied AI &amp; Business Capstone Design course, Inha University × HumbleBeeAI,
+  Fall 2026 (Team 1, project C2b — Video Translation and Dubbing).</p>
+
+<h2>Team</h2>
+<table>
+  <thead><tr><th>Member</th><th>Major</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td>Kalandarov Ulugbek</td><td>IBT</td><td>Team Representative / PM</td></tr>
+    <tr><td>Isokulov Azamat</td><td>IBT</td><td>Problem &amp; Business</td></tr>
+    <tr><td>Samandarova Madina</td><td>IBT</td><td>Data &amp; Research, User &amp; Requirements</td></tr>
+    <tr><td>Musurmonov Jakhongir</td><td>IBT</td><td>Demo &amp; Presentation</td></tr>
+    <tr><td>Tagaev Rashid</td><td>ISE</td><td>AI / Technical Lead</td></tr>
+    <tr><td>Kholmirzaev Temurjon</td><td>ISE</td><td>Software / IT Engineer</td></tr>
+  </tbody>
+</table>
+
+<h2>Models and licences</h2>
+<table class="small">
+  <thead><tr><th>Step</th><th>Model</th><th>Licence</th></tr></thead>
+  <tbody>
+    <tr><td>Speech recognition</td><td>Whisper large-v3 or large-v3-turbo per language, via faster-whisper</td><td>MIT</td></tr>
+    <tr><td>Voice / background separation</td><td>Demucs (htdemucs)</td><td>MIT</td></tr>
+    <tr><td>Translation</td><td>NLLB-200 3.3B (int8, CTranslate2)</td><td>CC BY-NC 4.0 (non-commercial)</td></tr>
+    <tr><td>English voice</td><td>Kokoro-82M</td><td>Apache 2.0</td></tr>
+    <tr><td>Voices in the other {{ NAMES | length - 1 }} languages</td><td>Chatterbox Multilingual — its built-in voice, or an English Kokoro preset speaking the language</td><td>MIT</td></tr>
+    <tr><td>Speaker detection</td><td>WavLM base plus SV (microsoft/wavlm-base-plus-sv)</td><td>none stated on the model card (WavLM code: MIT)</td></tr>
+    <tr><td>Emotion heard in the original</td><td>HuBERT large, SUPERB emotion (superb/hubert-large-superb-er)</td><td>Apache 2.0</td></tr>
+    <tr><td>Sounds heard in the original</td><td>AST, AudioSet (MIT/ast-finetuned-audioset-10-10-0.4593)</td><td>BSD 3-Clause</td></tr>
+    <tr><td>Expressive English voice (optional)</td><td>Chatterbox Turbo, built-in voice</td><td>MIT</td></tr>
+  </tbody>
+</table>
+<p class="muted">The code is on <a href="https://github.com/0C2L2/dubbe-ai">GitHub</a>. AI tools (Claude) were used to
+  write code and documentation; the team reviewed and tested it.</p>
+{% endblock %}

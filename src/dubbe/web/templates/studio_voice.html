@@ -1,0 +1,119 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, orb_art, stars, stepper %}
+{% block title %}{{ v.name or "Voice" }} — Voice Studio — DUBBE{% endblock %}
+{% block head %}{% if v.status in ("waiting", "checking") %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block main %}
+<span class="eyebrow"><a href="/app/studio">Voice Studio</a> · recorded in {{ NAMES[v.lang] }} · {{ v.created_at | date }}</span>
+<h1 class="app-h1">{{ v.name or "Untitled voice" }}</h1>
+{% if not v.source %}{{ stepper(STEPS, step[0], step[1]) }}{% endif %}{# a voice from a video is never listed #}
+
+{% if v.status in ("waiting", "checking") %}
+<div class="studio-check">
+  <span class="orb mk-orb lg playing" style="--a:#ffb36b;--b:#f2591a;--c:#8a2c0c;--base:#f47a3b;view-transition-name:orb-{{ v.id }}"><span class="paint"></span></span>
+  <div><h2>Checking your recording…</h2>
+    <ol class="studio-tasks">
+      <li class="on">{{ "Speech recognition checks the clip taken from the video" if v.source else "Speech recognition checks that you read the sentences that were shown" }}</li>
+      <li>A clone of your voice is made and speaks a short sample</li>
+      <li>Then the listing editor opens here</li>
+    </ol>
+    <p class="muted small">About a minute. This page updates by itself.</p></div>
+</div>
+
+{% elif v.status == "failed" %}
+<div class="card studio-banner bad"><b>The check did not pass</b><p>{{ v.error }}</p><p class="muted small">Nothing was kept from this recording.</p>
+  <a role="button" href="/app/voices/new?lang={{ v.lang }}">{{ icon("mic") }} Record again</a></div>
+
+{% else %}
+  {% set f = form or v %}{% set chosen = form.tags if form else (v.tags.split(",") if v.tags else []) %}
+  {% if v.source %}
+  <div class="card studio-banner good"><b>Cloned from a video, with the speaker's consent.</b> It stays private: use it in Text to
+    Speech and your dubs. Voices from videos cannot be published to the Marketplace.</div>
+  {% elif v.shared == "no" and not v.description %}
+  <div class="card studio-banner good"><b>Your voice is ready.</b> Listen to the sample, then write its listing — or keep it private and
+    just use it in Text to Speech and your dubs.</div>
+  {% elif v.shared == "pending" %}<div class="card studio-banner"><b>In review.</b> An admin listens to it before it goes live. You can still edit the listing.</div>
+  {% elif v.shared == "rejected" %}<div class="card studio-banner bad"><b>Not accepted.</b> {{ v.review_note or "No reason was given." }}
+    Change the listing and send it again, or keep the voice private.</div>
+  {% elif v.shared == "listed" %}<div class="card studio-banner good"><b>Live in the Marketplace.</b>
+    {{ v.uses }} use{{ "s" if v.uses != 1 }} by others, {{ v.saves }} added, {{ "%.1f ★" | format(v.rating) if v.rating else "no ratings yet" }} ·
+    would earn <b>${{ ("%.2f" if v.chars * RATE / 1000 >= 0.01 or not v.chars else "%.4f") | format(v.chars * RATE / 1000) }}</b>
+    (payouts off in the beta). <a href="/app/market/{{ v.id }}">Open the listing →</a></div>{% endif %}
+
+  <form method="post" action="/app/studio/{{ v.id }}" class="studio-grid{{ ' solo' if v.source }}" data-studio>
+    <div class="studio-form">
+      <section class="card">
+        <span class="eyebrow">Sound</span>
+        {% if sample %}<audio controls src="/app/voices/{{ v.id }}/sample" style="width:100%"></audio>{% endif %}
+        <p class="muted small" style="margin:10px 0 0">{{ "From the video" if v.source else "Recorded" }}: “{{ v.heard }}”</p>
+        <p class="actions" style="margin:12px 0 0"><a role="button" class="secondary" href="/app/tts?voice=clone:{{ v.id }}&lang={{ v.lang }}">Try it in Text to Speech</a></p>
+      </section>
+
+      <section class="card">
+        <span class="eyebrow">{{ "Voice" if v.source else "Listing" }}</span>
+        <label>Name <span class="count" data-count="name">0/60</span>
+          <input name="name" maxlength="60" required value="{{ f.name }}" data-field="name"></label>
+        {% if not v.source %}
+        <label>Description <span class="count" data-count="description">0/300</span>
+          <textarea name="description" rows="4" maxlength="300" data-field="description"
+            placeholder="What it sounds like and what it suits — e.g. “A calm, warm narrator for lectures and explainers.”">{{ f.description }}</textarea></label>
+        <fieldset class="pick-group"><legend>Category</legend>
+          {% for c in CATS %}<label class="pick-pill"><input type="radio" name="category" value="{{ c }}" {{ 'checked' if f.category == c }}><span>{{ c }}</span></label>{% endfor %}
+        </fieldset>
+        <fieldset class="pick-group" data-max="3"><legend>Tags <span class="count" data-count="tags">0/3</span></legend>
+          {% for t in ALLTAGS %}<label class="pick-pill"><input type="checkbox" name="tags" value="{{ t }}" {{ 'checked' if t in chosen }}><span>{{ t }}</span></label>{% endfor %}
+        </fieldset>
+        {% endif %}
+      </section>
+
+      {% if v.owner_id == user.id %}
+      <div class="studio-bar">
+        {% if v.shared in ("no", "rejected") and not v.source %}
+        <label class="rights"><input type="checkbox" name="agree"><span>To publish: other DUBBE users may use my voice in their speech and
+          dubs, always labelled as AI and watermarked. I can stop sharing at any time; what was already made stays. Uses are counted;
+          payouts are off during the beta.</span></label>
+        <div class="studio-bar-btns">
+          <button name="action" value="save" class="secondary">Save draft</button>
+          <button name="action" value="submit">{{ "Send for review again" if v.shared == "rejected" else "Publish to the Marketplace" }}</button></div>
+        {% else %}
+        <div class="studio-bar-btns"><button name="action" value="save">Save changes</button></div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    {% if not v.source %}
+    <aside class="studio-preview" aria-label="Preview">
+      <span class="eyebrow">Preview · how people see it</span>
+      <article class="mk-card">
+        {{ orb_art(v.id, "md", vt="orb-" ~ v.id) }}
+        <div class="mk-body">
+          <span class="mk-name" data-out="name">{{ f.name or "Your voice" }}</span>
+          <span class="muted small">by {{ user.name or "you" }}</span>
+          <span class="mk-meta">{{ stars(v.rating) }}<span class="small muted">{{ "%.1f" | format(v.rating) if v.rating else "New" }} · {{ v.uses }} use{{ "s" if v.uses != 1 }}</span></span>
+          <p class="small mk-desc" data-out="description">{{ f.description or "Your description appears here." }}</p>
+          <span class="mk-tags"><span class="chip">{{ NAMES[v.lang] }}</span> <span class="chip" data-out="category">{{ f.category or "Category" }}</span></span>
+        </div>
+        <div class="mk-act"><span role="button" aria-disabled="true">Get</span></div>
+      </article>
+      <div class="card studio-page-preview">
+        {{ orb_art(v.id, "sm") }}
+        <div><b data-out="name">{{ f.name or "Your voice" }}</b>
+          <p class="small muted" style="margin:2px 0 8px">by {{ user.name or "you" }} · speaks every DUBBE language</p>
+          <p class="small" data-out="description">{{ f.description or "Your description appears here." }}</p>
+          <p class="mk-tags" data-out="tags">{% for t in chosen %}<span class="chip">{{ t }}</span> {% endfor %}</p></div>
+      </div>
+      <p class="muted small">Listed voices are reviewed by an admin first. Everything a clone says carries a watermark and the AI label.</p>
+    </aside>
+    {% endif %}
+  </form>
+
+  <section class="app-sec studio-danger">
+    <h2>Manage</h2>
+    <div class="actions">
+      {% if v.shared in ("listed", "pending") %}<form method="post" action="/app/voices/{{ v.id }}/unshare" class="inline"><button class="secondary">Stop sharing</button></form>{% endif %}
+      <form method="post" action="/app/voices/{{ v.id }}/delete" class="inline" data-confirm="Delete this voice and its recording? This cannot be undone.">
+        <button class="secondary">Delete the voice and its recording</button></form>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

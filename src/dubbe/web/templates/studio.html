@@ -1,0 +1,52 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, orb_art, stars, stepper %}
+{% block title %}Voice Studio — DUBBE{% endblock %}
+{% block main %}
+<div class="mk-hero">
+  <div><span class="eyebrow">Voice Studio</span><h1 class="app-h1">Your voices in the Marketplace</h1>
+    <p class="muted">Record your voice, write its listing and follow it from review to live. You see every use by other people and
+      what it would earn.</p></div>
+  {% if cloning %}<a role="button" href="/app/voices/new">{{ icon("mic") }} New voice</a>{% endif %}
+</div>
+
+<div class="kpis studio-kpis" data-stagger>
+  <div class="kpi" data-reveal><span>Uses by others</span><b>{{ k.uses }}</b><small class="muted">{{ "{:,}".format(k.chars) }} characters spoken</small></div>
+  <div class="kpi" data-reveal><span>Added by users</span><b>{{ k.saves }}</b><small class="muted">people who got your voices</small></div>
+  <div class="kpi" data-reveal><span>Rating</span><b>{{ "%.1f" | format(k.rating) if k.rating else "New" }}</b><small class="muted">{{ stars(k.rating) }} {{ k.reviews }} review{{ "s" if k.reviews != 1 }}</small></div>
+  <div class="kpi" data-reveal><span>Would earn</span><b>${{ ("%.2f" if k.earn >= 0.01 or not k.earn else "%.4f") | format(k.earn) }}</b><small class="muted">at ${{ RATE }} / 1,000 characters · payouts off in the beta</small></div>
+</div>
+
+<section class="app-sec">
+  <div class="row-head"><h2>Voices</h2><a href="/app/market">See the Marketplace →</a></div>
+  {% for x in voices %}{% set v = x.v %}
+  <a class="studio-row" href="/app/studio/{{ v.id }}" data-reveal>
+    {{ orb_art(v.id, "sm", vt="orb-" ~ v.id) }}
+    <div class="studio-row-main"><b>{{ v.name or "Untitled voice" }}</b>
+      <span class="muted small">Recorded in {{ NAMES[v.lang] }} · {{ v.category or "no listing yet" }} · {{ v.created_at | date }}</span>
+      {{ stepper(STEPS, x.step[0], x.step[1]) }}</div>
+    <div class="studio-row-nums">
+      <span><b>{{ v.uses }}</b>uses</span><span><b>{{ v.saves }}</b>added</span>
+      <span><b>{{ "%.1f" | format(v.rating) if v.rating else "New" }}</b>rating</span>
+      <span><b>${{ ("%.2f" if v.chars * RATE / 1000 >= 0.01 or not v.chars else "%.4f") | format(v.chars * RATE / 1000) }}</b>would earn</span></div>
+    <span class="studio-chev" aria-hidden="true">›</span>
+  </a>
+  {% else %}
+  <div class="studio-empty">{{ orb_art(0, "lg") }}
+    <div><h3>Publish your first voice</h3>
+      <p class="muted">Read three sentences aloud (about 15 seconds). DUBBE checks the recording, makes a clone of your voice and opens
+        the listing editor. You choose whether it goes to the Marketplace.</p>
+      {% if cloning %}<a role="button" href="/app/voices/new">{{ icon("mic") }} Record my voice</a>{% else %}<p class="notice">Voice cloning is not set up on this server.</p>{% endif %}</div>
+  </div>
+  {% endfor %}
+</section>
+
+{% if reviews %}
+<section class="app-sec">
+  <h2>Latest reviews</h2>
+  {% for r in reviews %}
+  <article class="mk-rev"><header>{{ stars(r.stars) }} <b>{{ r.who or "A DUBBE user" }}</b> on <a href="/app/market/{{ r.voice_id }}">{{ r.voice }}</a>
+    <span class="muted small">{{ r.created_at | date }}</span></header>{% if r.body %}<p>{{ r.body }}</p>{% endif %}</article>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

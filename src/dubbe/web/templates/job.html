@@ -1,0 +1,30 @@
+{% extends "app_base.html" %}
+{% block title %}{{ p.title }} — progress — DUBBE{% endblock %}
+{% block head %}{% if job.status in ("waiting", "running") %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block main %}
+<h1>{{ p.title }}</h1>
+<p class="muted">{{ NAMES[p.src] }} → {{ NAMES[p.tgt] }} · {{ "%.1f"|format(p.minutes) }} min ·
+  {{ "re-dub from " ~ job.from_stage if job.from_stage else "full dub" }}</p>
+
+{% if job.status == "waiting" %}
+  <p class="notice">Waiting in the queue{% if ahead %} — {{ ahead }} job{{ "s" if ahead > 1 }} ahead of yours{% endif %}.
+    This page updates by itself.</p>
+{% elif job.status == "running" %}
+  <p class="notice">Working… This page updates by itself; you can also close it.</p>
+{% elif job.status == "done" %}
+  <p class="notice">Done.</p>
+  <a href="/app/p/{{ p.id }}" role="button">Open the review editor</a>
+  <a href="/app/p/{{ p.id }}/export" role="button" class="secondary outline">Download</a>
+{% else %}
+  <p class="notice error">This job failed at step "{{ job.stage or 'start' }}".</p>
+  {% if job.error %}<details open><summary>Last lines of the log</summary><pre style="white-space:pre-wrap">{{ job.error }}</pre></details>{% endif %}
+  <form method="post" action="/app/jobs/{{ job.id }}/retry"><button>Try again from this step</button></form>
+{% endif %}
+
+{% set cur = stages.index(job.stage) if job.stage in stages else (-1 if job.status == "waiting" else 0) %}
+<ul class="stages">
+{% for s in stages %}
+  <li class="{{ 'done' if job.status == 'done' or loop.index0 < cur else ('now' if loop.index0 == cur and job.status == 'running' else 'todo') }}">{{ s }}</li>
+{% endfor %}
+</ul>
+{% endblock %}

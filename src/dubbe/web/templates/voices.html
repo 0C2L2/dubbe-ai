@@ -1,0 +1,68 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import coverflow %}
+{% block title %}Voices — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Library</span><h1 class="app-h1">Voices</h1>
+
+<section class="app-sec" style="margin-top:0">
+  <div class="row-head"><h2>Your voice clones</h2><span class="actions">{% if cloning %}<a role="button" href="/app/voices/new">+ Clone my voice</a>
+    <a role="button" class="secondary" href="/app/speakers">+ Clone from a video</a>{% endif %}
+    <a role="button" class="secondary" href="/app/studio">Open Voice Studio</a></span></div>
+  {% if cloning %}
+  <p class="muted" style="max-width:46rem">Your own voice: you read three sentences aloud in the browser and DUBBE checks that the
+    recording says them. Or a speaker in a video you put through <a href="/app/speakers">Speaker Detection</a>, only with their
+    consent; those stay private. Recordings are stored encrypted and deleted with the voice. Everything a clone says is watermarked
+    and labelled as AI.</p>
+  {% else %}
+  <p class="notice">Voice cloning is not set up on this server (it needs the Chatterbox environment and <code>DUBBE_VOICE_KEY</code>).</p>
+  {% endif %}
+  {% if mine %}
+  <table class="small">
+    <thead><tr><th>Voice</th><th>Recorded in</th><th>Status</th><th>Marketplace</th><th>Used by others</th><th>Would earn</th></tr></thead>
+    <tbody>{% for x in mine %}{% set v = x.v %}
+      <tr><td><a href="/app/studio/{{ v.id }}"><b>{{ v.name }}</b></a></td><td>{{ NAMES[v.lang] }}</td>
+        <td>{% if v.status == "ready" %}<span class="chip ok">ready</span>{% elif v.status == "failed" %}<span class="chip low_mt">failed</span>{% else %}<span class="chip grey">checking</span>{% endif %}</td>
+        <td>{% if v.source %}private · from a video{% elif v.shared == "listed" %}<a href="/app/market/{{ v.id }}">listed</a>{% else %}{{ {"no": "private", "pending": "in review", "rejected": "not accepted"}[v.shared] }}{% endif %}</td>
+        <td>{{ x.s.uses }} · {{ "{:,}".format(x.s.chars) }} characters</td><td>${{ ("%.2f" if x.s.earn >= 0.01 or not x.s.earn else "%.4f") | format(x.s.earn) }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="muted small">Would earn: at $0.03 per 1,000 characters spoken by other users (the rate ElevenLabs pays its voice owners).
+    Payouts are not active during the non-commercial beta.</p>
+  {% elif cloning %}<p class="muted">No clone yet.</p>{% endif %}
+</section>
+
+<section class="app-sec">
+  <div class="row-head"><h2>Added from the Marketplace</h2><a href="/app/market">Browse the Marketplace →</a></div>
+  {% if added %}
+  <table class="small">
+    <thead><tr><th>Voice</th><th>Recorded in</th><th>By</th><th></th><th></th></tr></thead>
+    <tbody>{% for v in added %}
+      <tr><td><a href="/app/market/{{ v.id }}"><b>{{ v.name }}</b></a></td><td>{{ NAMES[v.lang] }}</td><td>{{ v.owner_name or "a user" }}</td>
+        <td><button class="secondary play-btn" data-play="/app/voices/{{ v.id }}/sample"><span class="play"></span>Play</button></td>
+        <td><a href="/app/tts?voice=clone:{{ v.id }}&lang={{ v.lang }}">Use in Text to Speech →</a></td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="muted small">These appear in the voice lists of Text to Speech and of a dub's review editor.</p>
+  {% else %}<p class="muted">None yet. Voices you get in the <a href="/app/market">Marketplace</a> show up here and in your voice lists.</p>{% endif %}
+</section>
+
+<section class="app-sec">
+  <div class="row-head"><h2>Preset voices</h2>
+    <form method="get" class="inline lang-pick"><label>Hear them in
+      <select name="lang" onchange="this.form.submit()">{% for l in langs %}<option value="{{ l }}" {{ 'selected' if l == lang }}>{{ NAMES[l] }}</option>{% endfor %}</select></label>
+      <noscript><button class="secondary">Show</button></noscript></form></div>
+  <p class="muted" style="max-width:46rem">Every preset voice speaks all {{ NAMES | length }} languages — English with Kokoro, the others with
+    Chatterbox, which takes the voice from a short recording of the preset. Your clones and the Marketplace voices do too. For a dub,
+    DUBBE picks one per speaker by pitch (the number under each name); you can change it in the review editor.</p>
+  <div class="panel"><div class="showcase-body">{{ coverflow(voices) }}</div></div>
+  <table class="small">
+    <thead><tr><th>Voice</th><th>Language</th><th>Pitch</th><th>Register</th><th></th><th></th></tr></thead>
+    <tbody>{% for v in voices %}
+      <tr><td><b>{{ v.name }}</b>{% if v.default %} <span class="chip grey">default</span>{% endif %}</td>
+        <td>{{ v.accent }}{{ " English" if v.lang == "en" else "" }}</td><td>{{ v.f0 }} Hz</td><td>{{ v.register }}</td>
+        <td>{% if v.sample %}<button class="secondary play-btn" data-play="/samples/{{ v.id }}"><span class="play"></span>Play</button>{% endif %}</td>
+        <td><a href="/app/tts?voice={{ v.id }}&lang={{ v.lang }}">Use in Text to Speech →</a></td></tr>
+    {% endfor %}</tbody>
+  </table>
+</section>
+{% endblock %}

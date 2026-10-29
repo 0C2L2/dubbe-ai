@@ -2,10 +2,12 @@ import argparse
 import time
 from pathlib import Path
 
-from . import asr, config, extract, mux, read_json, report, segment, separate, shorten, timing, translate, tts, voice, write_json
+from . import (asr, config, emotion, extract, mux, read_json, report, segment, separate, shorten, speakers, timing, translate,
+               tts, voice, write_json)
 
-STAGES = {"extract": extract, "separate": separate, "asr": asr, "segment": segment, "voice": voice, "translate": translate,
-          "tts": tts, "shorten": shorten, "timing": timing, "mux": mux, "report": report}
+STAGES = {"extract": extract, "separate": separate, "asr": asr, "segment": segment, "speakers": speakers, "emotion": emotion,
+          "voice": voice,
+          "translate": translate, "tts": tts, "shorten": shorten, "timing": timing, "mux": mux, "report": report}
 
 
 def main(argv=None) -> None:
@@ -19,6 +21,8 @@ def main(argv=None) -> None:
     p.add_argument("--slow-video", type=float, metavar="MAX", help="allow slowing the picture up to MAX (e.g. 1.2) "
                    "where the dub is longer, instead of only speeding up speech")
     p.add_argument("--no-background", action="store_true", help="voice only: drop music/effects (faster, no separation)")
+    p.add_argument("--voice", help="voice of the dub: a preset of the target language, or clone:<id> when the website has put "
+                   "that clone's recording in the work folder; default: matched to the speaker's pitch")
     a = p.parse_args(argv)
 
     if not a.video.exists():
@@ -28,10 +32,14 @@ def main(argv=None) -> None:
         cfg["max_video_slow"] = a.slow_video
     if a.no_background:
         cfg["keep_background"] = False
+    if a.voice:
+        cfg["voice"] = a.voice
     work = a.work / f"{a.video.stem}.{a.src}-{a.tgt}"
     work.mkdir(parents=True, exist_ok=True)
     log_path = work / "run.json"
     log = read_json(log_path) if log_path.exists() else {"done": {}}
+    log["video"] = str(a.video.resolve())  # lets the web page re-dub after review changes, with the same options
+    log["options"] = {"slow_video": cfg["max_video_slow"], "no_background": not cfg["keep_background"]}
 
     names = list(STAGES)
     first = names.index(a.start) if a.start else None

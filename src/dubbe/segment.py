@@ -51,6 +51,36 @@ def group(words: list[dict], cfg: dict) -> list[list[dict]]:
     return _merge_short(sents, cfg["min_dur"])
 
 
+def edit(s: dict, text: str, chosen: list[str]) -> bool:
+    """A reviewer's change to one sentence: tags as chosen (known ones, fixed order), and the dub text only
+    if it changed - then it is marked as a human edit, which later stages never re-translate."""
+    from .tags import ALL
+    tags = [t for t in ALL if t in chosen]
+    if tags != (s.get("tags") or []):
+        s["tags_edited"] = True  # the emotion stage never overwrites them again
+    s["tags"] = tags
+    changed = bool(text.strip()) and text.strip() != (s["tgt_text"] or "").strip()
+    if changed:
+        s.update(tgt_text=text.strip(), edited=True)
+    return changed
+
+
+def carry_over(old: list[dict], new: list[dict]) -> list[dict]:
+    """Copy a reviewer's edited translation and tags from the old sentences to the new ones.
+    Re-segmenting renumbers sentences, so match by time: an old sentence carries over to the new one
+    when each covers more than half of the other (a split or merge of sentences does not carry edits)."""
+    for n in new:
+        for o in old:
+            ov = min(n["end"], o["end"]) - max(n["start"], o["start"])
+            if ov > 0.5 * (n["end"] - n["start"]) and ov > 0.5 * (o["end"] - o["start"]):
+                if o.get("edited"):
+                    n.update(tgt_text=o["tgt_text"], edited=True)
+                if o.get("tags") and (o.get("tags_edited") or "auto_tags" not in o):  # the reviewer's, not heard ones
+                    n.update(tags=o["tags"], tags_edited=True)
+                break
+    return new
+
+
 def run(video: Path, work: Path, cfg: dict) -> None:
     words = read_json(work / "words.json")["words"]
     join = cfg["src"].get("join", " ")
@@ -65,4 +95,5 @@ def run(video: Path, work: Path, cfg: dict) -> None:
         })
     old = read_json(work / "segments.json") if (work / "segments.json").exists() else {}
     keep = {"speakers": old["speakers"]} if "speakers" in old else {}  # reviewer voice overrides survive re-runs
+    segments = carry_over(old.get("segments", []), segments)  # ...and so do edited translations and tags
     write_json(work / "segments.json", {"src": cfg["src"]["code"], "tgt": cfg["tgt"]["code"], **keep, "segments": segments})

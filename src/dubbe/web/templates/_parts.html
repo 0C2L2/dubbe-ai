@@ -1,0 +1,344 @@
+{# Visual blocks for the public pages: {% from "_parts.html" import ... %}. Every number and sentence comes from
+   DUBBE's own data (languages.yaml, the example dub, test-results.md) - nothing is invented for decoration. #}
+
+{% macro icon(name) %}<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == "cap" %}<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/>
+{%- elif name == "play" %}<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/>
+{%- elif name == "case" %}<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5h6v2M3 12h18"/>
+{%- elif name == "bulb" %}<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>
+{%- elif name == "mic" %}<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>
+{%- elif name == "cc" %}<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M13 15h4M7 11h10"/>
+{%- elif name == "home" %}<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>
+{%- elif name == "film" %}<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4"/>
+{%- elif name == "speak" %}<path d="M4 9v6M8 6v12M12 3v18M16 7v10M20 10v4"/>
+{%- elif name == "text" %}<path d="M4 6h16M4 12h10M4 18h7"/><path d="M17 15l2 2 3-4"/>
+{%- elif name == "globe" %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>
+{%- elif name == "layers" %}<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>
+{%- elif name == "folder" %}<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+{%- elif name == "clock" %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{%- elif name == "orb" %}<circle cx="12" cy="12" r="9"/><path d="M8 10a4 4 0 0 1 7-1"/>
+{%- elif name == "gauge" %}<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/>
+{%- elif name == "gear" %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>
+{%- elif name == "help" %}<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>
+{%- elif name == "shield" %}<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>
+{%- elif name == "users" %}<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.5.5 4 2.8 4 6"/>
+{%- elif name == "list" %}<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+{%- elif name == "mail" %}<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>
+{%- elif name == "chart" %}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+{%- elif name == "plus" %}<path d="M12 5v14M5 12h14"/>
+{%- elif name == "out" %}<path d="M9 4H5v16h4M15 8l4 4-4 4M19 12H9"/>
+{%- elif name == "store" %}<path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>
+{%- elif name == "search" %}<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>
+{%- endif %}</svg>{% endmacro %}
+
+{# ---------- marketplace: painted orb as cover art (colour from the voice id), star rating, voice card ---------- #}
+{% macro orb_art(i, size="md", play="", label="Play sample", vt="") %}
+{%- set pal = [("#ffb36b", "#f2591a", "#8a2c0c", "#f47a3b"), ("#f6a6e8", "#8f7cf7", "#6fb8ff", "#c49cf2"),
+               ("#2f221d", "#9a5a44", "#c7a3e6", "#5b3a30"), ("#bfe3ff", "#4f8cf7", "#eaf4ff", "#7fb0f8"),
+               ("#ffd36e", "#ff7a59", "#b84bd9", "#ff9a6b"), ("#8ff0d1", "#159a86", "#eafff8", "#4cc4a6"),
+               ("#ffc7d1", "#e2557a", "#fff1e6", "#f08aa0"), ("#e3efe5", "#7fae94", "#fbf6ea", "#b6ccbf")] %}
+{%- set c = pal[i % 8] -%}
+<span class="orb mk-orb {{ size }}" style="--a:{{ c[0] }};--b:{{ c[1] }};--c:{{ c[2] }};--base:{{ c[3] }}{{ ';view-transition-name:' ~ vt if vt }}"
+  {%- if play %} data-play="{{ play }}" role="button" tabindex="0" aria-label="{{ label }}"{% endif %}>
+  <span class="paint" style="animation-delay:-{{ i * 3 % 24 }}s"></span>{% if play %}<span class="play"></span>{% endif %}</span>
+{%- endmacro %}
+
+{% macro stars(r) %}<span class="stars" style="--r:{{ r or 0 }}" role="img" aria-label="{{ ('%.1f out of 5 stars' | format(r)) if r else 'Not rated yet' }}">★★★★★</span>{% endmacro %}
+
+{% macro voice_card(v, me) %}
+<article class="mk-card">
+  {{ orb_art(v.id, "md", "/app/voices/" ~ v.id ~ "/sample", "Play " ~ v.name, "orb-" ~ v.id) }}
+  <div class="mk-body">
+    <a href="/app/market/{{ v.id }}" class="mk-name">{{ v.name }}</a>
+    <span class="muted small">by {{ v.owner_name or "a DUBBE user" }}</span>
+    <span class="mk-meta">{{ stars(v.rating) }}<span class="small muted">{{ "%.1f" | format(v.rating) if v.rating else "New" }}{% if v.reviews %} ({{ v.reviews }}){% endif %} · {{ v.uses }} use{{ "s" if v.uses != 1 }}</span></span>
+    <p class="small mk-desc">{{ v.description }}</p>
+    <span class="mk-tags"><span class="chip grey">{{ NAMES[v.lang] }}</span>{% if v.category %} <span class="chip grey">{{ v.category }}</span>{% endif %}</span>
+  </div>
+  <div class="mk-act">
+    {% if v.owner_id == me %}<a role="button" class="secondary" href="/app/voices/{{ v.id }}">Yours</a>
+    {% elif v.saved %}<a role="button" class="secondary" href="/app/tts?voice=clone:{{ v.id }}&lang={{ v.lang }}">Open</a>
+    {% else %}<form method="post" action="/app/market/{{ v.id }}/add" data-get data-open="/app/tts?voice=clone:{{ v.id }}&lang={{ v.lang }}"
+      data-msg="{{ v.name }} is in your voices"><button>Get</button></form>{% endif %}
+  </div>
+</article>
+{% endmacro %}
+
+{# ---------- Voice Studio: where a voice is on its way to the marketplace ---------- #}
+{% macro stepper(steps, at, state) %}
+<ol class="stepper" aria-label="Progress">{% for s in steps %}
+  {%- set done = loop.index0 < at or (loop.index0 == at and state == "done") %}
+  <li class="{{ 'done' if done else state if loop.index0 == at else '' }}"{{ ' aria-current="step"' | safe if loop.index0 == at }}>
+    <span class="dot">{{ "✓" if done else "!" if loop.index0 == at and state == "failed" else loop.index }}</span><span>{{ s }}</span></li>
+{%- endfor %}</ol>
+{% endmacro %}
+
+{# ---------- upload area: the whole box is the file picker (click or drop a file on it) ---------- #}
+{% macro dropzone(ic, title, info, accept, left) %}
+<label class="drop" data-drop>
+  <span class="drop-ico">{{ icon(ic) }}</span>
+  <b data-drop-title>{{ title }}</b>
+  <span class="muted small" data-drop-info>{{ info }}</span>
+  <span class="pick" aria-hidden="true">Choose file</span>
+  <input type="file" name="file" required accept="{{ accept }}" data-left="{{ left }}" aria-label="{{ title }}">
+</label>
+<p class="dur" id="dur" aria-live="polite"></p>
+{% endmacro %}
+
+{# ---------- one row per tool result (home, history, tool pages) ---------- #}
+{% macro task_item(x) %}{% set t, r = x.t, x.r %}
+<div class="titem">
+  <span class="titem-ico k-{{ t.kind }}">{{ icon({"tts": "speak", "stt": "text", "speakers": "users", "captions": "cc", "translate": "globe", "isolate": "layers"}[t.kind]) }}</span>
+  <div class="titem-main"><a href="/app/tasks/{{ t.id }}"><b>{{ t.title }}</b></a>
+    <small class="muted">{{ TOOLS[t.kind] }} · {{ t.created_at | date }}{% if t.minutes %} · {{ "%.1f" | format(t.minutes) }} min{% endif %}</small></div>
+  {% if t.status == "done" and t.kind == "tts" %}<button class="secondary play-btn" data-play="/app/tasks/{{ t.id }}/file/speech.mp3"><span class="play"></span>Play</button>
+  {% elif t.status != "done" %}<span class="chip {{ 'low_mt' if t.status == 'failed' else 'grey' }}">{{ t.status }}</span>{% endif %}
+  <a href="/app/tasks/{{ t.id }}" role="button" class="secondary">Open</a>
+</div>
+{% endmacro %}
+
+{# ---------- voices: centre-focused carousel of painted orbs (after elevenlabs.io) ---------- #}
+{% macro coverflow(voices) %}
+{% set pal = [("#ffb36b", "#f2591a", "#8a2c0c", "#f47a3b"), ("#f6a6e8", "#8f7cf7", "#6fb8ff", "#c49cf2"),
+              ("#2f221d", "#9a5a44", "#c7a3e6", "#5b3a30"), ("#e3efe5", "#b6ccbf", "#fbf6ea", "#dce6de"),
+              ("#bfe3ff", "#4f8cf7", "#eaf4ff", "#7fb0f8"), ("#ffd36e", "#ff7a59", "#b84bd9", "#ff9a6b"),
+              ("#8ff0d1", "#159a86", "#eafff8", "#4cc4a6"), ("#ffc7d1", "#e2557a", "#fff1e6", "#f08aa0")] %}
+<div class="cf" data-coverflow tabindex="0" aria-roledescription="carousel" aria-label="Preset voices. Use the arrow keys to browse.">
+  <div class="cf-stage">
+  {% set first = voices | selectattr("default") | first %}{% set start = voices.index(first) if first else 0 %}
+  {% for v in voices %}{% set c = pal[(loop.index0 - start) % pal | length] %}{# the default voice gets the warm orange #}
+    <figure class="cf-item" style="--a:{{ c[0] }};--b:{{ c[1] }};--c:{{ c[2] }};--base:{{ c[3] }}"{{ " data-default" if v.default }}>
+      <button class="orb" tabindex="-1" {% if v.sample %}data-play="/samples/{{ v.id }}" aria-label="Play {{ v.name }}"{% else %}aria-label="{{ v.name }}"{% endif %}>
+        <span class="paint" style="animation-delay:-{{ loop.index0 * 3 }}s"></span>{% if v.sample %}<span class="play"></span>{% endif %}</button>
+      <figcaption><b>{{ v.name }}</b><span>{{ v.accent }} · {{ v.f0 }} Hz</span></figcaption>
+    </figure>
+  {% endfor %}
+  </div>
+  <button class="cf-btn prev" data-prev aria-label="Previous voice">‹</button>
+  <button class="cf-btn next" data-next aria-label="Next voice">›</button>
+</div>
+{% endmacro %}
+
+{% macro voice_carousel(voices, title="Hear the voices", lead="") %}
+<section class="band" data-reveal>
+  {% set n = voices | map(attribute="key") | unique | list | length %}
+  <span class="eyebrow">{{ n }} preset voice{{ "s" if n != 1 }}</span><h2>{{ title }}</h2>
+  {% if lead %}<p class="muted" style="max-width:40rem">{{ lead }}</p>{% endif %}
+  <div class="panel"><div class="showcase-body">{{ coverflow(voices) }}</div></div>
+</section>
+{% endmacro %}
+
+{# ---------- the hero panel: tabs, stage, feature pills (after elevenlabs.io) ---------- #}
+{% macro showcase(voices, ex) %}
+<div class="panel showcase" data-reveal>
+  <div class="seg" role="tablist" aria-label="See DUBBE">
+    <button role="tab" id="t-voices" aria-controls="p-voices" aria-selected="true" class="on"><i class="dot" style="--c:var(--orange)"></i>Voices</button>
+    <button role="tab" id="t-dub" aria-controls="p-dub" aria-selected="false" tabindex="-1"><i class="dot" style="--c:var(--violet)"></i>Dubbing</button>
+    <button role="tab" id="t-review" aria-controls="p-review" aria-selected="false" tabindex="-1"><i class="dot" style="--c:var(--green)"></i>Review</button>
+  </div>
+  <div class="showcase-body">
+    <div role="tabpanel" id="p-voices" aria-labelledby="t-voices">{{ coverflow(voices) }}</div>
+    <div role="tabpanel" id="p-dub" aria-labelledby="t-dub" hidden>
+      {% if ex %}{{ ex.timeline | safe }}<p class="muted small" style="margin:10px 0 0">{{ ex.title }} — click a coloured block to
+        jump to that sentence. {{ ex.credit }}</p>{% else %}<p class="muted">The example dub is not on this installation yet.</p>{% endif %}
+    </div>
+    <div role="tabpanel" id="p-review" aria-labelledby="t-review" hidden>{% if ex %}{{ review_mock(ex) }}{% endif %}</div>
+  </div>
+  <nav class="pillbar" aria-label="Features">
+    <div class="pills">
+      <a class="on" href="/features">AI dubbing</a><a href="/features#flags">Review flags</a><a href="/examples">Examples</a>
+      <a href="/translate-video/korean-to-english">Korean → English</a><a href="/translate-video/english-to-korean">English → Korean</a>
+      <a href="/features#languages">{{ NAMES | length }} languages</a><a href="/features#speakers">Several speakers</a>
+      <a href="/education">For lectures</a>
+    </div>
+    <a href="/signup" role="button">Start free</a>
+  </nav>
+</div>
+{% endmacro %}
+
+{% macro review_mock(ex) %}
+<div class="mock">
+  <div class="mock-bar"><span class="lights"><i></i><i></i><i></i></span><span>Review editor · {{ ex.title }}</span></div>
+  <div class="mock-body">
+  {% for s in ex.segs if s.flag %}{% if loop.index <= 3 %}
+    <div class="mock-row"><b>#{{ s.id }}</b>{% for f in s.flag %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% endfor %}<span>{{ s.tgt_text }}</span></div>
+  {% endif %}{% endfor %}
+  {% if ex.wrong %}
+    <div class="mock-open">
+      <p class="muted small" style="margin:0 0 6px">#{{ ex.wrong.id }} · {{ ex.wrong.src_text }}</p>
+      <p class="mock-text">{{ ex.wrong.tgt_text.split(ex.fix[0])[0] }}<span class="scramble" data-scramble="{{ ex.fix[1] }}">{{ ex.fix[0] }}</span>{{ ex.wrong.tgt_text.split(ex.fix[0])[1] }}</p>
+      <div class="tagbox"><label><input type="checkbox" checked disabled>[slow]</label><label><input type="checkbox" disabled>[question]</label><label><input type="checkbox" disabled>[soft]</label></div>
+      <p class="muted small" style="margin:10px 0 0">A real mistake in this dub: the reference says "{{ ex.fix[1] }}". The reviewer fixes it, and the re-dub never re-translates it.</p>
+    </div>
+  {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{# ---------- original vs. dub, sentence by sentence (after voiceslab.io's sample cards) ---------- #}
+{% macro sentence_carousel(ex) %}
+<section class="band" data-reveal>
+  <div class="carousel" data-carousel data-autoplay>
+    <div class="carousel-head">
+      <div><span class="eyebrow">Real output, no edits</span><h2>Original and dub, side by side</h2>
+        <p class="muted">One card per sentence of the example. Some sentences marked OK are still wrong (#5's names, for
+          one) — flags miss confident mistakes.</p></div>
+      <div class="carousel-nav"><button class="secondary icon" data-prev aria-label="Previous">←</button>
+        <button class="secondary icon" data-next aria-label="Next">→</button></div>
+    </div>
+    <div class="track" tabindex="0" aria-label="Sentences of the example dub">
+    {% for s in ex.segs %}
+      <article class="slide">
+        <img src="/examples/{{ ex.slug }}/frame/{{ s.id }}" alt="" loading="lazy" width="640" height="360">
+        <div class="slide-body">
+          <p class="slide-meta"><span class="num">#{{ s.id }}</span>
+            {% for f in s.flag or [] %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% else %}<span class="chip ok">OK</span>{% endfor %}</p>
+          <div class="pair">
+            <div><span class="eyebrow">Korean</span><p class="small">{{ s.src_text }}</p>
+              <button class="secondary play-btn" data-play="/examples/{{ ex.slug }}/orig/{{ s.id }}"><span class="play"></span>Original</button></div>
+            <div><span class="eyebrow">English dub</span><p class="small">{{ s.tgt_text }}</p>
+              <button class="play-btn" data-play="/examples/{{ ex.slug }}/tts/{{ s.id }}"><span class="play"></span>Dub</button></div>
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+  </div>
+</section>
+{% endmacro %}
+
+{# ---------- before / after (after cloudflare.com's "Fighting infra vs Shipping") ---------- #}
+{% macro before_after(ex) %}
+<section class="band" data-reveal>
+  <span class="eyebrow">Why flags</span><h2>Stop listening to every sentence</h2>
+  <div class="ba">
+    <div class="ba-side before">
+      <span class="eyebrow">Without flags</span>
+      <h3>Listen to all {{ ex.segs | length }} sentences to find the mistakes</h3>
+      <div class="ba-tl">{% for s in ex.segs %}<i style="--i:{{ loop.index0 }}"></i>{% endfor %}</div>
+      <p class="muted small">Every sentence looks the same until you have heard it.</p>
+    </div>
+    <div class="ba-side after grain">
+      <span class="eyebrow">With DUBBE</span>
+      <h3>Start with the {{ ex.flagged }} flagged sentences</h3>
+      <div class="ba-tl">{% for s in ex.segs %}<i class="{{ (s.flag or ['ok'])[0] }}" style="--i:{{ loop.index0 }}"></i>{% endfor %}</div>
+      <p class="small">{{ ex.flagged }} of {{ ex.segs | length }} on the example clip. Then one final listen — flags miss confident mistakes.</p>
+    </div>
+  </div>
+</section>
+{% endmacro %}
+
+{# ---------- feature tiles that move (after motion.dev/plus). Needs the example dub. ---------- #}
+{% macro bento(ex) %}
+<section class="band" data-reveal>
+  <span class="eyebrow">What you get</span><h2>Everything a lecture dub needs</h2>
+  <div class="bento" data-stagger>
+    <article class="tile wide" data-reveal id="flags">
+      <div class="tile-art flags-art"><div class="mini-tl">{% for s in ex.segs %}<i class="{{ (s.flag or ['ok'])[0] }}" style="--i:{{ loop.index0 }}"></i>{% endfor %}<b class="head"></b></div></div>
+      <h3>Review flags on the timeline</h3><p class="muted">Translation, speech recognition and timing problems, coloured where they happen.</p>
+    </article>
+    <article class="tile" data-reveal>
+      <div class="tile-art wave-art"><div class="wave voice">{% for i in range(28) %}<i style="--i:{{ i }}"></i>{% endfor %}</div>
+        <div class="wave music">{% for i in range(28) %}<i style="--i:{{ i }}"></i>{% endfor %}</div></div>
+      <h3>Background sound stays</h3><p class="muted">Music and effects duck only while the new voice speaks.</p>
+    </article>
+    <article class="tile" data-reveal>
+      <div class="tile-art type-art"><p class="caption" data-type='{{ [ex.short.src_text, ex.short.tgt_text] | tojson }}'>&nbsp;</p></div>
+      <h3>Subtitles in both languages</h3><p class="muted">SRT and WebVTT, timed to the dubbed video.</p>
+    </article>
+    <article class="tile" data-reveal>
+      <div class="tile-art fix-art"><p>{% if ex.wrong %}…forests in <span class="scramble big-word" data-scramble="{{ ex.fix[1] }}" data-loop>{{ ex.fix[0] }}</span>…{% endif %}</p></div>
+      <h3>Fix a word, re-dub</h3><p class="muted">Corrections are never re-translated; re-dubs use no minutes.</p>
+    </article>
+    <article class="tile" data-reveal>
+      <div class="tile-art drift-art"><div class="lane">{% for i in range(6) %}<i style="left:{{ 8 + i * 15 }}%"></i>{% endfor %}</div>
+        <div class="lane dub">{% for i in range(6) %}<i style="left:{{ 8 + i * 15 }}%"></i>{% endfor %}</div><b class="head"></b><span class="drift-val">0.00 s</span></div>
+      <h3>No drift</h3><p class="muted">Every sentence starts where it was said — measured on three clips.</p>
+    </article>
+    <article class="tile wide" data-reveal>
+      <div class="tile-art tags-art"><div class="tagbox">{% for t in ["slow", "fast", "soft", "loud", "pause", "question", "laugh", "sigh"] %}<label style="--i:{{ loop.index0 }}"><input type="checkbox" disabled>[{{ t }}]</label>{% endfor %}</div></div>
+      <h3>Delivery tags</h3><p class="muted">Slower, softer, a question, a pause — per sentence. DUBBE also tags what it hears in the
+        original (questions, emotion, laughs, sighs); you keep or untick them.</p>
+    </article>
+    <article class="tile" data-reveal>
+      <div class="tile-art report-art"><dl>
+        <dt>Processing</dt><dd>29 s (en) · 77 s (ko) / video min</dd>
+        <dt>GPU cost</dt><dd>≈ $0.003 (en) · $0.007 (ko) / video min</dd>
+        <dt>To check</dt><dd>{{ ex.flagged }} of {{ ex.segs | length }} sentences</dd></dl></div>
+      <h3>A report for every video</h3><p class="muted">Time, cost and every check, as a page you can keep.</p>
+    </article>
+  </div>
+</section>
+{% endmacro %}
+
+{# ---------- who it is for (after upwork.com's category tiles) ---------- #}
+{% macro use_cases() %}
+<section class="band" data-reveal>
+  <span class="eyebrow">Made for</span><h2>Videos where a wrong sentence matters</h2>
+  <div class="uses" data-stagger>
+    {% for ic, t, d, href in [("cap", "University lectures", "Courses for international students", "/education"),
+                              ("play", "Online courses", "MOOC and learning-platform videos", "/education"),
+                              ("case", "Company training", "How-to and onboarding videos", "/translate-video/korean-to-english"),
+                              ("bulb", "Tutorials", "Explainers for a second audience", "/translate-video/english-to-korean"),
+                              ("mic", "Talks", "Seminars and conference talks", "/examples"),
+                              ("cc", "Subtitles", "Both languages, timed to the dub", "/features")] %}
+    <a class="use" href="{{ href }}" data-reveal>{{ icon(ic) }}<b>{{ t }}</b><span>{{ d }}</span></a>
+    {% endfor %}
+  </div>
+</section>
+{% endmacro %}
+
+{# ---------- cost calculator (after upwork.com's cost estimate) ---------- #}
+{% macro calculator() %}
+<section class="band" data-reveal>
+  <div class="calc" data-calc>
+    <div>
+      <span class="eyebrow" style="color:#a59f97">Cost of a course</span>
+      <h2>How much video do you need dubbed?</h2>
+      <label class="calc-in">Minutes of video: <output data-out="min">90</output>
+        <input type="range" min="5" max="3000" step="5" value="90" aria-label="Minutes of video"></label>
+      <p class="small" style="color:#a59f97">A semester of 30 lectures × 75 min is 2,250 minutes.</p>
+    </div>
+    <div class="calc-res">
+      <div class="calc-row"><span>DUBBE processing time</span><b data-out="time"></b></div>
+      <div class="calc-row"><span>DUBBE GPU cost</span><b data-out="ours"></b><i class="bar" data-bar="ours"></i></div>
+      <div class="calc-row"><span>ElevenLabs automatic dubbing</span><b data-out="el"></b><i class="bar" data-bar="el"></i></div>
+      <div class="calc-row"><span>Human studio dubbing</span><b data-out="human"></b><i class="bar" data-bar="human"></i></div>
+      <p class="small" style="color:#a59f97;margin:12px 0 0">Measured 29 s per video minute into English on an RTX 4060 (77 s into Korean); GPU at an assumed
+        $0.35/hour. ElevenLabs ≈ $0.50–0.60/min from its credit prices; human dubbing $80–250/min is an unverified industry
+        figure. Bars on a log scale. During the beta DUBBE is free (15 min/month).</p>
+    </div>
+  </div>
+</section>
+{% endmacro %}
+
+{# ---------- numbers that roll in (after motion.dev's AnimateNumber) ---------- #}
+{% macro stats(voices) %}
+<section class="band" data-reveal>
+  <span class="eyebrow">Measured, not promised</span>
+  <div class="cols" data-stagger>
+    <div data-reveal><p class="big" data-odometer>9.1%</p><p class="muted">character error rate of speech recognition on 22 minutes of read Korean (FLEURS, one pass)</p></div>
+    <div data-reveal><p class="big" data-odometer>29 s</p><p class="muted">of processing per video minute into English on one laptop GPU (Korean: 77 s)</p></div>
+    <div data-reveal><p class="big" data-odometer>0.00 s</p><p class="muted">largest timing delay on three test clips (one with picture slow-down)</p></div>
+    <div data-reveal><p class="big" data-odometer>{{ NAMES | length }}</p><p class="muted">languages, in any pair — each with 26 voices, picked per speaker by pitch</p></div>
+  </div>
+  <p style="margin-top:24px"><a href="/results">All results — including what does not work well yet →</a></p>
+</section>
+{% endmacro %}
+
+{% macro pipeline() %}
+<ol class="pipe" aria-label="The thirteen steps of a dub">
+{% for s in ["Extract sound", "Separate voice", "Recognise speech", "Find sentences", "Tell speakers apart", "Hear the delivery",
+             "Pick voices", "Translate", "Speak", "Shorten", "Time to picture", "Mix", "Report"] %}
+  <li style="--i:{{ loop.index0 }}"><span class="num">{{ "%02d" | format(loop.index) }}</span>{{ s }}</li>
+{% endfor %}
+</ol>
+{% endmacro %}
+
+{% macro marquee() %}
+{% set items = ["Whisper large-v3", "NLLB-200 3.3B", "Kokoro-82M", "Demucs", "Chatterbox Multilingual", "Chatterbox Turbo", "WavLM", "HuBERT", "AST",
+                 "faster-whisper", "CTranslate2", "FFmpeg"] %}
+<div class="marquee" aria-label="Built on {{ items | join(', ') }}">
+  <div class="marquee-row">{% for r in range(2) %}{% for i in items %}<span{{ ' aria-hidden="true"' | safe if r }}>{{ i }}</span>{% endfor %}{% endfor %}</div>
+</div>
+{% endmacro %}

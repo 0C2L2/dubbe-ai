@@ -1,9 +1,7 @@
 from pathlib import Path
 
-import soundfile as sf
-
 from . import free_gpu, read_json, video_duration, write_json
-from .tts import ENGINES, trim, tts_cfg
+from .tts import finish, synth, trim
 
 
 def pick(alts: list[dict], current: str, min_ratio: float) -> str | None:
@@ -29,12 +27,14 @@ def run(video: Path, work: Path, cfg: dict) -> None:
             todo.append((s, text))
 
     if todo:
-        tts = tts_cfg(data, cfg)
-        for (s, text), (audio, sr) in zip(todo, ENGINES[tts["engine"]]([t for _, t in todo], tts)):
-            audio = trim(audio)
-            if len(audio) / sr < s["tts_dur"]:  # keep only if the speech really got shorter
-                sf.write(work / "tts" / f"{s['id']}.wav", audio, sr)
-                s.update(tgt_text=text, tts_dur=round(len(audio) / sr, 3), shortened=True,
+        texts = {s["id"]: t for s, t in todo}
+        for s, audio, sr, _, _ in synth(data, cfg, work, todo):  # each speaker with their own voice
+            text = texts[s["id"]]
+            tmp = work / "tts" / f"{s['id']}.short.wav"
+            dur = finish(tmp, trim(audio), sr, s.get("tags") or [])
+            if dur < s["tts_dur"]:  # keep only if the speech really got shorter
+                tmp.replace(work / "tts" / f"{s['id']}.wav")
+                s.update(tgt_text=text, tts_dur=dur, shortened=True,
                          mt_conf=next(a["conf"] for a in s["alts"] if a["text"] == text))
         free_gpu()
     print(f"         shortened {sum(s['shortened'] for s in segs)} of {len(todo)} overflowing segments")

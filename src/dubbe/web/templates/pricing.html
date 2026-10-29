@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Plans — DUBBE{% endblock %}
+{% block main %}
+<section class="hero">
+  <h1>Plans for every lecture load</h1>
+  <p class="lead">During the beta everyone is on Free. Paid plans are a proposal — join a waitlist to tell us which one you
+    would use; that is how we set the prices.</p>
+</section>
+
+<div class="plans">
+{% for key, p in PLANS.items() %}
+  <div class="plan{{ ' featured' if key == 'creator' }}">
+    <div class="plan-top{{ ' grain' if key == 'creator' }}">
+      <div><h3>{{ p.name }}</h3>{% if key == "creator" %}<span class="badge">Proposal</span>{% endif %}</div>
+      <p class="price">${{ p.price }} <span>per month</span></p>
+    </div>
+    {% if key == "free" %}
+      <p class="plan-note">No card. Everyone is on Free during the beta.</p>
+      <a href="/signup" role="button" class="block">Start free</a>
+    {% else %}
+      <form method="post" action="/waitlist">
+        <input type="hidden" name="plan" value="{{ key }}">
+        <input type="email" name="email" placeholder="you@example.com" required aria-label="Email for the {{ p.name }} waitlist">
+        <button class="block">Join the waitlist</button>
+      </form>
+    {% endif %}
+    <ul class="checks">
+      <li>{{ p.minutes }} dubbed minutes a month</li>
+      <li>Videos up to {{ p.max_len }} min</li>
+      <li>Projects kept {{ p.keep_days }} days</li>
+      <li>Review editor, flags, report</li>
+      <li>Subtitles in both languages</li>
+      <li>Re-dubs after corrections: free</li>
+    </ul>
+  </div>
+{% endfor %}
+  <div class="plan">
+    <div class="plan-top">
+      <h3>School / Team</h3>
+      <p class="price">Custom</p>
+    </div>
+    <p class="plan-note">For courses and departments.</p>
+    <a href="/contact?topic=school" role="button" class="secondary block">Contact us</a>
+    <ul class="checks">
+      <li>Whole courses or departments</li>
+      <li>Minutes and retention agreed with you</li>
+      <li>Extra free minutes for school emails (amount being decided)</li>
+    </ul>
+  </div>
+</div>
+
+<p class="notice draft">DUBBE is non-commercial during the beta. The translation model (NLLB-200) is licensed
+  CC BY-NC 4.0 — non-commercial use only. Paid plans need another translation model first; that is one more
+  reason they are a waitlist today.</p>
+
+<section class="band split">
+  <div><span class="eyebrow">How this compares</span><h2>Cheaper per minute, and the editor is free</h2>
+    <p class="muted">Competitor prices checked 2026-10-14/15 from their pricing pages and reviews; they change often. Our
+      own GPU cost is about $0.003 per video minute into English and $0.007 into Korean (measured run time, assumed $0.35/hour cloud GPU) — server, storage and
+      support cost more than that at small scale.</p></div>
+  <table class="small">
+    <thead><tr><th>Service</th><th>Per dubbed minute</th><th>Editor on free plan</th></tr></thead>
+    <tbody>
+      <tr><td>ElevenLabs (automatic)</td><td>≈ $0.50–0.60</td><td>No — from Starter</td></tr>
+      <tr><td>Perso AI</td><td>$0.55–1.00</td><td>—</td></tr>
+      <tr><td>Rask AI</td><td>≈ $2–3</td><td>3-min trial</td></tr>
+      <tr><td>YouTube auto-dubbing</td><td>free, YouTube only</td><td>—</td></tr>
+      <tr><td><b>DUBBE Creator / Pro</b></td><td><b>$0.075 / $0.048</b></td><td><b>Yes</b></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="band split">
+  <div><span class="eyebrow">Questions</span><h2>About plans</h2></div>
+  <div>
+    <details><summary>What counts as a minute?</summary><p>The length of each new video you upload.</p></details>
+    <details><summary>Do unused minutes carry over?</summary><p>No, minutes reset on the 1st of each month.</p></details>
+    <details><summary>Are re-dubs counted?</summary><p>No. Correcting sentences and re-dubbing uses no minutes.</p></details>
+    <details><summary>What happens at the limit?</summary><p>The upload is refused with a message saying how many minutes
+      you have left; nothing is charged.</p></details>
+    <details><summary>Where do I see my minutes?</summary><p>In the top bar when signed in, and on <a href="/app/plan">Plan &amp; usage</a>.</p></details>
+    <details><summary>How do I cancel or delete my data?</summary><p>There is nothing to cancel on Free. Delete a project, or
+      your whole account in <a href="/app/settings">Settings</a>; the files are removed at once.</p></details>
+  </div>
+</section>
+{% endblock %}

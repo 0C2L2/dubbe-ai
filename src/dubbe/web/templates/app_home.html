@@ -1,0 +1,85 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item, voice_card, orb_art %}
+{% block title %}Home — DUBBE{% endblock %}
+{% block main %}
+{% if not user.verified_at %}
+<p class="notice">Please confirm your email to start — we sent you a link.
+  <form method="post" action="/resend" class="inline"><button class="secondary">Send the link again</button></form></p>
+{% endif %}
+<span class="eyebrow">{{ "Admin" if admin else PLANS[user.plan].name ~ " plan" }}</span>
+<h1 class="app-h1">Welcome back{{ ", " ~ user.name.split(" ")[0] if user.name }}</h1>
+
+<div class="quick" data-stagger>
+{% for href, ic, t, d, c in [("/app/new", "film", "Dub a video", NAMES | length ~ " languages, with review flags", "var(--orange)"),
+                             ("/app/tts", "speak", "Text to Speech", "Type, add [tags], download the audio", "var(--violet)"),
+                             ("/app/stt", "text", "Speech to Text", "Transcript and subtitles from audio or video", "var(--green)"),
+                             ("/app/speakers", "users", "Speaker Detection", "Who speaks when, transcript by speaker", "#12a594"),
+                             ("/app/captions", "cc", "Subtitles", "Captions coloured by speaker, burned in on request", "#e2a336"),
+                             ("/app/translate", "globe", "Translate", "Sentence by sentence, with confidence", "#3b82f6"),
+                             ("/app/isolate", "layers", "Voice Isolator", "Split the voice from music and noise", "var(--red)"),
+                             ("/app/voices", "mic", "Voice Cloning", "Your own voice, or a speaker in a video with consent", "#d6409f"),
+                             ("/app/market", "store", "Voice Marketplace", "Voices people recorded and shared", "var(--amber)")] %}
+  <a class="qa" href="{{ href }}" style="--c:{{ c }}" data-reveal><span class="qa-ico">{{ icon(ic) }}</span><b>{{ t }}</b><span>{{ d }}</span></a>
+{% endfor %}
+</div>
+
+<section class="app-sec mk-promo" data-reveal>
+  <div class="row-head"><h2>Trending in the Voice Marketplace</h2><a href="/app/market">Open the Marketplace →</a></div>
+  {% if trending %}<div class="mk-grid">{% for v in trending %}{{ voice_card(v, user.id) }}{% endfor %}</div>{% endif %}
+  {% if cloning %}
+  <a class="mk-cta" href="/app/studio">{{ orb_art(user.id, "sm") }}
+    <span><b>Publish your own voice</b><span class="muted small">Read three sentences, list your clone, and see who uses it and what it would earn.</span></span>
+    <span class="mk-cta-go">Open Voice Studio →</span></a>
+  {% endif %}
+</section>
+
+{% set plan = PLANS[user.plan] %}
+<div class="dash-grid">
+  <section class="card">
+    <span class="eyebrow">This month</span>
+    <div class="ring-row">
+      <div class="ring" style="--p:{{ 0 if admin else [100 * used / plan.minutes, 100] | min }}"><b>{{ used }}</b><small>min used</small></div>
+      <div><p style="margin:0 0 4px"><b>{{ "No limits (admin)" if admin else left ~ " min left" }}</b></p>
+        <p class="muted small" style="margin:0">{{ plan.name }} plan · {{ plan.minutes }} min a month · videos up to {{ plan.max_len }} min ·
+          files kept {{ plan.keep_days }} days</p>
+        <p style="margin:10px 0 0"><a href="/app/plan">Plan &amp; usage →</a></p></div>
+    </div>
+  </section>
+  <section class="card">
+    <span class="eyebrow">At a glance</span>
+    <div class="mini-stats">
+      <a href="/app/projects"><b>{{ n_projects }}</b><span>dubbed videos</span></a>
+      <a href="{{ '/app/p/' ~ recent[0].p.id ~ '?only=flagged' if recent and recent[0].flagged else '/app/projects' }}"><b>{{ to_check }}</b><span>sentences to check</span></a>
+      <a href="/app/history"><b>{{ n_tasks }}</b><span>tool results</span></a>
+    </div>
+  </section>
+</div>
+
+<section class="app-sec">
+  <div class="row-head"><h2>Recent dubs</h2><a href="/app/projects">All projects →</a></div>
+  {% for x in recent %}{% set p, job = x.p, x.job %}
+  <div class="titem">
+    <span class="titem-ico k-dub">{{ icon("film") }}</span>
+    <div class="titem-main"><a href="{{ '/app/p/' ~ p.id if job and job.status == 'done' else '/app/jobs/' ~ job.id if job else '#' }}"><b>{{ p.title }}</b></a>
+      <small class="muted">{{ NAMES[p.src] }} → {{ NAMES[p.tgt] }} · {{ "%.1f" | format(p.minutes) }} min · {{ p.created_at | date }}</small></div>
+    {% if job and job.status == "done" %}
+      <a class="chip grey" href="/app/p/{{ p.id }}#speakers">{{ x.speakers }} speaker{{ "s" if x.speakers != 1 }}</a>
+      {% if x.flagged %}<span class="chip low_mt">{{ x.flagged }} to check</span>{% else %}<span class="chip ok">no flags</span>{% endif %}
+      <a href="/app/p/{{ p.id }}" role="button">Review</a>
+    {% elif job %}<span class="chip {{ 'low_mt' if job.status == 'failed' else 'grey' }}">{{ job.status }}{{ " · " ~ job.stage if job.status == "running" and job.stage }}</span>
+      <a href="/app/jobs/{{ job.id }}" role="button" class="secondary">Progress</a>{% endif %}
+  </div>
+  {% else %}
+  <div class="empty">{{ icon("film") }}<p>No dubs yet. Upload a video in any of the {{ NAMES | length }} languages to get your first dub with review flags.</p>
+    <a href="/app/new" role="button">Dub a video</a></div>
+  {% endfor %}
+</section>
+
+<section class="app-sec">
+  <div class="row-head"><h2>Recent generations</h2><a href="/app/history">History →</a></div>
+  {% for x in tasks %}{{ task_item(x) }}{% else %}
+  <div class="empty">{{ icon("speak") }}<p>Speech, transcripts, translations and isolated voices you make show up here.</p>
+    <a href="/app/tts" role="button" class="secondary">Try Text to Speech</a></div>
+  {% endfor %}
+</section>
+{% endblock %}

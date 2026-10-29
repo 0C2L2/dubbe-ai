@@ -34,20 +34,30 @@ def pick(f0: float, voices: dict[str, dict], split_hz: float) -> str:
 
 
 def run(video: Path, work: Path, cfg: dict) -> None:
-    """C10: match the dub voice to the speaker's pitch register - a preset voice, never a clone.
-    Single speaker for now (S1); per-speaker profiles come with diarization (C7)."""
+    """C10: match each speaker's dub voice to their pitch register - a preset voice, never a clone of the speaker.
+    A voice chosen when the dub was started (cfg["voice"]: a preset, or the user's own consented clone) is the main
+    speaker's (S1); a voice set later in the review editor (override) wins. Different speakers get different presets
+    while the library has enough of them. Speakers come from the speakers stage (C7); without it everything is S1."""
     data = read_json(work / "segments.json")
-    old = data.get("speakers", {}).get("S1", {})
+    segs = data["segments"]
     wav = work / "vocals.wav" if (work / "vocals.wav").exists() else work / "audio.wav"  # voice stem: music skews pitch
     audio, sr = sf.read(wav, dtype="float32")
-    speech = [audio[int(s["start"] * sr):int(s["end"] * sr)] for s in data["segments"]]
-    f0 = median_f0(np.concatenate(speech) if speech else audio, sr)
-
+    audio = audio.mean(1) if audio.ndim > 1 else audio
+    for s in segs:
+        s.setdefault("speaker", "S1")
+    groups: dict[str, list] = {}
+    for s in segs:
+        groups.setdefault(s["speaker"], []).append(audio[int(s["start"] * sr):int(s["end"] * sr)])
     tts = cfg["tgt"]["tts"]
-    voices = tts.get("voices") or {tts["voice"]: {"f0": f0}}  # no library: the one configured voice
-    voice = old["voice"] if old.get("override") else pick(f0, voices, cfg["register_split_hz"])
-    data["speakers"] = {"S1": {"median_f0": round(f0, 1), "register": register(f0, cfg["register_split_hz"]),
-                               "voice": voice, "override": bool(old.get("override"))}}
-    for s in data["segments"]:
-        s["speaker"] = "S1"
+    old_all, out, used = data.get("speakers", {}), {}, set()
+    for sp in sorted(groups, key=lambda k: -sum(len(c) for c in groups[k])) or ["S1"]:  # the main speaker picks first
+        old = old_all.get(sp, {})
+        f0 = median_f0(np.concatenate(groups[sp]) if groups.get(sp) else audio, sr)
+        voices = tts.get("voices") or {tts["voice"]: {"f0": f0}}  # no library: the one configured voice
+        chosen = old["voice"] if old.get("override") else cfg.get("voice") if sp == "S1" else None
+        voice = chosen or pick(f0, {v: p for v, p in voices.items() if v not in used} or voices, cfg["register_split_hz"])
+        used.add(voice)
+        out[sp] = {**old, "name": old.get("name") or f"Speaker {sp[1:]}", "median_f0": round(f0, 1),
+                   "register": register(f0, cfg["register_split_hz"]), "voice": voice, "override": bool(chosen)}
+    data["speakers"] = out
     write_json(work / "segments.json", data)

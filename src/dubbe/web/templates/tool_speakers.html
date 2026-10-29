@@ -1,0 +1,29 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item, dropzone %}
+{% block title %}Speaker Detection — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Create</span><h1 class="app-h1">Speaker Detection</h1>
+<form method="post" action="/app/speakers" enctype="multipart/form-data" class="tool">
+  <div class="tool-main">
+    {{ dropzone("users", "Drop a video or audio with several people, or click to choose", "MP4, MOV, MP3, WAV, M4A, OGG or FLAC · up to 2 GB · " ~ ("no limits (admin)" if admin else left ~ " min left this month"),
+                ".mp4,.mov,.m4v,.mp3,.wav,.m4a,.ogg,.flac,audio/*,video/*", left) }}
+    <div class="feature-list">
+      <div>{{ icon("users") }}<span><b>Who speaks when</b> a timeline and each speaker's talk time</span></div>
+      <div>{{ icon("text") }}<span><b>Transcript by speaker</b> TXT, SRT and WebVTT with the names you give</span></div>
+      <div>{{ icon("mic") }}<span><b>Clone a speaker</b> into your voices, only with their consent</span></div>
+    </div>
+  </div>
+  <aside class="tool-side">
+    <label>Spoken language
+      <select name="src">{% for l in langs %}<option value="{{ l }}" {{ 'selected' if (form.src or 'ko') == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select></label>
+    <label><input type="checkbox" name="rights" required> I own this file or may use it.</label>
+    <button class="block">Find speakers</button>
+    <p class="muted small" style="margin-top:14px">Tells people apart by their voice, after taking the music out. In our tests a man and
+      a woman were 100 % right, but two similar men were taken for one person. Counts the file's length against your monthly minutes.</p>
+  </aside>
+</form>
+<section class="app-sec">
+  <div class="row-head"><h2>Recent</h2><a href="/app/history?kind=speakers">All results →</a></div>
+  {% for x in recent %}{{ task_item(x) }}{% else %}<p class="muted">Nothing yet — your results appear here.</p>{% endfor %}
+</section>
+{% endblock %}

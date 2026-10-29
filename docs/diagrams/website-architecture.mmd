@@ -1,0 +1,34 @@
+%% DUBBE website - containers (C4 level 2 style)
+flowchart TB
+    user["<b>Creator / Reviewer</b><br/>[Person, browser]"]
+
+    subgraph site["DUBBE website"]
+        direction TB
+        web["<b>Web app</b><br/>[FastAPI + HTML templates + htmx]<br/>pages, accounts, API,<br/>timeline / review editor"]
+        db[("<b>Database</b><br/>[SQLite dev / PostgreSQL]<br/>users, projects, jobs,<br/>ratings, recordings, consents")]
+        store[("<b>File storage</b><br/>[local disk -> S3-compatible bucket]<br/>videos, segments.json,<br/>audio, outputs")]
+        worker["<b>GPU worker</b><br/>[Python + existing dubbe pipeline]<br/>takes one job at a time,<br/>runs the 11 stages"]
+        web -- "reads / writes" --> db
+        web -- "uploads, signed links" --> store
+        db <-- "takes waiting job,<br/>writes progress" --> worker
+        store <-- "input video,<br/>outputs" --> worker
+    end
+
+    gpu["<b>GPU host</b><br/>[own PC first, Nosana later]"]
+    eleven["<b>ElevenLabs API</b><br/>[optional, evaluation only, Q-013]"]
+
+    user -- "HTTPS" --> web
+    worker -. "runs on" .-> gpu
+    worker -. "teacher reference" .-> eleven
+
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef store fill:#438dd5,stroke:#2e6295,color:#fff
+    classDef external fill:#8a8a8a,stroke:#6b6b6b,color:#fff
+    classDef optional fill:#bdbdbd,stroke:#8a8a8a,color:#222,stroke-dasharray:5 5
+    class user person
+    class web,worker container
+    class db,store store
+    class gpu external
+    class eleven optional
+    style site fill:#f4f8fc,stroke:#1168bd,stroke-dasharray:6 4,color:#1168bd

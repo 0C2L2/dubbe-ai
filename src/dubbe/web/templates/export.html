@@ -1,0 +1,29 @@
+{% extends "app_base.html" %}
+{% block title %}{{ p.title }} — download — DUBBE{% endblock %}
+{% block main %}
+<h1>Download: {{ p.title }}</h1>
+<p class="notice"><b>This video is AI-dubbed</b> — machine translation and a synthetic voice. The file says so in its
+  metadata. Tell your viewers too, and do not present it as a human recording (<a href="/safety">why</a>).</p>
+
+<div class="cards">
+  <article><h3>Dubbed video</h3><p>MP4, {{ NAMES[p.tgt] }} voice{{ ", background kept" if p.keep_bg }}.</p>
+    <a href="/app/p/{{ p.id }}/download/video" role="button">Download MP4</a></article>
+  <article><h3>Subtitles</h3><p>Timed to the dubbed video. With several speakers, the coloured files give each speaker
+    their own colour (white, yellow, cyan, green …).</p>
+    {% for k in ("tgt", "src") %}<p>{{ NAMES[p[k]] }}: <a href="/app/p/{{ p.id }}/download/{{ k }}.srt">SRT</a> ·
+       <a href="/app/p/{{ p.id }}/download/{{ k }}.vtt">VTT</a> · coloured: <a href="/app/p/{{ p.id }}/download/{{ k }}.color.srt">SRT</a> ·
+       <a href="/app/p/{{ p.id }}/download/{{ k }}.color.vtt">VTT</a> · <a href="/app/p/{{ p.id }}/download/{{ k }}.ass">ASS</a></p>{% endfor %}
+    <form method="post" action="/app/p/{{ p.id }}/captions" class="inline burn-form"><select name="lang" aria-label="Captions language">
+      <option value="tgt">{{ NAMES[p.tgt] }}</option><option value="src">{{ NAMES[p.src] }}</option></select>
+      <button class="secondary">Make the video with captions</button></form>
+    <p>
+       Transcript with speakers: <a href="/app/p/{{ p.id }}/download/src.txt">{{ NAMES[p.src] }}</a> · <a href="/app/p/{{ p.id }}/download/tgt.txt">{{ NAMES[p.tgt] }}</a></p></article>
+  <article><h3>Review report</h3><p>Every sentence with its checks, timing, processing time and cost.</p>
+    <a href="/app/p/{{ p.id }}/download/report" role="button" class="secondary outline">Download report</a></article>
+</div>
+<p class="muted">Use during the beta: non-commercial only (<a href="/terms">Terms</a>). Files are deleted with the project,
+  at the latest when your plan's retention ends.</p>
+<p><a href="/app/p/{{ p.id }}">← Back to the review editor</a></p>
+<form method="post" action="/app/p/{{ p.id }}/delete" data-confirm="Delete this project and all its files? This cannot be undone.">
+  <button class="secondary outline">Delete this project</button></form>
+{% endblock %}

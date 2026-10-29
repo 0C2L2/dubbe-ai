@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_parts.html" import showcase, before_after, bento, sentence_carousel, use_cases, calculator, stats, pipeline, marquee, orb_art %}
+{% block main %}
+<section class="hero" data-stagger>
+  <h1 data-reveal>AI dubbing that shows you what to check</h1>
+  <p class="lead" data-reveal>DUBBE dubs your lecture into another of {{ NAMES | length }} languages (Korean ↔ English tested most), keeps the background sound,
+    and marks the doubtful sentences on the timeline — so a person can fix them before anyone watches.</p>
+  <p class="actions" data-reveal><a href="/signup" role="button">Start free</a><a href="/examples" role="button" class="secondary">See an example</a></p>
+</section>
+
+{{ showcase(voices, ex) }}
+
+<p class="built"><span class="eyebrow">Built on open models</span></p>
+{{ marquee() }}
+
+{% if ex %}
+{{ before_after(ex) }}
+{{ bento(ex) }}
+{{ sentence_carousel(ex) }}
+{% endif %}
+
+<section class="band" data-reveal>
+  <span class="eyebrow">How it works</span>
+  <h2>Upload, wait 30 s to 1½ min per video minute, review</h2>
+  {{ pipeline() }}
+  <div class="cols" data-stagger>
+    <div data-reveal><span class="num">01</span><h3>Upload</h3><p class="muted">MP4 or MOV in one of {{ NAMES | length }} languages.</p></div>
+    <div data-reveal><span class="num">02</span><h3>DUBBE dubs and checks</h3><p class="muted">Thirteen steps: it tells the speakers apart, gives each a voice, and checks every sentence.</p></div>
+    <div data-reveal><span class="num">03</span><h3>You fix and download</h3><p class="muted">Video, subtitles in both languages, a transcript by speaker, a report.</p></div>
+  </div>
+</section>
+
+<section class="band" data-reveal>
+  <span class="eyebrow">New this week</span><h2>Several speakers, each with their own voice</h2>
+  <div class="cols" data-stagger>
+    <div data-reveal><h3>Speakers told apart</h3><p class="muted">Every sentence is matched to a speaker by voice; each speaker gets a
+      different voice, and the transcript names them. Similar voices can be taken for one person — split them in the editor.</p></div>
+    <div data-reveal><h3>Their own voice, with consent</h3><p class="muted">A speaker can be cloned from the video only after you confirm
+      they agreed. The copy stays in that project, or private in your voices — never published.</p></div>
+    <div data-reveal><h3>The delivery, heard</h3><p class="muted">Questions, emotion, laughs and sighs in the original become tags on the
+      sentence, shown dashed in the editor so you keep the right ones.</p></div>
+  </div>
+  <p style="margin-top:16px"><a href="/features#speakers">How it works →</a></p>
+</section>
+
+<section class="band mk-teaser" data-reveal>
+  <div class="mk-teaser-art" aria-hidden="true">{{ orb_art(1, "lg") }}{{ orb_art(5, "md") }}{{ orb_art(6, "sm") }}</div>
+  <div><span class="eyebrow">New · Voice Marketplace</span>
+    <h2>Speak with voices people chose to share</h2>
+    <p class="muted">Clone your own voice in about a minute, publish it and see who uses it — or pick a voice someone else published
+      for your speech and dubs. {{ market_n }} voice{{ "s" if market_n != 1 }} listed so far.</p>
+    <ul class="checks">
+      <li>Only the publisher's own voice, recorded live and checked by speech recognition</li>
+      <li>Every listing heard by a person before it goes live</li>
+      <li>Watermarked and labelled as AI wherever it is used</li>
+    </ul>
+    <p class="actions"><a role="button" href="{{ '/app/market' if user else '/signup' }}">{{ "Open the Marketplace" if user else "Sign up to browse" }}</a></p></div>
+</section>
+
+{{ use_cases() }}
+{{ calculator() }}
+{{ stats(voices) }}
+
+<section class="band split" data-reveal>
+  <div><span class="eyebrow">Honest limits</span><h2>Narrow on purpose</h2>
+    <p class="muted">No lip sync; people in your video are cloned only with their consent; Korean ↔ English is tested in depth, the other {{ NAMES | length - 2 }} languages only on read speech (FLEURS).
+      DUBBE is built for lectures, where one wrong sentence matters.</p></div>
+  <div><span class="eyebrow">Safety, built in</span>
+    <ul class="checks">
+      <li>Upload only what you own or may change — confirmed on every upload</li>
+      <li>Your own voice after a live check; a speaker in your video only with their consent, and never published</li>
+      <li>Every dub is labelled AI-generated, in the file and on the download page</li>
+    </ul>
+    <p style="margin-top:16px"><a href="/safety">How we handle safety →</a></p></div>
+</section>
+
+<section class="cta grain">
+  <h2>Try it on your own lecture</h2>
+  <p>Free: 15 minutes a month, review editor included. No card.</p>
+  <a href="/signup" role="button">Start free</a>
+</section>
+{% endblock %}
