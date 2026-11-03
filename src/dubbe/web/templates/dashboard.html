@@ -1,0 +1,35 @@
+{% extends "app_base.html" %}
+{% block title %}Your projects — DUBBE{% endblock %}
+{% block main %}
+{% if not user.verified_at %}
+<article class="notice">Please confirm your email to start dubbing — we sent you a link.
+  <form method="post" action="/resend" class="inline"><button class="secondary outline">Send the link again</button></form></article>
+{% endif %}
+<div class="grid">
+  <h1>Projects</h1>
+  <p style="text-align:right"><a href="/app/new" role="button">New dub</a></p>
+</div>
+<p class="muted">{{ used }} of {{ PLANS[user.plan].minutes }} minutes used this month ({{ PLANS[user.plan].name }} plan).
+  <a href="/app/plan">Plan &amp; usage</a></p>
+
+{% for x in projects %}{% set p, job = x.p, x.job %}
+<article>
+  <header><strong>{{ p.title }}</strong> <span class="muted">· {{ NAMES[p.src] }} → {{ NAMES[p.tgt] }} · {{ "%.1f"|format(p.minutes) }} min</span></header>
+  {% if job and job.status == "done" %}
+    <p><a class="chip grey" href="/app/p/{{ p.id }}#speakers">{{ x.speakers }} speaker{{ "s" if x.speakers != 1 }}</a> {% if x.flagged %}<span class="chip low_mt">{{ x.flagged }} to check</span>{% else %}<span class="chip ok">no flags</span>{% endif %}
+      Dub ready.</p>
+    <a href="/app/p/{{ p.id }}" role="button">Review</a>
+    <a href="/app/p/{{ p.id }}/export" role="button" class="secondary outline">Download</a>
+  {% elif job and job.status == "failed" %}
+    <p><span class="chip low_mt">failed</span> at step "{{ job.stage or 'start' }}".</p>
+    <a href="/app/jobs/{{ job.id }}" role="button" class="secondary">See what went wrong</a>
+  {% elif job %}
+    <p>{{ "Waiting in the queue" if job.status == "waiting" else "Working: " ~ (job.stage or "starting") }}…</p>
+    <a href="/app/jobs/{{ job.id }}" role="button" class="secondary outline">Progress</a>
+  {% endif %}
+</article>
+{% else %}
+<article><p>No projects yet. Upload a video in any of the {{ NAMES | length }} languages (MP4 or MOV) to get your first dub.</p>
+  <a href="/app/new" role="button">New dub</a></article>
+{% endfor %}
+{% endblock %}

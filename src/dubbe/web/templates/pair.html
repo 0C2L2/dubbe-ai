@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_parts.html" import voice_carousel, sentence_carousel %}
+{% block title %}Translate {{ NAMES[src] }} video to {{ NAMES[tgt] }} — DUBBE{% endblock %}
+{% block desc %}Dub a {{ NAMES[src] }} video into {{ NAMES[tgt] }} with AI, and see which sentences to check before you publish.{% endblock %}
+{% block main %}
+{% set a, b = NAMES[src], NAMES[tgt] %}
+<section class="hero">
+  <h1>Translate {{ a }} video to {{ b }}</h1>
+  <p class="lead">Upload a {{ a }} video and get it back dubbed in {{ b }}, with the background sound kept and the
+    doubtful sentences marked on the timeline.</p>
+  <p class="actions"><a href="/signup" role="button">Upload a video — start free</a></p>
+</section>
+
+<h2>How to translate a {{ a }} video to {{ b }}</h2>
+<ol>
+  <li>Upload your {{ a }} video (MP4 or MOV).</li>
+  <li>Choose {{ a }} → {{ b }}, and whether to keep the background sound.</li>
+  <li>DUBBE recognises the speech, translates it, speaks it in {{ b }} and marks sentences it is unsure about.</li>
+  <li><b>Fix the marked sentences</b> in the review editor and re-dub — the step other tools leave to you to find.</li>
+  <li>Download the dubbed video, subtitles in {{ a }} and {{ b }}, and the review report.</li>
+</ol>
+
+{% if ex %}
+<article>
+  <header><strong>Example:</strong> {{ ex.title }}</header>
+  {{ ex.timeline | safe }}
+  <footer><small class="muted">{{ ex.credit }}</small></footer>
+</article>
+{% endif %}
+
+{% if ex %}{{ sentence_carousel(ex) }}{% endif %}
+{{ voice_carousel(voices, b ~ " voices", "Press an orb to hear the voice.") }}
+
+<h2>Measured on our test clips</h2>
+{% if src == "ko" %}
+<ul>
+  <li>Speech recognition on Korean: <b>9.1 %</b> character error rate on read speech (FLEURS, 22 minutes) and 11.5 % on
+    conversation (KsponSpeech, 150 clips).</li>
+  <li>Translation (NLLB-200 3.3B): chrF++ 52.3 on 529 test sentences (talks, everyday speech, FLEURS), against 49.3 for the
+    smaller model it replaced. Fixing recognition errors flagged in orange helps the translation too.</li>
+  <li>Timing: largest delay <b>0.00 s</b> on read speech and on a TV clip.</li>
+  <li>English voice: preset voices (Kokoro), picked by the speaker's pitch; the pick matched the speaker's gender in
+    95 % of test speakers. On an agitated multi-speaker scene it chose wrong — change the voice in the editor.</li>
+</ul>
+{% else %}
+<ul>
+  <li>Timing on a fast-paced 5½-minute animated lesson: largest delay <b>0.00 s</b> with the picture slow-down option,
+    0.37 s without it; strongest voice speed-up 1.18×.</li>
+  <li>26 Korean voices: Chatterbox Multilingual's built-in voice and 25 English presets speaking Korean. On a two-person
+    dialogue each speaker got their own voice, and Whisper got 0.6 % of the characters of the dub wrong.</li>
+  <li>Translation into Korean: chrF++ 32.8 on 529 test sentences (29.4 with the smaller model it replaced). The translator is
+    less sure of itself into Korean, so DUBBE uses its own flag threshold for Korean.</li>
+  <li>Not yet rated by a fluent Korean speaker — treat English → Korean as a preview.</li>
+</ul>
+{% endif %}
+<p><a href="/results">All results</a></p>
+
+<h2>Who uses {{ a }} → {{ b }} dubbing</h2>
+<div class="cards">
+  <article><b>Lecturers and schools</b><p>Course videos for international students. <a href="/education">For education</a></p></article>
+  <article><b>Training</b><p>Internal training and how-to videos.</p></article>
+  <article><b>Creators</b><p>Explainers and tutorials for a second audience.</p></article>
+</div>
+
+<h2>Questions</h2>
+<details><summary>Does it keep the original speaker's voice?</summary><p>Not by default: DUBBE picks a preset voice close to each
+  speaker's pitch. If you confirm a speaker agreed, the editor can clone them from the video for that project. You can also choose
+  another preset, or a clone of your own voice.</p></details>
+<details><summary>Can I upload only audio?</summary><p>Not yet — upload a video (MP4 or MOV).</p></details>
+<details><summary>Do I get subtitles?</summary><p>Yes: SRT and WebVTT in {{ a }} and in {{ b }}, timed to the dubbed video.</p></details>
+<details><summary>How long does it take?</summary><p>On our test GPU {% if tgt == "ko" %}about 77 seconds per video minute (the Korean voice is slower){% else %}about 30 seconds per video minute{% endif %}, plus any wait in the queue.</p></details>
+<details><summary>Can I use the dub commercially?</summary><p>Not during the beta: the translation model
+  is licensed for non-commercial use only. See the <a href="/terms">Terms</a>.</p></details>
+
+<p class="muted" style="margin-top:24px">Also: <a href="/translate-video/{{ 'english-to-korean' if src == 'ko' else 'korean-to-english' }}">{{ b }} → {{ a }}</a></p>
+<section class="cta grain">
+  <h2>Start translating your {{ a }} video</h2>
+  <p>Free: 15 minutes a month, review editor included.</p>
+  <a href="/signup" role="button">Start free</a>
+</section>
+{% endblock %}

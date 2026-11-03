@@ -1,0 +1,24 @@
+{% extends "app_base.html" %}
+{% block title %}Plan &amp; usage — DUBBE{% endblock %}
+{% block main %}
+{% set plan = PLANS[user.plan] %}
+<h1>Plan &amp; usage</h1>
+<article>
+  <header><strong>{{ plan.name }}</strong> plan</header>
+  <p>{{ used }} of {{ plan.minutes }} minutes used this month · {{ left }} left · minutes reset on the 1st.</p>
+  <progress value="{{ used }}" max="{{ plan.minutes }}"></progress>
+  <p class="muted">Videos up to {{ plan.max_len }} min · projects kept {{ plan.keep_days }} days · re-dubs are free.</p>
+  <a href="/pricing" role="button" class="secondary outline">See plans / join a waitlist</a>
+</article>
+
+<h2>Projects and when they are deleted</h2>
+{% if projects %}
+<table class="small">
+  <thead><tr><th>Project</th><th>Minutes</th><th>Created</th><th>Deleted automatically</th></tr></thead>
+  <tbody>{% for x in projects %}
+    <tr><td><a href="/app/p/{{ x.p.id }}">{{ x.p.title }}</a></td><td>{{ "%.1f"|format(x.p.minutes) }}</td>
+      <td>{{ x.p.created_at | date }}</td><td>{{ x.expires | date }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<p>No projects.</p>{% endif %}
+{% endblock %}

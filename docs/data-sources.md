@@ -1,6 +1,6 @@
 # DUBBE — Data Sources (draft v1, 2026-09-23)
 
-Owner: Data & Research (Samandarov Madina). Items marked **TBD** are not selected or not yet confirmed.
+Owner: Data & Research (Samandarova Madina). Items marked **TBD** are not selected or not yet confirmed.
 
 ## Rules we follow
 

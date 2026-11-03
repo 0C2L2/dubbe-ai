@@ -10,6 +10,8 @@ DUCK = ("[1:a]aresample=44100,aformat=channel_layouts=stereo,asplit=2[v1][v2];"
         "{bg}aformat=channel_layouts=stereo,highpass=f=40,agate=threshold=0.003:ratio=4:attack=5:release=250[bg];"
         "[bg][v1]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=400[duck];"
         "[duck][v2]amix=inputs=2:normalize=0:duration=longest[a]")
+# AI label in the file (Korea AI Basic Act) + index at the front so browsers start playing before the end arrives
+OUT = ["-metadata", "comment=AI-dubbed with DUBBE: synthetic voice and machine translation", "-movflags", "+faststart"]
 
 
 def pieces(segs: list[dict], total: float) -> list[tuple[float, float, float]]:
@@ -55,9 +57,9 @@ def run(video: Path, work: Path, cfg: dict) -> None:
         graph += ";" + DUCK.format(bg="[bgr]") if bg.exists() else ""
         video_args = ["-map", "[vout]", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
         ffmpeg(*inputs, "-filter_complex", graph, *video_args, "-map", "[a]" if bg.exists() else "1:a",
-               "-c:a", "aac", "-b:a", "192k", "-shortest", out)
+               "-c:a", "aac", "-b:a", "192k", "-shortest", *OUT, out)
     elif bg.exists():
         ffmpeg(*inputs, "-filter_complex", DUCK.format(bg="[2:a]"),
-               "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", out)
+               "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", *OUT, out)
     else:  # voice only: copy the picture as-is, replace the sound with the dub track
-        ffmpeg(*inputs, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", out)
+        ffmpeg(*inputs, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", *OUT, out)

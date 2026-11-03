@@ -1,8 +1,8 @@
-# DUBBE — Architecture (C4 Level 1 and 2, draft v1, 2026-09-23)
+# DUBBE — Architecture (C4 Level 1 and 2, v2, 2026-11-03)
 
 Initial design. It will change as the pipeline is built; undecided parts are marked **TBD**. Diagram images live in [diagrams/](diagrams/); each has an editable Mermaid source (`.mmd`) next to it. Re-render after editing: `npx @mermaid-js/mermaid-cli -i diagrams/<name>.mmd -o diagrams/<name>.png -b white -s 3`.
 
-DUBBE is a **single Python command-line program** that runs a fixed chain of stages over one video. There is no server, web UI, or database: every stage reads and writes plain files, so each step can be inspected, edited, and re-run.
+DUBBE's core is a **Python command-line program** that runs a fixed chain of stages over one video: every stage reads and writes plain files, so each step can be inspected, edited, and re-run. The website (`dubbe-web`, FastAPI + SQLite) runs the same stages as background jobs; its design is in [website-plan.md](website-plan.md).
 
 ## Main architecture overview
 
@@ -50,14 +50,19 @@ This is a preview of C3, kept here because each stage's output file is what the 
 | 1 | extract | `input.mp4` → `audio.wav` (16 kHz mono), `original.wav` (44.1 kHz stereo) | ffmpeg | — |
 | 2 | separate | `original.wav` → `background.wav`, `vocals.wav` | Demucs `htdemucs` | background dropped if > 35 dB below the original (only residue) |
 | 3 | asr | `audio.wav` (original mix) → `words.json` | faster-whisper `large-v3-turbo`, words over silence dropped | word probability (`asr_conf`) |
-| 4 | segment | `words.json` → `segments.json` | sentence endings + pause lengths per language | — |
-| 5 | voice | `vocals.wav` → speaker pitch → closest preset voice | torchaudio pitch, voice library in `languages.yaml` | pitch register, chosen voice |
-| 6 | translate | adds `tgt_text` + 4 alternatives | NLLB-200 distilled-600M, 8 beams | `mt_conf` (model's own probability) |
-| 7 | tts | each sentence → `tts/<id>.wav` | Kokoro-82M (English), MMS-TTS (Korean) | duration |
-| 8 | shorten | too-long sentences → shorter alternative, re-synthesized | NLLB alternatives | `shortened` |
-| 9 | timing | `tts/*.wav` → `dub.wav` | anchor to source start; speech ≤ 1.3× faster; optional picture slow-down; loudness matched to the original voice | `stretch`, `slow`, `overflow` |
-| 10 | mux | `input.mp4` + `dub.wav` (+ `background.wav`) → `dubbed.mp4` | ffmpeg; background ducked under the voice; video re-encoded only if slowed | — |
-| 11 | report | `segments.json` → `report.html` | plain HTML | flags: `low_asr`, `low_mt`, `overflow` |
+| 4 | diarize | `vocals.wav` → `diarization.json` (speaker turns) — only when `speaker_engine` is `pyannote` or `community` | pyannote 3.1 (MIT) or community-1 (CC-BY-4.0, own environment); needs `HF_TOKEN` | number of speakers, found by the model |
+| 5 | segment | `words.json` (+ turns) → `segments.json` | sentence endings + pause lengths per language; a speaker change also ends a sentence | — |
+| 6 | speakers | adds a speaker label per sentence | turn it overlaps most, else WavLM voice fingerprints clustered (default `wavlm`) | speaker, S1 = most speech |
+| 7 | emotion | adds delivery tags heard in the original | HuBERT emotion (IEMOCAP), AST sounds, "?" ending | `auto_tags` |
+| 8 | voice | `vocals.wav` → speaker pitch → closest preset voice | torchaudio pitch, voice library in `languages.yaml` | pitch register, chosen voice |
+| 9 | translate | adds `tgt_text` + 4 alternatives | NLLB-200, 8 beams | `mt_conf` (model's own probability) |
+| 10 | tts | each sentence → `tts/<id>.wav` | Kokoro-82M (English), Chatterbox (Korean, tags), MMS-TTS fallback | duration |
+| 11 | shorten | too-long sentences → shorter alternative, re-synthesized | NLLB alternatives | `shortened` |
+| 12 | timing | `tts/*.wav` → `dub.wav` | anchor to source start; speech ≤ 1.3× faster; optional picture slow-down; loudness matched to the original voice | `stretch`, `slow`, `overflow` |
+| 13 | mux | `input.mp4` + `dub.wav` (+ `background.wav`) → `dubbed.mp4` | ffmpeg; background ducked under the voice; video re-encoded only if slowed | — |
+| 14 | report | `segments.json` → `report.html` | plain HTML | flags: `low_asr`, `low_mt`, `overflow` |
+
+Videos dubbed before a stage was added are not redone: re-running skips the new stage with a note; `--force` re-runs every stage.
 
 ### Multi-language design (many → many)
 
@@ -114,4 +119,4 @@ Only one kind of change touches code: a new **TTS engine** (one small function i
 
 ## Open questions
 
-See [questions.md](questions.md): Q-003 (external API), Q-004 (Colab free tier capacity), Q-006 (review step: JSON edit vs. UI), Q-008 (Kokoro vs. XTTS-v2), Q-009 (expression transfer and voice matching without cloning).
+See [questions.md](questions.md): Q-003 (external API), Q-004 (Colab free tier capacity), Q-006 (review step: JSON edit vs. UI), Q-008 (Kokoro vs. XTTS-v2). Q-009 (expression transfer) is decided: allowed.

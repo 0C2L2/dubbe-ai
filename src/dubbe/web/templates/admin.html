@@ -1,0 +1,118 @@
+{% extends "app_base.html" %}
+{% block title %}Admin — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Admin</span>
+<h1 class="app-h1">{{ {"overview": "Overview", "users": "Users", "jobs": "Jobs", "messages": "Messages", "voices": "Voice clones", "evaluation": "Evaluation"}[tab] }}</h1>
+{% set alive = now - worker.beat < 30 %}
+
+{% if tab == "overview" %}
+<div class="kpis" data-stagger>
+  {% for label, v, sub, href in [("Users", kpi.users, kpi.new7 ~ " new in 7 days · " ~ kpi.unverified ~ " unconfirmed", "/admin/users"),
+                                 ("Dubs done", kpi.dubs, kpi.redubs ~ " re-dubs after corrections", "/admin/jobs"),
+                                 ("Tool results", kpi.tools, "speech, transcripts, translations, stems", "/admin/jobs"),
+                                 ("Minutes this month", kpi.minutes, "dubs, speech to text, voice isolator", "/admin/jobs"),
+                                 ("In the queue", kpi.waiting, kpi.failed ~ " failed in total", "/admin/jobs"),
+                                 ("Open messages", kpi.open, "contact and waitlist", "/admin/messages")] %}
+  <a class="kpi" href="{{ href }}" data-reveal><span>{{ label }}</span><b>{{ v }}</b><small>{{ sub }}</small></a>
+  {% endfor %}
+</div>
+<div class="dash-grid wide-left">
+  <section class="card"><span class="eyebrow">Last 14 days</span><h3 style="margin-top:0">Jobs per day</h3>
+    <div class="chart">{% for c in chart %}
+      <div class="bar-col" title="{{ c.day }}: {{ c.dub }} dub jobs, {{ c.tool }} tool jobs">
+        <div class="bar-stack"><i class="b-tool" style="height:{{ 100 * c.tool / top }}%"></i><i class="b-dub" style="height:{{ 100 * c.dub / top }}%"></i></div>
+        <small>{{ c.day[3:] }}</small></div>{% endfor %}</div>
+    <p class="small muted" style="margin:10px 0 0"><span class="chip low_asr">dubs</span><span class="chip tag">tools</span> per day, both counted when queued.</p></section>
+  <section class="card"><span class="eyebrow">Worker</span>
+    <p style="margin-top:0">{% if alive %}<span class="chip ok">alive</span>{% else %}<span class="chip low_mt">no heartbeat</span>{% endif %}
+      {{ ("running " ~ worker.job) if worker.job else "idle" }}</p>
+    <span class="eyebrow">Tool use (all time)</span>
+    <div class="mini-stats two">{% for k, n in by_tool.items() %}<div><b>{{ n }}</b><span>{{ TOOLS[k] }}</span></div>{% endfor %}</div>
+  </section>
+</div>
+<div class="dash-grid">
+  <section class="card"><span class="eyebrow">Newest users</span>
+    {% for s in signups %}<p class="small" style="margin:8px 0">{{ s.name or s.email }} <span class="muted">· {{ s.email }} · {{ s.created_at | date }}</span></p>
+    {% else %}<p class="muted small">None yet.</p>{% endfor %}</section>
+  <section class="card"><span class="eyebrow">Recent failures</span>
+    {% for f in failures %}<p class="small" style="margin:8px 0"><span class="chip low_mt">{{ f.kind }}</span> #{{ f.id }} {{ f.title }} <span class="muted">· {{ f.finished_at | date }}</span></p>
+    {% else %}<p class="muted small">No failed jobs.</p>{% endfor %}</section>
+</div>
+
+{% elif tab == "users" %}
+<table class="small">
+  <thead><tr><th>#</th><th>User</th><th>Role</th><th>Plan</th><th>Confirmed</th><th>Dubs</th><th>Tool results</th><th>Joined</th><th></th></tr></thead>
+  <tbody>{% for x in users %}<tr>
+    <td>{{ x.id }}</td><td><b>{{ x.name or "—" }}</b><br><span class="muted">{{ x.email }}</span></td>
+    <td>{% if x.admin %}<span class="chip tag">admin</span>{% else %}user{% endif %}</td>
+    <td><form method="post" action="/admin/users/{{ x.id }}/plan" class="inline">
+      <select name="plan" onchange="this.form.submit()" aria-label="Plan of {{ x.email }}" class="compact">{% for k, pl in PLANS.items() %}
+        <option value="{{ k }}" {{ 'selected' if x.plan == k }}>{{ pl.name }}</option>{% endfor %}</select>
+      <noscript><button class="secondary">Save</button></noscript></form></td>
+    <td>{{ "yes" if x.verified_at else "no" }}</td><td>{{ x.n_projects }}</td><td>{{ x.n_tasks }}</td><td>{{ x.created_at | date }}</td>
+    <td class="row-actions">{% if x.id != user.id %}
+      <form method="post" action="/admin/users/{{ x.id }}/admin" class="inline"><button class="secondary">{{ "Remove admin" if x.admin else "Make admin" }}</button></form>
+      <form method="post" action="/admin/users/{{ x.id }}/delete" class="inline" data-confirm="Delete {{ x.email }} and all their files? This cannot be undone.">
+        <button class="secondary">Delete</button></form>
+    {% else %}<span class="muted small">you</span>{% endif %}</td></tr>{% endfor %}</tbody>
+</table>
+<p class="muted small">New accounts: <code>python scripts/create_user.py EMAIL [--admin]</code>. Plan changes apply at once; you cannot remove your own admin rights.</p>
+
+{% elif tab == "jobs" %}
+<p>{% if alive %}<span class="chip ok">worker alive</span>{% else %}<span class="chip low_mt">no heartbeat</span>{% endif %} {{ ("running " ~ worker.job) if worker.job else "idle" }}</p>
+<h2>Dubs</h2>
+<table class="small"><thead><tr><th>#</th><th>Project</th><th>User</th><th>From</th><th>Status</th><th>Step</th><th>Started</th><th>Took</th><th></th></tr></thead><tbody>
+{% for j in jobs %}<tr><td><a href="/app/jobs/{{ j.id }}">{{ j.id }}</a></td><td><a href="/app/p/{{ j.project_id }}">{{ j.title }}</a></td><td>{{ j.email }}</td>
+  <td>{{ j.from_stage or "start" }}</td><td>{{ j.status }}</td><td>{{ j.stage or "" }}</td><td>{{ j.started_at | date }}</td>
+  <td>{{ ((j.finished_at - j.started_at) | int) ~ " s" if j.finished_at and j.started_at else "" }}</td>
+  <td>{% if j.status == "failed" %}<form method="post" action="/admin/jobs/{{ j.id }}/retry" class="inline"><button class="secondary">Retry</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="9" class="muted">No dubs yet.</td></tr>{% endfor %}</tbody></table>
+<h2>Tool jobs</h2>
+<table class="small"><thead><tr><th>#</th><th>Tool</th><th>Title</th><th>User</th><th>Status</th><th>Started</th><th>Took</th><th></th></tr></thead><tbody>
+{% for t in tasks %}<tr><td>{{ t.id }}</td><td>{{ TOOLS[t.kind] }}</td><td><a href="/app/tasks/{{ t.id }}">{{ t.title }}</a></td><td>{{ t.email }}</td>
+  <td>{{ "deleted" if t.deleted_at else t.status }}</td><td>{{ t.started_at | date }}</td>
+  <td>{{ ((t.finished_at - t.started_at) | int) ~ " s" if t.finished_at and t.started_at else "" }}</td>
+  <td>{% if t.status == "failed" and not t.deleted_at %}<form method="post" action="/admin/tasks/{{ t.id }}/retry" class="inline"><button class="secondary">Retry</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">No tool jobs yet.</td></tr>{% endfor %}</tbody></table>
+
+{% elif tab == "messages" %}
+{% for m in messages %}
+<article {{ 'class="muted"' | safe if m.handled_at }}>
+  <header><b>{{ m.topic }}</b> · {{ m.name }} &lt;{{ m.email }}&gt; · {{ m.created_at | date }}{{ " · handled" if m.handled_at }}</header>
+  <p style="white-space:pre-wrap">{{ m.body }}</p>
+  {% if not m.handled_at %}<form method="post" action="/admin/messages/{{ m.id }}/handled" class="inline"><button class="secondary">Mark handled</button></form>{% endif %}
+</article>
+{% else %}<p class="muted">No messages.</p>{% endfor %}
+
+{% elif tab == "voices" %}
+<p class="muted">Clones of users' own voices. A shared one appears in the library only after you listened to it and listed it;
+  take it out at once if a report comes in. Deleting removes the encrypted recording.</p>
+<table class="small">
+  <thead><tr><th>#</th><th>Voice</th><th>Owner</th><th>Status</th><th>Library</th><th>Uses</th><th></th><th></th></tr></thead>
+  <tbody>{% for v in clones %}<tr>
+    <td>{{ v.id }}</td><td><b>{{ v.name }}</b><br><span class="muted">{{ NAMES[v.lang] }} · {{ v.created_at | date }}</span></td>
+    <td>{{ v.email }}</td><td>{{ v.status }}{% if v.category %}<br><span class="muted">{{ v.category }}</span>{% endif %}{% if v.description %}<br><span class="muted small">{{ v.description }}</span>{% endif %}</td><td>{% if v.shared == "pending" %}<span class="chip low_mt">to review</span>{% else %}{{ v.shared }}{% endif %}</td>
+    <td>{{ v.uses }}</td>
+    <td>{% if v.status == "ready" %}<button class="secondary play-btn" data-play="/app/voices/{{ v.id }}/sample"><span class="play"></span>Play</button>{% endif %}</td>
+    <td class="row-actions">{% if v.status == "ready" %}
+      {% if v.shared != "listed" %}<form method="post" action="/admin/voices/{{ v.id }}/listed" class="inline"><button class="secondary">List</button></form>{% endif %}
+      {% if v.shared == "pending" %}<form method="post" action="/admin/voices/{{ v.id }}/rejected" class="inline">
+        <input name="note" class="compact" maxlength="300" placeholder="Reason (shown to the owner)" aria-label="Reason for rejecting"><button class="secondary">Reject</button></form>{% endif %}
+      {% if v.shared == "listed" %}<form method="post" action="/admin/voices/{{ v.id }}/no" class="inline"><button class="secondary">Take out</button></form>{% endif %}{% endif %}
+      <form method="post" action="/admin/voices/{{ v.id }}/delete" class="inline" data-confirm="Delete this voice and its recording?"><button class="secondary">Delete</button></form></td>
+  </tr>{% else %}<tr><td colspan="8" class="muted">No voice clones yet.</td></tr>{% endfor %}</tbody>
+</table>
+
+{% else %}
+<p class="muted">Ratings from the review editor. Blind ratings (flags hidden) measure how good DUBBE's flags are.</p>
+{% for e in evaluation %}{% set s = e.s %}
+<article>
+  <header><a href="/app/p/{{ e.p.id }}">{{ e.p.title }}</a></header>
+  <p>{{ s.ratings }} ratings from {{ s.raters }} rater(s), {{ s.sentences_rated }} sentences, mean score {{ s.mean_score }}.<br>
+    Blind (flags hidden): {{ s.blind.sentences }} sentences, {{ s.blind.bad }} bad; flag precision {{ s.blind.flag_precision }},
+    recall {{ s.blind.flag_recall }}.{% if s.agreement %} Rater agreement {{ s.agreement.percent }} % (kappa {{ s.agreement.kappa }},
+    {{ s.agreement.pairs }} pairs).{% endif %}</p>
+</article>
+{% else %}<p class="muted">No ratings yet. Rate sentences in evaluation mode in the review editor.</p>{% endfor %}
+{% endif %}
+{% endblock %}

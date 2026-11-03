@@ -1,0 +1,38 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item %}
+{% block title %}Text to Speech — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Create</span><h1 class="app-h1">Text to Speech</h1>
+<form method="post" action="/app/tts" class="tool" data-tts>
+  <div class="tool-main">
+    <div class="tagbar" aria-label="Insert a tag at the cursor">
+      {% for t, d in TAGS.DELIVERY.items() %}<button type="button" class="tagchip" data-insert="[{{ t }}]" title="{{ d }}">[{{ t }}]</button>{% endfor %}
+      {% for t in TAGS.VOCAL %}<button type="button" class="tagchip vocal" data-insert="[{{ t }}]" title="A sound only the English Chatterbox voice makes (not Korean)">[{{ t }}]</button>{% endfor %}
+    </div>
+    <textarea name="text" rows="11" maxlength="{{ MAX_CHARS.tts }}" required aria-label="Text to speak"
+      placeholder="Type or paste text. Put a tag like [slow], [question] or [laugh] anywhere in a sentence to change how that sentence is spoken.">{{ form.text or "" }}</textarea>
+    <div class="editor-foot"><span><span data-count>0</span> / {{ "{:,}".format(MAX_CHARS.tts) }} characters</span><span data-tagcount class="muted"></span></div>
+    <div class="preview" data-preview aria-live="polite"></div>
+  </div>
+  <aside class="tool-side">
+    <label>Language
+      <select name="lang" data-lang>{% for l in langs %}<option value="{{ l }}" {{ 'selected' if (form.lang or 'en') == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select></label>
+    <label>Voice
+      <select name="voice" data-voice>{% for v in voices %}<option value="{{ v.id }}" data-lang="{{ v.lang }}" data-sample="{{ '/samples/' ~ v.id if v.sample }}"
+        {{ 'selected' if form.voice == v.id or (not form.voice and v.default and v.lang == (form.lang or 'en')) }}>{{ v.name }} — {{ v.accent }} · {{ v.f0 }} Hz</option>{% endfor %}
+        {% for c in clones %}<option value="clone:{{ c.id }}" data-lang="any" data-sample="/app/voices/{{ c.id }}/sample"
+          {{ 'selected' if form.voice == 'clone:' ~ c.id }}>{{ c.name }} — {{ 'my voice clone' if c.owner_id == user.id else 'shared by ' ~ (c.owner_name or 'a user') }}</option>{% endfor %}</select></label>
+    <button type="button" class="secondary play-btn" data-sample-btn><span class="play"></span>Hear this voice</button>
+    <p class="small" style="margin:10px 0 0"><a href="/app/market">Find more voices in the Marketplace →</a></p>
+    <button class="block" style="margin-top:18px">Generate speech</button>
+    <p class="muted small" style="margin-top:14px">A tag applies to its whole sentence. {% for t in TAGS.DELIVERY %}[{{ t }}] {% endfor %}are made by DUBBE
+      (pitch, speed, loudness, breath) and work with every voice; for [question] English switches to the Chatterbox voice,
+      which raises the end. {% for t in TAGS.VOCAL %}[{{ t }}] {% endfor %}are sounds only the English Chatterbox voice makes
+      (weakly); the other languages' voices cannot, so they are listed as not performed. Free during the beta (up to {{ "{:,}".format(MAX_CHARS.tts) }} characters).</p>
+  </aside>
+</form>
+<section class="app-sec">
+  <div class="row-head"><h2>Recent</h2><a href="/app/history?kind=tts">All speech →</a></div>
+  {% for x in recent %}{{ task_item(x) }}{% else %}<p class="muted">Nothing yet — your generated speech appears here.</p>{% endfor %}
+</section>
+{% endblock %}
