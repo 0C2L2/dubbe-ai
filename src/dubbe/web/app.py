@@ -661,7 +661,7 @@ def start_over(request: Request, pid: int, stage: str):
 @app.post("/app/p/{pid}/detect-speakers")
 def detect_speakers(request: Request, pid: int):
     """Find the speakers again: projects dubbed before detection existed, or a detection the reviewer wants redone."""
-    return start_over(request, pid, "speakers")
+    return start_over(request, pid, "diarize")  # turns first, then sentences split by speaker (edits carry over)
 
 
 @app.post("/app/p/{pid}/rerun")

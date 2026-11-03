@@ -2,11 +2,11 @@ import argparse
 import time
 from pathlib import Path
 
-from . import (asr, config, emotion, extract, mux, read_json, report, segment, separate, shorten, speakers, timing, translate,
-               tts, voice, write_json)
+from . import (asr, config, diarize, emotion, extract, mux, read_json, report, segment, separate, shorten, speakers, timing,
+               translate, tts, voice, write_json)
 
-STAGES = {"extract": extract, "separate": separate, "asr": asr, "segment": segment, "speakers": speakers, "emotion": emotion,
-          "voice": voice,
+STAGES = {"extract": extract, "separate": separate, "asr": asr, "diarize": diarize, "segment": segment, "speakers": speakers,
+          "emotion": emotion, "voice": voice,
           "translate": translate, "tts": tts, "shorten": shorten, "timing": timing, "mux": mux, "report": report}
 
 
@@ -46,6 +46,9 @@ def main(argv=None) -> None:
     for i, name in enumerate(names):
         if not a.force and name in log["done"] and (first is None or i < first):
             print(f"[skip] {name}")
+            continue
+        if not a.force and first is not None and i < first and any(n in log["done"] for n in names[i + 1:]):
+            print(f"[skip] {name} (added after this video was dubbed; re-run from it to use it)")
             continue
         print(f"[run]  {name} ...", flush=True)
         t = time.perf_counter()

@@ -31,9 +31,10 @@ Details: [docs/architecture.md](docs/architecture.md) (C4 Level 1 and 2, pipelin
 - [Data sources](docs/data-sources.md) — clips, licences, evaluation data, model licences
 - [Test plan](docs/test-plan.md) — how each Definition of Done item is checked
 - [Test results](docs/test-results.md) — what has actually been measured so far
+- [Knowledge base](docs/rag-knowledge-base.md) — the whole project in self-contained paragraphs, for retrieval (RAG)
 - Ground rules, functional requirements — TBD
 
-## Features and status (2026-10-06)
+## Features and status (2026-11-03)
 
 Tiers follow the project tab's Definition of Done. ✅ built and tested · 🟡 built, partly tested · ⬜ not started. Measured results: [docs/test-results.md](docs/test-results.md).
 
@@ -48,13 +49,13 @@ Tiers follow the project tab's Definition of Done. ✅ built and tested · 🟡 
 - ✅ Long translations: shorter alternative wording + optional picture slow-down (`--slow-video 1.2`)
 - 🟡 22 languages, any pair (test results C25): Korean ↔ English tested in depth; Arabic, Chinese, Danish, Dutch, Finnish, French, German, Greek, Hindi, Italian, Japanese, Malay, Norwegian, Polish, Portuguese, Russian, Spanish, Swahili, Swedish, Turkish only on read speech (FLEURS) — recognition weak for Swahili, Turkish, Hindi; Hebrew left out
 - 🟡 Second language pair: English → Korean runs (Chatterbox Multilingual built-in voice; MMS when `.venv-chatterbox` is missing); needs a fluent Korean rater and approval (Q-005)
-- 🟡 Multiple speakers: detected per sentence by voice, each speaker their own voice, transcripts by speaker; the reviewer renames, merges or splits speakers — similar voices get merged (test results C21)
+- 🟡 Multiple speakers: detected per sentence by voice, each speaker their own voice, transcripts by speaker; the reviewer renames, merges or splits speakers — similar voices get merged (test results C21). Optional speaker diarization from the audio (`speaker_engine` in `languages.yaml`: `pyannote` = pyannote 3.1, `community` = community-1 in `.venv-diarize`; both need `HF_TOKEN`) splits sentences where the speaker changes; tested on our clips it was not better than the default `wavlm` and slower (test results C27)
 - 🟡 Cost per minute vs. professional dubbing: computed for every run (`stats.json`, report, web page); price assumptions in `languages.yaml` still need sources
 
 **Stretch / beyond the DoD**
 - ✅ Background sound kept (music, effects, a phone ringing) under the new voice
 - 🟡 Voice matching: preset voice chosen by the speaker's pitch register (per speaker; reviewer can override); Korean dubs choose from 26 voices — the built-in one and 25 English presets speaking Korean (test results C24)
-- 🟡 Expressive voice: reviewer delivery tags per sentence ([slow], [question], [whisper], [excited], [sad] … made by DUBBE, any voice — [question] switches English to Chatterbox, whose end rose in 11 of 12; [laugh], [sigh], [gasp], [cough] English only via Chatterbox and weak, Korean cannot — see test results); tags heard in the original are put on each sentence automatically (emotion, laugh / sigh / gasp / cough, whisper, question — dashed in the editor, the reviewer unticks wrong ones); the emotion effects did not measurably change the dub yet (test results C22, [plan C9](docs/project-plan.md))
+- 🟡 Expressive voice: reviewer delivery tags per sentence ([slow], [question], [whisper], [excited], [sad] … made by DUBBE, any voice — [question] switches English to Chatterbox, whose end rose in 11 of 12; [laugh], [sigh], [gasp], [cough] English only via Chatterbox and weak, Korean cannot — see test results); tags heard in the original are put on each sentence automatically (emotion, laugh / sigh / gasp / cough, whisper, question — dashed in the editor, the reviewer unticks wrong ones); the emotion effects did not measurably change the dub yet (test results C22, [plan C9](docs/project-plan.md)). Expression transfer is approved (Q-009); CosyVoice 3 (instruction-controlled emotion, Apache-2.0) runs in its own environment through `cosyvoice_worker.py` and passed a smoke test, but is not wired into the pipeline yet
 - 🟡 Natural delivery: each dubbed sentence follows the original's loudness and pitch, fades and a soft limiter (test results C20; needs a listening test)
 - ✅ Voice cloning of **your own voice** (approved, Q-010): live recording of sentences picked at that moment, Whisper check, encrypted storage (`DUBBE_VOICE_KEY`), watermark + AI label; voice **Marketplace** (store front with search, categories, sorting, ratings and reviews; get a voice to use it; admin review; no payouts) and a **Voice Studio** for publishers (progress from recording to live, listing editor with live preview, uses / rating / "would earn"); a speaker **from the video** only with the uploader's consent, kept encrypted inside that project (plan C13/C14, C7)
 - 🟡 Website (`dubbe-web`): public pages, accounts, plans and limits, upload → background job → review editor → downloads (MP4, SRT/VTT, report), contact — runs locally, tested end to end; not deployed yet
@@ -90,7 +91,7 @@ Details in [docs/team.md](docs/team.md).
 
 ## Tech stack (all free, run locally)
 
-ffmpeg · faster-whisper (Whisper large-v3 for Korean, large-v3-turbo for English) · NLLB-200 3.3B (int8, CTranslate2) · Kokoro-82M · Chatterbox (Turbo and Multilingual, optional environment; MMS-TTS as Korean fallback) · Demucs · Python 3.10–3.12
+ffmpeg · faster-whisper (Whisper large-v3 for Korean, large-v3-turbo for English) · NLLB-200 3.3B (int8, CTranslate2) · Kokoro-82M · Chatterbox (Turbo and Multilingual, optional environment; MMS-TTS as Korean fallback) · Demucs · WavLM speaker verification · pyannote 3.1 / community-1 (optional) · CosyVoice 3 (optional, experimental) · Python 3.10–3.12
 
 Starter template: [humblebeeai/module-python-template](https://github.com/humblebeeai/module-python-template) — chosen because the core of DUBBE is a batch command-line pipeline. The website (`src/dubbe/web/`) adds FastAPI, SQLite and HTML templates on top of it; plan: [docs/website-plan.md](docs/website-plan.md).
 
@@ -129,6 +130,11 @@ py -3.12 -m venv .venv-chatterbox
 .venv-chatterbox/Scripts/python -m pip install chatterbox-tts==0.1.7
 # voice cloning (your own voice): needs the Chatterbox environment above and DUBBE_VOICE_KEY set in the environment
 # (make one: see .env.example). Recordings are encrypted with it; if the key is lost they cannot be read again
+# optional diarization: accept the terms of pyannote/speaker-diarization-3.1 and pyannote/segmentation-3.0 on Hugging Face,
+# set HF_TOKEN (.env.example) and speaker_engine: pyannote in languages.yaml. community-1 needs pyannote.audio 4 in its own env:
+py -3.12 -m venv .venv-diarize
+.venv-diarize/Scripts/python -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+.venv-diarize/Scripts/python -m pip install pyannote.audio==4.0.7
 python scripts/ratings_summary.py work/lecture.ko-en                          # scores, flag precision/recall, rater agreement
 python scripts/eval_propagation.py work/lecture.ko-en reference.json          # which stage causes the errors (C17)
 pytest                                          # unit tests: sentence grouping, timing
