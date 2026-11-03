@@ -1,6 +1,7 @@
 """C7: who speaks when - one speaker label per sentence.
 
-A speaker-verification model (WavLM base plus SV, MIT) gives each sentence a voice fingerprint; sentences whose
+With speaker turns from `diarize` (pyannote, C21) a sentence gets the speaker it overlaps most; otherwise a
+speaker-verification model (WavLM base plus SV, MIT) gives each sentence a voice fingerprint; sentences whose
 fingerprints are close (cosine distance, average linkage) are one speaker. Sentences shorter than MIN_S give unsteady
 fingerprints, so they join the nearest speaker afterwards, and a "speaker" with less than MIN_TOTAL_S of speech joins
 the nearest one too. Speakers are numbered by how much they say (S1 = the main speaker). The threshold is calibrated
@@ -13,6 +14,7 @@ import numpy as np
 import soundfile as sf
 
 from . import device, free_gpu, read_json, write_json
+from .diarize import who
 
 MODEL = "microsoft/wavlm-base-plus-sv"
 MIN_S = 1.0
@@ -60,18 +62,38 @@ def cluster(emb: np.ndarray, durs: list[float], threshold: float) -> list[int]:
     return [order.index(lab) for lab in labels]
 
 
+def from_turns(segs: list[dict], turns: list[dict]) -> list[int]:
+    """Speaker number per sentence from diarization turns (0 = says the most). A "speaker" with less than
+    MIN_TOTAL_S of sentences is a stray label: those sentences take the previous sentence's speaker."""
+    durs = [s["end"] - s["start"] for s in segs]
+    raw = [who(turns, s["start"], s["end"]) for s in segs]
+    total = {k: sum(d for d, r in zip(durs, raw) if r == k) for k in set(raw)}
+    big = {k for k, t in total.items() if t >= MIN_TOTAL_S} or {max(total, key=total.get)}
+    for i, r in enumerate(raw):
+        if r not in big:
+            raw[i] = next((raw[j] for j in range(i - 1, -1, -1) if raw[j] in big),
+                          next((raw[j] for j in range(i + 1, len(raw)) if raw[j] in big), max(big, key=total.get)))
+    order = sorted(big, key=lambda k: -sum(d for d, r in zip(durs, raw) if r == k))
+    return [order.index(r) for r in raw]
+
+
 def run(video: Path, work: Path, cfg: dict) -> None:
     data = read_json(work / "segments.json")
     segs = data["segments"]
     if data.get("speakers_edited") or not segs:
         return
-    wav = work / "vocals.wav" if (work / "vocals.wav").exists() else work / "audio.wav"
-    x, sr = sf.read(wav, dtype="float32")
-    x = x.mean(1) if x.ndim > 1 else x
-    clips = [x[int(s["start"] * sr):int(s["end"] * sr)] for s in segs]
-    clips16 = [np.interp(np.arange(0, len(c), sr / 16000), np.arange(len(c)), c).astype("float32") if len(c) > 1
-               else np.zeros(1600, "float32") for c in clips]
-    labels = cluster(fingerprints(clips16), [s["end"] - s["start"] for s in segs], cfg["speaker_threshold"])
+    diar = work / "diarization.json"
+    turns = read_json(diar)["turns"] if diar.exists() else None
+    if turns:
+        labels = from_turns(segs, turns)
+    else:
+        wav = work / "vocals.wav" if (work / "vocals.wav").exists() else work / "audio.wav"
+        x, sr = sf.read(wav, dtype="float32")
+        x = x.mean(1) if x.ndim > 1 else x
+        clips = [x[int(s["start"] * sr):int(s["end"] * sr)] for s in segs]
+        clips16 = [np.interp(np.arange(0, len(c), sr / 16000), np.arange(len(c)), c).astype("float32") if len(c) > 1
+                   else np.zeros(1600, "float32") for c in clips]
+        labels = cluster(fingerprints(clips16), [s["end"] - s["start"] for s in segs], cfg["speaker_threshold"])
     for s, lab in zip(segs, labels):
         s["speaker"] = f"S{lab + 1}"
     data["speakers"] = {f"S{k + 1}": {"name": f"Speaker {k + 1}"} for k in sorted(set(labels))}

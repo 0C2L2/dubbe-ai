@@ -87,11 +87,12 @@ def text_to_speech(p: dict, out: Path, owner=None) -> dict:
 
 
 def speech_to_text(p: dict, out: Path, video: Path) -> dict:
-    from .. import asr, extract, segment, speakers, translate
+    from .. import asr, diarize, extract, segment, speakers, translate
     to = p.get("to") or ""
     cfg = config.load(p["src"], to or ("en" if p["src"] == "ko" else "ko"))
     cfg["keep_background"] = False
-    for stage in (extract, asr, segment) + ((speakers,) if p.get("speakers") else ()) + ((translate,) if to else ()):
+    who = p.get("speakers")
+    for stage in (extract, asr) + ((diarize,) if who else ()) + (segment,) + ((speakers,) if who else ()) + ((translate,) if to else ()):
         stage.run(video, out, cfg)
     data = read_json(out / "segments.json")
     segs, names = data["segments"], {k: v.get("name") for k, v in (data.get("speakers") or {}).items()}
@@ -109,10 +110,10 @@ def speech_to_text(p: dict, out: Path, video: Path) -> dict:
 def find_speakers(p: dict, out: Path, video: Path) -> dict:
     """Who speaks when: speech recognition, then speaker detection on the separated voice (music does not join or split
     people), and a clip of each speaker to listen to. The full-quality voice stays for cloning a speaker (with consent)."""
-    from .. import asr, extract, segment, separate, speakers
+    from .. import asr, diarize, extract, segment, separate, speakers
     cfg = config.load(p["src"], "en" if p["src"] == "ko" else "ko")
     cfg.update(keep_background=True, keep_voice_hq=True)
-    for stage in (extract, separate, asr, segment, speakers):
+    for stage in (extract, separate, asr, diarize, segment, speakers):
         stage.run(video, out, cfg)
     data = read_json(out / "segments.json")
     data["speakers"], data["duration"] = data.get("speakers") or {}, sf.info(out / "audio.wav").duration

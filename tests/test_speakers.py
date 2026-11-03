@@ -17,6 +17,18 @@ def test_cluster_groups_voices_and_numbers_by_speech():
     assert cluster(emb[:2], [2.0, 2.0], 0.3) == [0, 0]  # one person stays one speaker
 
 
+def test_sentences_named_by_diarization_turns():
+    from dubbe.diarize import who
+    from dubbe.speakers import from_turns
+    turns = [{"start": 0, "end": 5, "speaker": "A"}, {"start": 4.5, "end": 9, "speaker": "B"},
+             {"start": 9, "end": 9.5, "speaker": "C"}, {"start": 10, "end": 20, "speaker": "B"}]
+    assert who(turns, 4.0, 5.0) == "A" and who(turns, 4.8, 6.0) == "B"  # overlap: the one covering more of it
+    assert who(turns, 9.6, 9.9) == "C"  # in a gap: the nearest turn
+    segs = [{"start": 0, "end": 4.5}, {"start": 5, "end": 9}, {"start": 9, "end": 9.5}, {"start": 10, "end": 20}]
+    assert from_turns(segs, turns) == [1, 0, 0, 0]  # B talks most = S1; stray C (0.5 s) takes the previous speaker
+    assert from_turns(segs[:1], turns[:1]) == [0]
+
+
 def test_each_speaker_their_own_voice_and_transcript(monkeypatch, tmp_path):
     cfg = config.load("ko", "en")
     monkeypatch.setattr(tts, "CHATTERBOX_PY", tmp_path)  # exists
