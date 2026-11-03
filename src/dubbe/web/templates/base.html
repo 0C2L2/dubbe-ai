@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}DUBBE — dub your lecture, see what to check{% endblock %}</title>
+<meta name="description" content="{% block desc %}AI video dubbing in {{ NAMES | length }} languages (Korean ↔ English tested most) that marks the sentences a person should check.{% endblock %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Inter+Tight:wght@300;400;600&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+<script>document.documentElement.classList.add("js")</script>{# entrance animations only when the script that ends them runs #}
+{% block head %}{% endblock %}
+</head>
+<body>
+{% block shell %}
+<header class="site-head">
+  <div class="container">
+    <nav aria-label="Main">
+      <a href="{{ '/app' if user else '/' }}" class="brand"><span class="brand-mark grain"></span>DUBBE</a>
+      {% if user %}
+      <ul class="nav-links">
+        <li><a href="/app">Projects</a></li>
+        <li><a href="/app/new">New dub</a></li>
+        <li><a href="/help">Help</a></li>
+        {% if admin %}<li><a href="/admin">Admin</a></li>{% endif %}
+      </ul>
+      <div class="nav-actions">
+        <span class="muted">{{ "admin · no limits" if admin else left ~ " min left" }}</span>
+        <details class="dropdown"><summary>{{ user.name or user.email }}</summary>
+          <ul>
+            <li><a href="/app/plan">Plan &amp; usage</a></li>
+            <li><a href="/app/settings">Settings</a></li>
+            <li><a href="/">Website</a></li>
+            <li><form method="post" action="/signout"><button>Sign out</button></form></li>
+          </ul>
+        </details>
+      </div>
+      {% else %}
+      <ul class="nav-links">
+        <li><a href="/features">How it works</a></li>
+        <li><a href="/examples">Examples</a></li>
+        <li><a href="/education">For education</a></li>
+        <li><a href="/pricing">Plans</a></li>
+        <li><a href="/contact">Contact</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="/signin" role="button" class="secondary">Sign in</a>
+        <a href="/signup" role="button">Start free</a>
+      </div>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+<main class="container">
+{% set m = MSG.get(request.query_params.get('m', '')) %}
+{% if m %}<p class="notice">{{ m }}</p>{% endif %}
+{% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+{% block main %}{% endblock %}
+</main>
+<footer class="site-foot">
+  <div class="container">
+    <div class="foot-grid">
+      <div><a href="/" class="brand"><span class="brand-mark grain"></span>DUBBE</a>
+        <p class="muted" style="margin-top:14px">Dub your lecture, and see which sentences to check.</p></div>
+      <div><strong>Product</strong><ul>
+        <li><a href="/features">How it works</a></li>
+        <li><a href="/translate-video/korean-to-english">Korean → English</a></li>
+        <li><a href="/translate-video/english-to-korean">English → Korean</a></li>
+        <li><a href="/education">For education</a></li>
+        <li><a href="/examples">Examples</a></li>
+        <li><a href="/pricing">Plans</a></li></ul></div>
+      <div><strong>Resources</strong><ul>
+        <li><a href="/help">Help</a></li>
+        <li><a href="/results">Measured results</a></li>
+        <li><a href="https://github.com/0C2L2/dubbe-ai">GitHub</a></li></ul></div>
+      <div><strong>Company</strong><ul>
+        <li><a href="/about">About</a></li>
+        <li><a href="/safety">Safety</a></li>
+        <li><a href="/contact">Contact</a></li>
+        <li><a href="/contact?topic=report">Report misuse</a></li></ul></div>
+      <div><strong>Legal</strong><ul>
+        <li><a href="/terms">Terms</a></li>
+        <li><a href="/use-policy">Use policy</a></li>
+        <li><a href="/privacy">Privacy</a></li></ul></div>
+    </div>
+    <p class="foot-note">DUBBE is a student project — Inha University × HumbleBeeAI capstone, Fall 2026. Dubs made on this site are AI-generated.</p>
+  </div>
+</footer>
+{% endblock %}
+<script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -43,3 +43,14 @@ def test_video_slowing_shares_the_extra_time():
 def test_no_slowing_when_it_fits_or_disabled():
     assert place(segs((0, 2.0), (5, 1.0)), total=10, max_stretch=1.3, max_slow=1.2)[0]["slow"] == 1.0
     assert place(segs((0, 7.2), (5, 1.0)), total=10, max_stretch=1.3)[0]["slow"] == 1.0
+
+
+def test_delivery_helpers():
+    import numpy as np
+    from dubbe.timing import fade, limit
+    a = np.ones(1000, dtype="float32")
+    f = fade(a, 1000)  # 10 ms = 10 samples at each end
+    assert f[0] == 0 and f[-1] == 0 and f[500] == 1 and f.dtype == np.float32
+    x = np.array([0.5, 0.95, 1.5, -3.0], dtype="float32")
+    y = limit(x)
+    assert y[0] == 0.5 and np.all(np.abs(y) <= 1) and y[2] > y[1] > 0.9 and y[3] < -0.9  # loud stays loud, never past full scale

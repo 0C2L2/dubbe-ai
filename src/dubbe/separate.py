@@ -18,6 +18,8 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     from demucs.apply import apply_model
     from demucs.pretrained import get_model
 
+    if not (work / "original.wav").exists():  # work folder from before this stage existed
+        ffmpeg("-i", str(video), "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(work / "original.wav"))
     model = get_model("htdemucs")  # Demucs v4, MIT licence
     audio, sr = sf.read(work / "original.wav", dtype="float32")  # 44.1 kHz stereo from extract
     x = torch.from_numpy(audio.T.copy())[None]
@@ -37,4 +39,5 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     free_gpu()
     # voice stem at 16 kHz mono for pitch analysis (voice stage) - not for ASR, see asr.py
     ffmpeg("-i", str(work / "vocals44.wav"), "-ac", "1", "-ar", "16000", str(work / "vocals.wav"))
-    (work / "vocals44.wav").unlink()
+    if not cfg.get("keep_voice_hq"):  # the website's voice isolator keeps the full-quality voice
+        (work / "vocals44.wav").unlink()

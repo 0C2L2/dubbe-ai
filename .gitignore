@@ -24,3 +24,11 @@ data/
 course/
 archive/
 .pytest_cache/
+.venv-chatterbox/
+.venv-cosyvoice/
+.venv-diarize/
+_temp/
+.cosyvoice/
+
+# OS junk
+.DS_Store

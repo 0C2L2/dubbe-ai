@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 from . import read_json, write_json
+from .diarize import who
 
 
 def _dur(s: list[dict]) -> float:
@@ -16,15 +17,20 @@ def _split_long(s: list[dict], max_dur: float, max_words: int) -> list[list[dict
     return _split_long(s[:k], max_dur, max_words) + _split_long(s[k:], max_dur, max_words)
 
 
-def _merge_short(sents: list[list[dict]], min_dur: float) -> list[list[dict]]:
+def _merge_short(sents: list[list[dict]], min_dur: float, spk=lambda s: None) -> list[list[dict]]:
+    """Merge fragments shorter than min_dur into the closer neighbour - never into another speaker's sentence."""
     i = 0
     while i < len(sents) and len(sents) > 1:
         s = sents[i]
         if _dur(s) >= min_dur:
             i += 1
             continue
-        gap_prev = s[0]["start"] - sents[i - 1][-1]["end"] if i > 0 else math.inf
-        gap_next = sents[i + 1][0]["start"] - s[-1]["end"] if i + 1 < len(sents) else math.inf
+        same = lambda j: 0 <= j < len(sents) and spk(sents[j]) == spk(s)  # noqa: E731
+        gap_prev = s[0]["start"] - sents[i - 1][-1]["end"] if same(i - 1) else math.inf
+        gap_next = sents[i + 1][0]["start"] - s[-1]["end"] if same(i + 1) else math.inf
+        if gap_prev == gap_next == math.inf:  # alone between other speakers: a short line of its own
+            i += 1
+            continue
         if gap_prev <= gap_next:
             sents[i - 1] = sents[i - 1] + s
         else:
@@ -33,29 +39,63 @@ def _merge_short(sents: list[list[dict]], min_dur: float) -> list[list[dict]]:
     return sents
 
 
-def group(words: list[dict], cfg: dict) -> list[list[dict]]:
+def group(words: list[dict], cfg: dict, turns: list[dict] | None = None) -> list[list[dict]]:
     """Group timed words into translatable sentences (known hard part #1).
-    Close on a sentence ending followed by a short pause, or on a long pause alone;
-    then split over-long sentences and merge tiny fragments."""
+    Close on a sentence ending followed by a short pause, on a long pause alone, or where the speaker changes
+    (speaker turns from `diarize`, if any); then split over-long sentences and merge tiny fragments."""
     end_re = re.compile(cfg["src"]["sentence_end"])
+    spk = [who(turns, w["start"], w["end"]) for w in words] if turns else [None] * len(words)
     sents, cur = [], []
     for i, w in enumerate(words):
         cur.append(w)
         pause = words[i + 1]["start"] - w["end"] if i + 1 < len(words) else math.inf
-        if pause >= cfg["break_pause"] or (end_re.search(w["w"]) and pause >= cfg["close_pause"]):
+        changed = i + 1 < len(words) and spk[i + 1] != spk[i]
+        if changed or pause >= cfg["break_pause"] or (end_re.search(w["w"]) and pause >= cfg["close_pause"]):
             sents.append(cur)
             cur = []
     if cur:
         sents.append(cur)
     sents = [part for s in sents for part in _split_long(s, cfg["max_dur"], cfg["max_words"])]
-    return _merge_short(sents, cfg["min_dur"])
+    return _merge_short(sents, cfg["min_dur"], lambda s: who(turns, s[0]["start"], s[-1]["end"]))
+
+
+def edit(s: dict, text: str, chosen: list[str]) -> bool:
+    """A reviewer's change to one sentence: tags as chosen (known ones, fixed order), and the dub text only
+    if it changed - then it is marked as a human edit, which later stages never re-translate."""
+    from .tags import ALL
+    tags = [t for t in ALL if t in chosen]
+    if tags != (s.get("tags") or []):
+        s["tags_edited"] = True  # the emotion stage never overwrites them again
+    s["tags"] = tags
+    changed = bool(text.strip()) and text.strip() != (s["tgt_text"] or "").strip()
+    if changed:
+        s.update(tgt_text=text.strip(), edited=True)
+    return changed
+
+
+def carry_over(old: list[dict], new: list[dict]) -> list[dict]:
+    """Copy a reviewer's edited translation and tags from the old sentences to the new ones.
+    Re-segmenting renumbers sentences, so match by time: an old sentence carries over to the new one
+    when each covers more than half of the other (a split or merge of sentences does not carry edits)."""
+    for n in new:
+        for o in old:
+            ov = min(n["end"], o["end"]) - max(n["start"], o["start"])
+            if ov > 0.5 * (n["end"] - n["start"]) and ov > 0.5 * (o["end"] - o["start"]):
+                if o.get("edited"):
+                    n.update(tgt_text=o["tgt_text"], edited=True)
+                if o.get("tags") and (o.get("tags_edited") or "auto_tags" not in o):  # the reviewer's, not heard ones
+                    n.update(tags=o["tags"], tags_edited=True)
+                break
+    return new
 
 
 def run(video: Path, work: Path, cfg: dict) -> None:
     words = read_json(work / "words.json")["words"]
+    diar = work / "diarization.json"
+    turns = read_json(diar)["turns"] if diar.exists() else None
     join = cfg["src"].get("join", " ")
     segments = []
-    for n, s in enumerate(group(words, cfg), 1):
+    for n, s in enumerate(group(words, cfg, turns), 1):
         scores = [w["score"] for w in s if "score" in w]
         segments.append({
             "id": n, "start": s[0]["start"], "end": s[-1]["end"],
@@ -65,4 +105,5 @@ def run(video: Path, work: Path, cfg: dict) -> None:
         })
     old = read_json(work / "segments.json") if (work / "segments.json").exists() else {}
     keep = {"speakers": old["speakers"]} if "speakers" in old else {}  # reviewer voice overrides survive re-runs
+    segments = carry_over(old.get("segments", []), segments)  # ...and so do edited translations and tags
     write_json(work / "segments.json", {"src": cfg["src"]["code"], "tgt": cfg["tgt"]["code"], **keep, "segments": segments})

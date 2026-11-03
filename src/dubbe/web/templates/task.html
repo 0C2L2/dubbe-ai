@@ -1,0 +1,139 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon %}
+{% block title %}{{ TOOLS[t.kind] }} — {{ t.title }} — DUBBE{% endblock %}
+{% block head %}{% if t.status in ("waiting", "running", "uploading") %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block main %}
+<span class="eyebrow"><a href="/app/{{ t.kind }}">{{ TOOLS[t.kind] }}</a> · {{ t.created_at | date }}{% if t.minutes %} · {{ "%.1f" | format(t.minutes) }} min{% endif %}</span>
+<h1 class="app-h1 task-title">{{ t.title }}</h1>
+
+{% if t.status in ("waiting", "uploading") %}
+  <div class="card working"><span class="spinner"></span><div><b>Waiting in the queue</b>{% if ahead %} — {{ ahead }} job{{ "s" if ahead > 1 }} ahead{% endif %}.
+    <p class="muted small" style="margin:4px 0 0">One GPU runs one job at a time. This page updates by itself.</p></div></div>
+{% elif t.status == "running" %}
+  <div class="card working"><span class="spinner"></span><div><b>Working…</b>
+    <p class="muted small" style="margin:4px 0 0">The models load first, so even short jobs take a few seconds. This page updates by itself.</p></div></div>
+{% elif t.status == "failed" %}
+  <p class="notice error">This job failed.</p>
+  {% if t.error %}<details open><summary>Last lines of the log</summary><pre style="white-space:pre-wrap">{{ t.error }}</pre></details>{% endif %}
+{% elif result %}
+
+  {% if t.kind == "tts" %}
+  <div class="card">
+    <audio controls src="/app/tasks/{{ t.id }}/file/speech.mp3" style="width:100%"></audio>
+    <p class="actions" style="margin:12px 0 0"><a role="button" href="/app/tasks/{{ t.id }}/file/speech.mp3?dl=1">Download MP3</a>
+      <a role="button" class="secondary" href="/app/tasks/{{ t.id }}/file/speech.wav?dl=1">Download WAV</a>
+      <span class="muted small">{{ result.seconds }} s · {{ "a voice clone (watermarked)" if result.voice.startswith("clone:") else "voice " ~ result.voice }} ({{ result.engine }})</span></p>
+  </div>
+  <h2>Sentences</h2>
+  {% for s in result.sentences %}
+  <div class="sline"><span class="num">{{ "%02d" | format(loop.index) }}</span><div>
+    <p style="margin:0">{% for tg in s.tags %}<span class="tagpill">[{{ tg }}]</span> {% endfor %}{{ s.text }}</p>
+    {% if s.not_performed %}<p class="muted small" style="margin:4px 0 0">Not performed by this voice: {{ s.not_performed | join(", ") }}</p>{% endif %}
+    {% if s.unknown %}<p class="small" style="margin:4px 0 0;color:#8e1d22">Unknown tag{{ "s" if s.unknown | length > 1 }} removed: {{ s.unknown | join(", ") }}</p>{% endif %}
+  </div></div>
+  {% endfor %}
+  <form method="post" action="/app/tts" class="inline"><input type="hidden" name="text" value="{{ p.text }}"><input type="hidden" name="lang" value="{{ p.lang }}">
+    <input type="hidden" name="voice" value="{{ p.voice | replace('/', '_') }}"><button class="secondary" style="margin-top:16px">Generate again</button></form>
+
+  {% elif t.kind == "stt" %}
+  <p class="actions">{% for f in result.files %}<a role="button" class="{{ '' if loop.first else 'secondary' }}" href="/app/tasks/{{ t.id }}/file/{{ f }}?dl=1">{{ f }}</a>{% endfor %}</p>
+  {% set n = result.sentences | selectattr("flag") | list | length %}
+  <p class="muted">{{ result.sentences | length }} sentences · {{ n }} marked to check{{ " · " ~ result.speakers ~ " speakers" if result.speakers and result.speakers > 1 }}.</p>
+  {% set by = result.speakers and result.speakers > 1 %}
+  <table class="small"><thead><tr><th>Time</th>{% if by %}<th>Speaker</th>{% endif %}<th>{{ NAMES[p.src] }}</th>{% if p.to %}<th>{{ NAMES[p.to] }}</th>{% endif %}<th>Check</th></tr></thead><tbody>
+  {% for s in result.sentences %}<tr><td>{{ "%d:%02d" | format(s.start // 60, s.start % 60) }}</td>{% if by %}<td><b>{{ s.speaker }}</b></td>{% endif %}<td>{{ s.src }}</td>
+    {% if p.to %}<td>{{ s.tgt }}</td>{% endif %}
+    <td>{% for f in s.flag %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% else %}<span class="chip ok">OK</span>{% endfor %}</td></tr>{% endfor %}
+  </tbody></table>
+
+  {% elif t.kind == "translate" %}
+  <p class="actions"><a role="button" href="/app/tasks/{{ t.id }}/file/translation.txt?dl=1">Download text</a>
+    <button type="button" class="secondary" data-copy="{{ result.sentences | map(attribute='tgt') | join('\n') }}">Copy all</button></p>
+  {% for s in result.sentences %}
+  <div class="tline">
+    <p class="muted small" style="margin:0 0 4px">{{ s.src }}</p>
+    <p style="margin:0">{{ s.tgt }}</p>
+    <div class="conf"><i style="width:{{ (s.conf * 100) | round }}%"></i></div>
+    <p class="small" style="margin:6px 0 0">{% for f in s.flag %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% else %}<span class="chip ok">OK</span>{% endfor %}
+      <span class="muted">confidence {{ "%.2f" | format(s.conf) }}</span>
+      {% if s.alts %}<span class="muted"> · other wordings: {{ s.alts | join(" / ") }}</span>{% endif %}</p>
+  </div>
+  {% endfor %}
+
+  {% elif t.kind == "captions" %}
+  {% set ids = result.speakers | map(attribute="id") | list %}
+  {% if result.video %}
+  <video controls preload="metadata" src="/app/tasks/{{ t.id }}/file/{{ result.video }}" class="cap-video">
+    {% for l in result.langs %}<track kind="captions" srclang="{{ l }}" label="{{ NAMES[l] }}" src="/app/tasks/{{ t.id }}/file/{{ l }}.vtt" {{ 'default' if loop.first }}>{% endfor %}
+  </video>
+  {% endif %}
+  <div class="cap-legend">{% for x in result.speakers %}
+    <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}" class="cap-spk" id="{{ x.id }}" style="--c:{{ x.color }}">
+      <span class="cap-swatch" aria-hidden="true"></span><input name="name" value="{{ x.name }}" maxlength="40" aria-label="Name of {{ x.name }}">
+      <span class="muted small">{{ x.seconds }} s</span><button class="secondary">Rename</button></form>{% endfor %}</div>
+  <table class="small"><thead><tr><th>Language</th><th>Any platform</th><th>Coloured by speaker</th><th>Burned into the video</th></tr></thead><tbody>
+  {% for l in result.langs %}<tr><td>{{ NAMES[l] }}</td>
+    <td><a href="/app/tasks/{{ t.id }}/file/{{ l }}.srt?dl=1">SRT</a></td>
+    <td><a href="/app/tasks/{{ t.id }}/file/{{ l }}.color.srt?dl=1">SRT</a> · <a href="/app/tasks/{{ t.id }}/file/{{ l }}.vtt?dl=1">WebVTT</a> ·
+      <a href="/app/tasks/{{ t.id }}/file/{{ l }}.ass?dl=1">ASS</a></td>
+    <td>{% if "captioned." ~ l ~ ".mp4" in result.burned %}<a href="/app/tasks/{{ t.id }}/file/captioned.{{ l }}.mp4?dl=1">MP4</a>{% endif %}
+      {% if result.video or p.project %}<form method="post" action="/app/tasks/{{ t.id }}/burn" class="inline"><input type="hidden" name="lang" value="{{ l }}">
+        <button class="secondary">{{ "Burn again" if "captioned." ~ l ~ ".mp4" in result.burned else "Burn in" }}</button></form>{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+  {% for b in result.burned %}<video controls preload="metadata" src="/app/tasks/{{ t.id }}/file/{{ b }}" class="cap-video"></video>{% endfor %}
+  <h2>Captions</h2>
+  {% for s in result.sentences %}{% set x = result.speakers[ids.index(s.speaker)] if s.speaker in ids else result.speakers[0] %}
+  <p class="cap-line" style="--c:{{ x.color }}"><span class="muted small">{{ "%d:%02d" | format(s.start // 60, s.start % 60) }}</span>
+    <b>{{ x.name }}</b> {{ s.src }}{% if s.tgt %}<br><span class="muted">{{ s.tgt }}</span>{% endif %}</p>
+  {% endfor %}
+
+  {% elif t.kind == "speakers" %}
+  {% set ids = result.speakers | map(attribute="id") | list %}
+  <p class="actions">{% for f in result.files if not f.endswith(".mp3") %}<a role="button" class="{{ '' if loop.first else 'secondary' }}" href="/app/tasks/{{ t.id }}/file/{{ f }}?dl=1">{{ f }}</a>{% endfor %}</p>
+  <p class="muted">{{ ids | length }} speaker{{ "s" if ids | length != 1 }} · {{ result.sentences | length }} sentences ·
+    {{ "%d:%02d" | format(result.duration // 60, result.duration % 60) }}</p>
+  <div class="spk-time" role="img" aria-label="Who speaks when">
+    {% for s in result.sentences %}<i style="left:{{ '%.2f' | format(100 * s.start / result.duration) }}%;width:{{ '%.2f' | format(100 * (s.end - s.start) / result.duration) }}%;--c:{{ SPK_COLORS[ids.index(s.speaker) % SPK_COLORS | length] }}"></i>{% endfor %}
+  </div>
+  <div class="spk-cards">
+  {% for x in result.speakers %}
+  <section class="card spk-card" id="{{ x.id }}" style="--c:{{ SPK_COLORS[loop.index0 % SPK_COLORS | length] }}">
+    <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}" class="spk-name">
+      <span class="spk-dot" aria-hidden="true"></span><input name="name" value="{{ x.name }}" maxlength="40" aria-label="Name of {{ x.name }}">
+      <button class="secondary">Rename</button></form>
+    <p class="muted small">{{ x.seconds }} s · {{ x.share }} % of the talking · {{ x.sentences }} sentence{{ "s" if x.sentences != 1 }}</p>
+    <audio controls preload="none" src="/app/tasks/{{ t.id }}/file/{{ x.id }}.mp3"></audio>
+    {% if cloning and t.owner_id == user.id %}
+    <details class="spk-clone"><summary>Clone this voice…</summary>
+      <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}/clone">
+        <label>Name of the voice <input name="name" value="{{ x.name }}" maxlength="60"></label>
+        <label class="rights"><input type="checkbox" name="consent" required><span>I am <b>{{ x.name }}</b>, or I have their written
+          permission to make a copy of their voice. It is saved in my voices and stays private: it can never be published to the
+          Marketplace. Everything it says is watermarked and labelled as AI.</span></label>
+        <button>Clone into my voices</button></form></details>
+    {% endif %}
+  </section>
+  {% endfor %}
+  </div>
+  <h2>Transcript</h2>
+  {% for s in result.sentences %}{% set i = ids.index(s.speaker) %}
+  <p class="spk-line" style="--c:{{ SPK_COLORS[i % SPK_COLORS | length] }}"><span class="muted small">{{ "%d:%02d" | format(s.start // 60, s.start % 60) }}</span>
+    <b>{{ result.speakers[i].name }}</b> {{ s.text }}</p>
+  {% endfor %}
+
+  {% else %}
+  <div class="stems">
+    {% for stem, label in [("voice", "Voice"), ("background", "Background")] %}
+    <div class="stem card"><b>{{ label }}</b><audio controls src="/app/tasks/{{ t.id }}/file/{{ stem }}.mp3" style="width:100%"></audio>
+      <p class="actions" style="margin:10px 0 0"><a role="button" href="/app/tasks/{{ t.id }}/file/{{ stem }}.mp3?dl=1">MP3</a>
+        <a role="button" class="secondary" href="/app/tasks/{{ t.id }}/file/{{ stem }}.wav?dl=1">WAV</a></p></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if t.status in ("done", "failed") %}
+<form method="post" action="/app/tasks/{{ t.id }}/delete" data-confirm="Delete this result and its files?" style="margin-top:28px">
+  <button class="secondary">Delete</button></form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_parts.html" import icon %}
+{% macro item(href, ic, label, exact=False, badge="") -%}
+{%- set path = request.url.path -%}
+<a href="{{ href }}" class="{{ 'on' if (path == href if exact else path.startswith(href)) }}">{{ icon(ic) }}<span>{{ label }}</span>{% if badge %}<em class="side-badge">{{ badge }}</em>{% endif %}</a>
+{%- endmacro %}
+{% block shell %}
+<div class="app">
+  <aside class="side" aria-label="App">
+    {% set plan = PLANS[user.plan] %}{% set nm = user.name or user.email.split("@")[0] %}
+    <a href="/app" class="brand"><span class="brand-mark grain"></span>DUBBE</a>
+    <details class="acct" data-acct>
+      <summary aria-label="Account menu"><span class="avatar" aria-hidden="true">{{ (nm.split() | map("first") | join)[:2] | upper }}</span>
+        <span class="acct-who"><b>{{ nm }}</b><small>{{ "Admin" if admin else plan.name ~ " plan" }}</small></span><span class="acct-chev" aria-hidden="true">▾</span></summary>
+      <div class="acct-menu">
+        <p class="acct-email">{{ user.email }}</p>
+        <a href="/app/plan" class="meter">
+          <span>{{ "Admin · no limits" if admin else plan.name ~ " plan" }}</span>
+          {% if not admin %}<progress value="{{ plan.minutes - left }}" max="{{ plan.minutes }}"></progress>
+          <small class="muted">{{ left }} of {{ plan.minutes }} min left this month</small>{% endif %}
+        </a>
+        {{ item("/app/plan", "gauge", "Plan & usage") }}
+        {{ item("/app/settings", "gear", "Settings") }}
+        {{ item("/help", "help", "Help") }}
+        <form method="post" action="/signout"><button class="side-out">{{ icon("out") }}<span>Sign out</span></button></form>
+      </div>
+    </details>
+    <a href="/app/new" role="button" class="side-new">{{ icon("plus") }}New dub</a>
+    <nav class="side-nav">
+      {{ item("/app", "home", "Home", True) }}
+      <p class="side-h">Create</p>
+      {{ item("/app/new", "film", "Dubbing") }}
+      {{ item("/app/tts", "speak", "Text to Speech") }}
+      {{ item("/app/stt", "text", "Speech to Text") }}
+      {{ item("/app/speakers", "users", "Speaker Detection") }}
+      {{ item("/app/captions", "cc", "Subtitles", badge="New") }}
+      {{ item("/app/translate", "globe", "Translate") }}
+      {{ item("/app/isolate", "layers", "Voice Isolator") }}
+      <p class="side-h">Library</p>
+      {{ item("/app/projects", "folder", "Projects") }}
+      {{ item("/app/history", "clock", "History") }}
+      {{ item("/app/voices", "orb", "Voices") }}
+      <p class="side-h">Marketplace</p>
+      {{ item("/app/market", "store", "Marketplace", badge="New") }}
+      {{ item("/app/studio", "mic", "Voice Studio") }}
+      {% if admin %}
+      <p class="side-h">Admin</p>
+      {{ item("/admin", "chart", "Overview", True) }}
+      {{ item("/admin/users", "users", "Users") }}
+      {{ item("/admin/jobs", "list", "Jobs") }}
+      {{ item("/admin/messages", "mail", "Messages") }}
+      {{ item("/admin/voices", "speak", "Voice clones") }}
+      {{ item("/admin/evaluation", "shield", "Evaluation") }}
+      {% endif %}
+    </nav>
+  </aside>
+  <main class="app-main">
+    {% set m = MSG.get(request.query_params.get('m', '')) %}
+    {% if m %}<p class="notice toast" role="status">{{ m }}</p>{% endif %}
+    {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+    {% block main %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

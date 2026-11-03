@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Contact — DUBBE{% endblock %}
+{% block main %}
+<div class="grid">
+<div>
+  <h1>Contact</h1>
+  <form method="post" action="/contact">
+    <label>Name <input name="name" value="{{ form.name or '' }}" autocomplete="name"></label>
+    <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
+    <label>Topic
+      <select name="topic" required>
+        <option value="" disabled {{ 'selected' if not form.topic }}>Choose…</option>
+        {% for t in TOPICS %}<option {{ 'selected' if form.topic == t }}>{{ t }}</option>{% endfor %}
+      </select></label>
+    <label>Message <textarea name="body" rows="6" maxlength="2000" required
+      placeholder="For a misuse report, paste the link to the dub and say what is wrong.">{{ form.body or '' }}</textarea></label>
+    <label class="honeypot" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
+    <label><input type="checkbox" name="agree" required> I have read the <a href="/privacy">Privacy notice</a>.</label>
+    <button>Send</button>
+  </form>
+</div>
+<aside>
+  <h3>Other ways</h3>
+  <p>Code and issues: <a href="https://github.com/0C2L2/dubbe-ai">GitHub</a></p>
+  <p>Questions about using DUBBE: see <a href="/help">Help</a> first.</p>
+  <p>Report a dub that impersonates someone or breaks the <a href="/use-policy">Use policy</a>: choose
+    "Report misuse". We look at reports within 2 working days.</p>
+  <p class="muted">DUBBE is a student project, not a commercial service yet. We answer within 2 working days.</p>
+</aside>
+</div>
+{% endblock %}

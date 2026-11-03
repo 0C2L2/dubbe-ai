@@ -1,0 +1,113 @@
+{% extends "app_base.html" %}
+{% block title %}{{ p.title }} — review — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">{{ NAMES[p.src] }} → {{ NAMES[p.tgt] }} · {{ total_segs }} sentences</span>
+<h1>{{ p.title }}</h1>
+
+{% if job and job.status in ("waiting", "running") %}
+<p class="notice">A re-dub is {{ job.status }} — the video below is the previous version. <a href="/app/jobs/{{ job.id }}">Progress</a></p>
+{% endif %}
+
+<div class="actions" style="margin-bottom:20px">
+  <form method="post" action="/app/p/{{ p.id }}/redub" class="inline"><button>Re-dub with my changes</button></form>
+  <form method="post" action="/app/p/{{ p.id }}/rerun" class="inline" data-confirm="Transcribe and translate the whole video again with the newest models? Edited translations and tags are kept; speakers are detected again.">
+    <button class="secondary">Transcribe &amp; translate again</button></form>
+  <a href="/app/p/{{ p.id }}/export" role="button" class="secondary">Download</a>
+  <a href="/app/p/{{ p.id }}/file/report.html" role="button" class="secondary" target="_blank" rel="noopener">Full report</a>
+</div>
+
+{{ timeline | safe }}
+<div id="seg_pick"><input type="hidden" value=""></div>
+
+<p>Show:
+  {% if not blind %}<a href="?only=flagged">only flagged</a> · {% endif %}<a href="?{{ 'blind=1' if blind }}">all {{ total_segs }}</a> ·
+  {% if blind %}<a href="?">show DUBBE's flags</a>{% else %}<a href="?blind=1">evaluation mode (hide flags while rating)</a>{% endif %}</p>
+{% if blind %}<p class="notice draft">Evaluation mode: DUBBE's flags are hidden so your ratings are not influenced by them.</p>{% endif %}
+
+{% set colors = SPK_COLORS %}
+{% set spk_list = speakers | list %}
+<section class="card speakers" id="speakers">
+  <div class="row-head"><h2>Speakers <span class="muted small">· {{ speakers | length }} detected</span></h2>
+    <span class="small">Transcript by speaker: <a href="/app/p/{{ p.id }}/download/src.txt">{{ NAMES[p.src] }}</a> ·
+      <a href="/app/p/{{ p.id }}/download/tgt.txt">{{ NAMES[p.tgt] }}</a></span></div>
+  <p class="muted small" style="margin-top:0">Detected from each sentence's voice; wrong ones can be moved below each sentence, a person
+    split in two can be merged. Give each a name and a voice, then press Re-dub. <a href="/app/market">More voices →</a></p>
+  <form method="post" action="/app/p/{{ p.id }}/detect-speakers" class="spk-detect">
+    <button class="secondary">Detect speakers again</button>
+    <span class="muted small">{{ "Only one voice found. Dubbed before speaker detection existed? " if speakers | length < 2 }}Re-runs
+      the dub; names, voices and clones from the video start over.</span></form>
+  {% for sp, info in speakers.items() %}{% set c = colors[loop.index0 % colors | length] %}
+  <div class="spk" style="--c:{{ c }}">
+    <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}" class="spk-main">
+      <span class="spk-dot" aria-hidden="true"></span>
+      <input name="name" value="{{ info.name or sp }}" maxlength="40" aria-label="Name of {{ sp }}">
+      <span class="muted small spk-n">{{ counts[sp] }} sentence{{ "s" if counts[sp] != 1 }}{{ " · " ~ info.register if info.register }}</span>
+      <select name="voice" aria-label="Voice of {{ info.name or sp }}">{% for key, label in voice_opts[sp] %}
+        <option value="{{ key }}" {{ 'selected' if key == info.voice }}>{{ label }}</option>{% endfor %}</select>
+      <button class="secondary">Save</button>
+    </form>
+    <div class="spk-more">
+      {% if speakers | length > 1 %}
+      <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}" class="inline">
+        <select name="merge" class="compact" aria-label="Merge {{ info.name or sp }} into"><option value="">Same person as…</option>
+          {% for o in spk_list if o != sp %}<option value="{{ o }}">{{ speakers[o].name or o }}</option>{% endfor %}</select>
+        <button class="secondary">Merge</button></form>
+      {% endif %}
+      {% if cloning and info.voice != "video:" ~ sp %}
+      <details class="spk-clone"><summary>Use their own voice…</summary>
+        <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}/clone">
+          <label class="rights"><input type="checkbox" name="consent" required><span>I am <b>{{ info.name or sp }}</b>, or I have their
+            written permission to dub them with a copy of their voice. The copy is made from this video, stays in this project only
+            (never saved to voices, never shared) and is deleted with it. Every line it speaks is watermarked and labelled as AI.</span></label>
+          <button>Clone {{ info.name or sp }} from the video</button></form></details>
+      {% elif info.clone_consent %}<span class="muted small">Cloned from the video with consent ({{ info.clone_consent.seconds }} s of speech).</span>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<p class="muted">Ratings so far: {{ summary.ratings }} from {{ summary.raters }} rater(s){% if summary.mean_score is not none %},
+  mean score {{ summary.mean_score }}{% endif %}.</p>
+
+{% for s in segs %}{% set a, d = placed(s) %}{% set r = mine.get(s.id) %}
+<details class="sent" id="s{{ s.id }}" {{ 'open' if s.id == sel }}>
+  {% set sp = s.speaker or "S1" %}
+  <summary><b>#{{ s.id }}</b> <span class="muted">{{ t(a) }}</span>
+    {% if speakers | length > 1 %}<span class="spk-chip" style="--c:{{ colors[spk_list.index(sp) % colors | length] if sp in spk_list else '#999' }}">{{ (speakers.get(sp) or {}).name or sp }}</span>{% endif %}
+    {% if not blind %}{% for f in s.flag or [] %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% endfor %}{% endif %}
+    {% set heard = [] if s.tags_edited else s.auto_tags or [] %}
+    {% for tg in s.tags or [] %}<span class="chip tag{{ ' auto' if tg in heard }}"{% if tg in heard %} title="Heard in the original"{% endif %}>[{{ tg }}]</span>{% endfor %}
+    {% if s.edited %}<span class="chip grey">edited</span>{% endif %}
+    {% if r %}<span class="chip ok">rated {{ r.score }}</span>{% endif %}
+    {{ s.tgt_text }}</summary>
+  <p class="src">{{ s.src_text }}</p>
+  <audio controls preload="none" src="/app/p/{{ p.id }}/file/tts/{{ s.id }}.wav"></audio>
+  {% if s.tags_not_performed %}<p class="muted">Not performed by this voice: {{ s.tags_not_performed | join(", ") }}</p>{% endif %}
+  <div class="grid">
+    <form method="post" action="/app/p/{{ p.id }}/s/{{ s.id }}" class="ajax" data-hint=" — press Re-dub to hear it">
+      <label>Dub text <textarea name="text" rows="2">{{ s.tgt_text or "" }}</textarea></label>
+      <fieldset class="tagbox"><legend>Delivery tags{% if heard %} <small class="muted">· dashed ones were heard in the original — untick any that are wrong</small>{% endif %}</legend>
+        {% for tg in TAGS.ALL %}<label><input type="checkbox" name="tags" value="{{ tg }}" {{ 'checked' if tg in (s.tags or []) }}> [{{ tg }}]</label>{% endfor %}
+      </fieldset>
+      <label class="spk-pick">Speaker <select name="speaker">{% for o in spk_list %}
+        <option value="{{ o }}" {{ 'selected' if o == sp }}>{{ speakers[o].name or o }}</option>{% endfor %}
+        <option value="new">+ New speaker</option></select></label>
+      <button class="secondary">Save text &amp; tags</button> <small class="saved"></small>
+    </form>
+    <form method="post" action="/app/p/{{ p.id }}/s/{{ s.id }}/rate" class="ajax">
+      <input type="hidden" name="blind" value="{{ blind }}">
+      <fieldset class="tagbox"><legend>What is wrong?</legend>
+        {% for e in ERRORS %}<label><input type="checkbox" name="errors" value="{{ e }}" {{ 'checked' if r and e in r.errors }}> {{ e }}</label>{% endfor %}
+      </fieldset>
+      <label>Score (0 = useless, 100 = perfect): <output>{{ r.score if r else 80 }}</output>
+        <input type="range" name="score" min="0" max="100" step="5" value="{{ r.score if r else 80 }}"
+          oninput="this.previousElementSibling.textContent = this.value"></label>
+      <input name="comment" maxlength="500" placeholder="Comment (optional)" value="{{ r.comment if r else '' }}" aria-label="Comment">
+      <button class="secondary outline">Save rating</button> <small class="saved"></small>
+    </form>
+  </div>
+</details>
+{% else %}
+<p>No sentences to show{% if only %} — nothing is flagged. <a href="?">Show all</a>{% endif %}.</p>
+{% endfor %}
+{% endblock %}

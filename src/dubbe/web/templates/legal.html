@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ {"terms": "Terms", "use-policy": "Use policy", "privacy": "Privacy notice"}[name] }} — DUBBE{% endblock %}
+{% block main %}
+<p class="notice draft">Draft, 2026-10-15 — written by the student team and to be checked with the course instructor and
+  the university before DUBBE is opened to the public. We are not lawyers.</p>
+
+{% if name == "terms" %}
+<h1>Terms</h1>
+<ol>
+  <li><b>What DUBBE is.</b> A student prototype that dubs videos with AI. It is provided "as is", may be slow or
+    unavailable, and makes mistakes; check every dub before you use it.</li>
+  <li><b>Your videos.</b> Upload only videos you own or have a licence to change. Videos under a No-Derivatives licence
+    are not allowed. You keep all rights to your videos.</li>
+  <li><b>Non-commercial use.</b> During the beta, use dubs for non-commercial purposes only (teaching, study, personal
+    use): the translation model is licensed CC BY-NC 4.0.</li>
+  <li><b>AI label.</b> Every dub is AI-generated. Do not remove the label or present a dub as a human recording.</li>
+  <li><b>Use policy.</b> Follow the <a href="/use-policy">Use policy</a>. We may delete dubs and close accounts that break it.</li>
+  <li><b>Plans.</b> Minutes and limits are shown on <a href="/pricing">Plans</a>. Nothing is charged during the beta.</li>
+  <li><b>Ending.</b> You can delete your account at any time in Settings. We may end the beta; we will tell you first and
+    give you time to download your files.</li>
+  <li><b>Contact.</b> <a href="/contact">Contact form</a>.</li>
+</ol>
+
+{% elif name == "use-policy" %}
+<h1>Use policy</h1>
+<p>Do not use DUBBE to:</p>
+<ul>
+  <li>impersonate a person, or make someone appear to say something they did not mean;</li>
+  <li>dub videos of other people without the rights to them;</li>
+  <li>deceive viewers — for example about elections, news, health or money;</li>
+  <li>harass, threaten or defame anyone, or create sexual content involving real people;</li>
+  <li>remove or hide the AI label, or claim a dub is a human recording;</li>
+  <li>try to get around plan limits, or attack the service.</li>
+</ul>
+<p>See something that breaks these rules? <a href="/contact?topic=report">Report misuse</a>.</p>
+
+{% else %}
+<h1>Privacy notice</h1>
+<table class="small">
+  <thead><tr><th>What we keep</th><th>Why</th><th>How long</th></tr></thead>
+  <tbody>
+    <tr><td>Email, name, password (only as a scrypt hash)</td><td>your account</td><td>until you delete the account</td></tr>
+    <tr><td>Uploaded videos, transcripts, translations, dubbed files</td><td>making and showing your dub</td>
+      <td>until you delete the project, or the plan's retention ends (Free: 7 days)</td></tr>
+    <tr><td>Your ratings of sentences</td><td>measuring how good DUBBE's flags are</td><td>with the project</td></tr>
+    <tr><td>Contact and waitlist messages</td><td>answering you</td><td>until you ask us to delete them</td></tr>
+    <tr><td>A one-way hash of your IP address on contact and waitlist forms</td><td>limiting spam (3 messages an hour)</td><td>with the message</td></tr>
+    <tr><td>A sign-in cookie</td><td>keeping you signed in (14 days)</td><td>until you sign out</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><b>No tracking or advertising cookies</b>, no analytics, nothing sold.</li>
+  <li><b>Who processes your data:</b> during the beta everything runs on the team's own computer. If we move the dubbing
+    to a rented GPU (planned: Nosana) or use an email service, we will name it here before your data goes there.</li>
+  <li><b>Who can see your videos:</b> you, and DUBBE team members when fixing a problem.</li>
+  <li><b>Your rights</b> (Korean Personal Information Protection Act): see, download and delete your data — delete
+    projects and your account yourself in Settings, or ask us through the <a href="/contact">contact form</a>
+    (topic "Privacy or data request").</li>
+  <li><b>Voice clones:</b> only if you choose to clone your own voice. A voice can be biometric data, so we ask a separate
+    consent first. The recording is stored encrypted, used only to make your clone speak, kept until you delete the voice or
+    your account, and never given to anyone. Other users can use your clone only if you share it in the voice library; you
+    can stop sharing at any time. Everything a clone says carries an inaudible watermark (Resemble AI's Perth) and the AI label.</li>
+  <li><b>Speakers in your video:</b> to tell people apart we compare their voices while the job runs; these voice
+    fingerprints are not stored, only which sentence belongs to which speaker. A speaker's voice is cloned from the video
+    only if you confirm that person agreed. That recording is stored encrypted inside the project, used only to dub that
+    project, never shared or listed, and deleted with the project. In Speaker Detection you can instead save a speaker to
+    your voices, with the same confirmation; it stays private, can never be published, and is deleted with the voice.</li>
+</ul>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, orb_art, voice_card %}
+{% block title %}Voice Marketplace — DUBBE{% endblock %}
+{% block main %}
+{% macro link(l=lang, c=cat) %}/app/market?{{ {"q": q, "lang": l, "cat": c, "sort": sort} | urlencode }}{% endmacro %}
+<div class="mk-hero">
+  <div><span class="eyebrow">Marketplace</span><h1 class="app-h1">Voices, shared by the people who own them</h1>
+    <p class="muted">Each voice is a clone its owner recorded live and chose to publish; an admin listened to it before it was
+      listed. Get a voice to use it in Text to Speech and in your dubs, in any of DUBBE's languages.</p></div>
+  {% if cloning %}<a role="button" href="/app/studio">{{ icon("mic") }} Publish your voice</a>{% endif %}
+</div>
+
+<form class="mk-search" method="get" action="/app/market" role="search">
+  <span class="mk-search-box">{{ icon("search") }}<input type="search" name="q" value="{{ q }}" placeholder="Search voices, styles, publishers"
+    aria-label="Search the marketplace"></span>
+  <input type="hidden" name="lang" value="{{ lang }}"><input type="hidden" name="cat" value="{{ cat }}">
+  <select name="sort" onchange="this.form.submit()" aria-label="Sort" class="compact">
+    {% for k, label in [("popular", "Most popular"), ("new", "Newest"), ("rating", "Top rated")] %}
+    <option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}</select>
+  <button>Search</button>
+</form>
+<nav class="pills filter" aria-label="Language">
+  {% for l, label in [("", "All languages"), ("en", "Recorded in English"), ("ko", "Recorded in Korean")] %}
+  <a href="{{ link(l=l) }}" class="{{ 'on' if lang == l }}">{{ label }}</a>{% endfor %}
+</nav>
+<nav class="pills filter" aria-label="Category">
+  <a href="{{ link(c='') }}" class="{{ 'on' if not cat }}">All categories</a>
+  {% for c in CATS %}<a href="{{ link(c=c) }}" class="{{ 'on' if cat == c }}">{{ c }}</a>{% endfor %}
+</nav>
+
+{% if featured %}
+<section class="app-sec mk-sec">
+  <h2>Featured</h2>
+  <div class="mk-feat">{% for v in featured %}
+    <a class="mk-feat-card" href="/app/market/{{ v.id }}">
+      {{ orb_art(v.id, "lg") }}
+      <span><b>{{ v.name }}</b><span class="muted small">by {{ v.owner_name or "a DUBBE user" }} · {{ v.category or NAMES[v.lang] }}</span>
+        <span class="small">{{ v.description }}</span></span></a>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="app-sec mk-sec">
+  <div class="row-head"><h2>{% if q %}Results for “{{ q }}”{% elif cat %}{{ cat }}{% else %}All voices{% endif %}</h2>
+    <span class="muted small">{{ items | length }} voice{{ "s" if items | length != 1 }}</span></div>
+  {% if items %}
+  <div class="mk-grid">{% for v in items %}{{ voice_card(v, user.id) }}{% endfor %}</div>
+  {% else %}
+  <div class="empty"><p><b>No voices {{ "match" if q or lang or cat else "yet" }}.</b></p>
+    <p class="muted">{% if q or lang or cat %}<a href="/app/market">Clear the filters</a>{% else %}Be the first: clone your own voice and publish it.{% endif %}</p></div>
+  {% endif %}
+</section>
+
+{% if originals and not q and not cat %}
+<section class="app-sec mk-sec">
+  <div class="row-head"><h2>DUBBE originals</h2><span class="muted small">built in · free · always available</span></div>
+  <div class="mk-row">{% for v in originals %}
+    <div class="mk-mini">{{ orb_art(loop.index0, "sm", "/samples/" ~ v.id, "Play " ~ v.name) }}
+      <b>{{ v.name }}</b><span class="muted small">{{ v.accent }}{{ " English" if v.lang == "en" }}</span>
+      <a class="small" href="/app/tts?voice={{ v.id }}&lang={{ v.lang }}">Use →</a></div>{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
