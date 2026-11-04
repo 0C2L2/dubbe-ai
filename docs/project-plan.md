@@ -471,7 +471,7 @@ Decisions from the team: **no lip sync for now**; cloud GPUs (Nosana or similar)
 - **Proposal:** business-model slide + clickable mock-up + the consent/licensing rules written down; no build in this semester.
 
 #### C20. Language quality upgrade — fine-tuned and distilled models for all languages, plus Uzbek — planned 2026-10-19 (decisions open)
-- **Goal:** the best quality we can reach in all 22 languages and in Uzbek (not supported yet), measured, not assumed.
+- **Goal:** the best quality we can reach in all 24 languages (Uzbek and Kazakh added 2026-11-04, test results C43), measured, not assumed.
 - **Where it runs — decided:** a rented GPU **by the hour, for training only**; DUBBE keeps running on our laptop (RTX 4060, 8 GB). Running DUBBE on a rented GPU all month (≈ $900–1,500/month for an always-on 80 GB GPU; ≈ half for a 48 GB one) is out of our budget. Consequence: every trained model must run in 8 GB — models run one stage at a time, so each stage may use the whole GPU.
 - **Why not cut the "language part" out of a big model:** a model's skills are spread over all its weights; deleting parts breaks it. The working alternatives:
   1. **Translation-only models that already exist** (checked 2026-10-19 on Hugging Face; 4-bit versions ≈ 5 GB fit the laptop):

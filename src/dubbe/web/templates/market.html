@@ -5,8 +5,7 @@
 {% macro link(l=lang, c=cat) %}/app/market?{{ {"q": q, "lang": l, "cat": c, "sort": sort} | urlencode }}{% endmacro %}
 <div class="mk-hero">
   <div><span class="eyebrow">Marketplace</span><h1 class="app-h1">Voices, shared by the people who own them</h1>
-    <p class="muted">Each voice is a clone its owner recorded live and chose to publish; an admin listened to it before it was
-      listed. Get a voice to use it in Text to Speech and in your dubs, in any of DUBBE's languages.</p></div>
+    <p class="muted">Voices published by their owners and checked by an admin. Use them in Text to Speech and in dubs.</p></div>
   {% if cloning %}<a role="button" href="/app/studio">{{ icon("mic") }} Publish your voice</a>{% endif %}
 </div>
 

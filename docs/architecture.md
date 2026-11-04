@@ -34,7 +34,7 @@ What runs inside DUBBE and where data lives.
 |---|---|---|
 | dubbe CLI | Python 3.10+, started from [module-python-template](https://github.com/humblebeeai/module-python-template) | Orchestrates the stages; each stage is a function that reads the previous file and writes its own. `--from <stage>` re-runs from a given stage after a human edit. |
 | ffmpeg | ffmpeg ≥ 7 | All audio/video I/O: extract audio, `atempo` time-stretch, duck the background under the new voice, slow the picture where needed, mux. |
-| Model runtime | PyTorch; faster-whisper, NLLB-200 (transformers), Kokoro-82M + MMS-TTS, Demucs | ASR, translation, speech synthesis, source separation, pitch analysis. One model on the GPU at a time (8 GB is enough). |
+| Model runtime | PyTorch; faster-whisper, NLLB-200 (transformers), Ming-3.0-tts + CosyVoice 3 (own environments), Kokoro-82M / Chatterbox / MMS-TTS as fallbacks, Demucs | ASR, translation, speech synthesis, source separation, pitch analysis. One model on the GPU at a time (8 GB is enough). |
 | Work folder | Files | Intermediate results. `segments.json` is the single source of truth: one entry per sentence with source text, translation, times, and quality signals. |
 | Output folder | Files | What the user receives: `dubbed.mp4` and `report.html` (flagged segments, per-stage breakdown). |
 | Model cache | Files | Model weights; never committed to git. |
@@ -49,20 +49,26 @@ This is a preview of C3, kept here because each stage's output file is what the 
 |---|---|---|---|---|
 | 1 | extract | `input.mp4` → `audio.wav` (16 kHz mono), `original.wav` (44.1 kHz stereo) | ffmpeg | — |
 | 2 | separate | `original.wav` → `background.wav`, `vocals.wav` | Demucs `htdemucs` | background dropped if > 35 dB below the original (only residue) |
-| 3 | asr | `audio.wav` (original mix) → `words.json` | faster-whisper `large-v3-turbo`, words over silence dropped | word probability (`asr_conf`) |
-| 4 | diarize | `vocals.wav` → `diarization.json` (speaker turns) — only when `speaker_engine` is `pyannote` or `community` | pyannote 3.1 (MIT) or community-1 (CC-BY-4.0, own environment); needs `HF_TOKEN` | number of speakers, found by the model |
-| 5 | segment | `words.json` (+ turns) → `segments.json` | sentence endings + pause lengths per language; a speaker change also ends a sentence | — |
-| 6 | speakers | adds a speaker label per sentence | turn it overlaps most, else WavLM voice fingerprints clustered (default `wavlm`) | speaker, S1 = most speech |
-| 7 | emotion | adds delivery tags heard in the original | HuBERT emotion (IEMOCAP), AST sounds, "?" ending | `auto_tags` |
+| 3 | diarize | `vocals.wav` → `diarization.json` (speaker turns) | Nemotron 3 Diarization (OpenMDW 1.1) finds the turns, TitaNet-large (CC-BY-4.0) fingerprints group them by voice (threshold 0.35, C31); both in `.venv-nemo`, one load; `wavlm` / no environment = none | number of speakers |
+| 4 | asr | `audio.wav` (original mix) → `words.json` | faster-whisper (large-v3 for Korean, large-v3-turbo for English), run **per piece of at most 28 s** cut at speaker changes and pauses and trimmed to the speech in it — one pass over a long file skipped whole interview clips (C29); words over silence dropped | word probability (`asr_conf`) |
+| 5 | segment | `words.json` → `segments.json` | sentence endings + pause lengths per language, from the words alone | — |
+| 6 | speakers | speaker per word → per sentence; splits a sentence two people share; merges same-voice speakers | majority of a sentence's words; a block at a pause or a TitaNet-confirmed hand-over is split off; voice prints < 0.25 merged, < 0.30 asked (C33); without diarization: WavLM fingerprints per sentence | speaker (S1 = most speech), `speaker_flag`, `maybe_same` |
+| 7 | emotion | adds delivery tags heard in the original | emotion2vec+ large (6 emotions), AST sounds, "?" ending | `auto_tags` |
 | 8 | voice | `vocals.wav` → speaker pitch → closest preset voice | torchaudio pitch, voice library in `languages.yaml` | pitch register, chosen voice |
 | 9 | translate | adds `tgt_text` + 4 alternatives | NLLB-200, 8 beams | `mt_conf` (model's own probability) |
-| 10 | tts | each sentence → `tts/<id>.wav` | Kokoro-82M (English), Chatterbox (Korean, tags), MMS-TTS fallback | duration |
+| 10 | tts | each sentence → `tts/<id>.wav` | Ming-3.0-tts (emotions), CosyVoice 3 (emotions beyond Ming, Korean plain lines, retries of lines Whisper hears off); fallbacks Kokoro-82M (English), Chatterbox / MMS-TTS (Korean) | duration |
 | 11 | shorten | too-long sentences → shorter alternative, re-synthesized | NLLB alternatives | `shortened` |
 | 12 | timing | `tts/*.wav` → `dub.wav` | anchor to source start; speech ≤ 1.3× faster; optional picture slow-down; loudness matched to the original voice | `stretch`, `slow`, `overflow` |
 | 13 | mux | `input.mp4` + `dub.wav` (+ `background.wav`) → `dubbed.mp4` | ffmpeg; background ducked under the voice; video re-encoded only if slowed | — |
 | 14 | report | `segments.json` → `report.html` | plain HTML | flags: `low_asr`, `low_mt`, `overflow` |
 
 Videos dubbed before a stage was added are not redone: re-running skips the new stage with a note; `--force` re-runs every stage.
+
+### Model per task
+
+Each stage does one job, so each gets a model built for that job instead of one general model doing everything. A stage can switch to another model without touching the other stages: tested alternatives are chosen in `languages.yaml`. **Who speaks when** is settled (C31): Nemotron 3 only finds where each turn starts and ends, and TitaNet voice fingerprints decide who said it — on its own Nemotron merged similar voices (7 of 12 people), pyannote 3.1 / community-1 and a windowed Nemotron did worse, so they were removed; WavLM per sentence is the fallback. Still being tried: **emotional speech** in TTS (CosyVoice 3, which takes the delivery as an instruction; smoke-tested, not in the pipeline yet).
+
+![Model per task](diagrams/model-per-task.png)
 
 ### Multi-language design (many → many)
 

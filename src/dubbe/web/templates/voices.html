@@ -9,10 +9,7 @@
     <a role="button" class="secondary" href="/app/speakers">+ Clone from a video</a>{% endif %}
     <a role="button" class="secondary" href="/app/studio">Open Voice Studio</a></span></div>
   {% if cloning %}
-  <p class="muted" style="max-width:46rem">Your own voice: you read three sentences aloud in the browser and DUBBE checks that the
-    recording says them. Or a speaker in a video you put through <a href="/app/speakers">Speaker Detection</a>, only with their
-    consent; those stay private. Recordings are stored encrypted and deleted with the voice. Everything a clone says is watermarked
-    and labelled as AI.</p>
+  <p class="muted" style="max-width:46rem">Your own voice, or a speaker from <a href="/app/speakers">Speaker Detection</a> with their consent. Stored encrypted; everything a clone says is watermarked.</p>
   {% else %}
   <p class="notice">Voice cloning is not set up on this server (it needs the Chatterbox environment and <code>DUBBE_VOICE_KEY</code>).</p>
   {% endif %}
@@ -26,8 +23,7 @@
         <td>{{ x.s.uses }} · {{ "{:,}".format(x.s.chars) }} characters</td><td>${{ ("%.2f" if x.s.earn >= 0.01 or not x.s.earn else "%.4f") | format(x.s.earn) }}</td></tr>
     {% endfor %}</tbody>
   </table>
-  <p class="muted small">Would earn: at $0.03 per 1,000 characters spoken by other users (the rate ElevenLabs pays its voice owners).
-    Payouts are not active during the non-commercial beta.</p>
+  <p class="muted small">At $0.03 per 1,000 characters. Payouts are off in the beta.</p>
   {% elif cloning %}<p class="muted">No clone yet.</p>{% endif %}
 </section>
 
@@ -51,9 +47,7 @@
     <form method="get" class="inline lang-pick"><label>Hear them in
       <select name="lang" onchange="this.form.submit()">{% for l in langs %}<option value="{{ l }}" {{ 'selected' if l == lang }}>{{ NAMES[l] }}</option>{% endfor %}</select></label>
       <noscript><button class="secondary">Show</button></noscript></form></div>
-  <p class="muted" style="max-width:46rem">Every preset voice speaks all {{ NAMES | length }} languages — English with Kokoro, the others with
-    Chatterbox, which takes the voice from a short recording of the preset. Your clones and the Marketplace voices do too. For a dub,
-    DUBBE picks one per speaker by pitch (the number under each name); you can change it in the review editor.</p>
+  <p class="muted" style="max-width:46rem">Every voice speaks all {{ NAMES | length }} languages. In a dub, DUBBE picks one per speaker by pitch; change it in the review editor.</p>
   <div class="panel"><div class="showcase-body">{{ coverflow(voices) }}</div></div>
   <table class="small">
     <thead><tr><th>Voice</th><th>Language</th><th>Pitch</th><th>Register</th><th></th><th></th></tr></thead>

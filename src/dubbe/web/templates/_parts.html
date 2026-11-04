@@ -32,12 +32,13 @@
 {%- endif %}</svg>{% endmacro %}
 
 {# ---------- marketplace: painted orb as cover art (colour from the voice id), star rating, voice card ---------- #}
+{# orb paint: (light, main, accent, base); the main colour also marks the speaker on the speaker detection page #}
+{% set ORB_PAL = [("#ffb36b", "#f2591a", "#8a2c0c", "#f47a3b"), ("#f6a6e8", "#8f7cf7", "#6fb8ff", "#c49cf2"),
+                  ("#2f221d", "#9a5a44", "#c7a3e6", "#5b3a30"), ("#bfe3ff", "#4f8cf7", "#eaf4ff", "#7fb0f8"),
+                  ("#ffd36e", "#ff7a59", "#b84bd9", "#ff9a6b"), ("#8ff0d1", "#159a86", "#eafff8", "#4cc4a6"),
+                  ("#ffc7d1", "#e2557a", "#fff1e6", "#f08aa0"), ("#e3efe5", "#7fae94", "#fbf6ea", "#b6ccbf")] %}
 {% macro orb_art(i, size="md", play="", label="Play sample", vt="") %}
-{%- set pal = [("#ffb36b", "#f2591a", "#8a2c0c", "#f47a3b"), ("#f6a6e8", "#8f7cf7", "#6fb8ff", "#c49cf2"),
-               ("#2f221d", "#9a5a44", "#c7a3e6", "#5b3a30"), ("#bfe3ff", "#4f8cf7", "#eaf4ff", "#7fb0f8"),
-               ("#ffd36e", "#ff7a59", "#b84bd9", "#ff9a6b"), ("#8ff0d1", "#159a86", "#eafff8", "#4cc4a6"),
-               ("#ffc7d1", "#e2557a", "#fff1e6", "#f08aa0"), ("#e3efe5", "#7fae94", "#fbf6ea", "#b6ccbf")] %}
-{%- set c = pal[i % 8] -%}
+{%- set c = ORB_PAL[i % 8] -%}
 <span class="orb mk-orb {{ size }}" style="--a:{{ c[0] }};--b:{{ c[1] }};--c:{{ c[2] }};--base:{{ c[3] }}{{ ';view-transition-name:' ~ vt if vt }}"
   {%- if play %} data-play="{{ play }}" role="button" tabindex="0" aria-label="{{ label }}"{% endif %}>
   <span class="paint" style="animation-delay:-{{ i * 3 % 24 }}s"></span>{% if play %}<span class="play"></span>{% endif %}</span>

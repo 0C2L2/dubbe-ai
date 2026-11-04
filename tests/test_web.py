@@ -379,6 +379,44 @@ def test_speaker_detection_tool_names_speakers_and_clones_one_privately_with_con
     assert client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1"}).status_code == 404
 
 
+def test_speaker_fix_moves_words_between_sentences_and_keeps_every_word(client):
+    import json
+    from dubbe.web import tools
+    uid, s = user("fix@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    tid = db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
+                 uid, "speakers", "Scene", json.dumps({"src": "en"}), "done", db.now())
+    out = tools.folder(tid)
+    out.mkdir(parents=True)
+    words = [{"w": w, "start": a, "end": a + .4} for w, a in [("Hello", 0), ("there.", .5), ("Yes,", 1), ("I", 1.5), ("know.", 2)]]
+    (out / "words.json").write_text(json.dumps({"words": words}), encoding="utf8")
+    segs = [{"id": 1, "start": 0.0, "end": 1.4, "speaker": "S1", "src_text": "Hello there. Yes,"},  # "Yes," bled into S1
+            {"id": 2, "start": 1.5, "end": 2.4, "speaker": "S2", "src_text": "I know."}]
+    (out / "segments.json").write_text(json.dumps({"src": "en", "segments": segs, "duration": 3.0, "speakers": {
+        "S1": {"name": "Walter"}, "S2": {"name": "Jesse"}}}), encoding="utf8")
+    db.run("update tasks set result=? where id=?", json.dumps(tools.speaker_files(out)), tid)
+    assert "Fix speakers" in client.get(f"/app/tasks/{tid}").text
+    assert json.loads(db.one("select result from tasks where id=?", tid)["result"])["sentences"][0]["words"][2][:2] == [2, "Yes,"]
+
+    fix = lambda parts: client.post(f"/app/tasks/{tid}/speakers-edit", json={"sentences": parts})  # noqa: E731
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "S2", "words": [2, 3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert [(x["speaker"], x["src_text"], x["start"]) for x in data["segments"]] == [("S1", "Hello there.", 0), ("S2", "Yes, I know.", 1)]
+    assert data["speakers_edited"] and "Jesse: Yes, I know." in (out / "transcript.txt").read_text(encoding="utf8")
+
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "S2", "words": [2, 4]}]).status_code == 400   # a word lost
+    assert fix([{"speaker": "S1", "words": [0, 1, 2]}, {"speaker": "S2", "words": [2, 3, 4]}]).status_code == 400  # doubled
+    assert fix([{"speaker": "S7", "words": [0, 1, 2, 3, 4]}]).status_code == 400                               # unknown
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "S2", "words": [2]}, {"speaker": "new", "words": [3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert data["segments"][2]["speaker"] == "S3" and data["speakers"]["S3"]["name"] == "Speaker 3"  # a new person
+    assert fix([{"speaker": "S1", "words": [0, 1, 2, 3, 4]}]).status_code == 200                               # all merged
+    assert list(json.loads((out / "segments.json").read_text(encoding="utf8"))["speakers"]) == ["S1"]
+    _, other = user("o2@x.org")
+    client.cookies.set(auth.COOKIE, other)
+    assert fix([{"speaker": "S1", "words": [0, 1, 2, 3, 4]}]).status_code == 404
+
+
 def test_subtitles_tool_names_speakers_burns_on_request_and_dub_captions(client):
     import json
     from dubbe.web import tools

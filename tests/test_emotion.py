@@ -10,9 +10,11 @@ QUIET = {"laugh": 0.0, "sigh": 0.0, "gasp": 0.0, "cough": 0.0, "whisper": 0.0}
 
 
 def test_tags_from_emotion_sounds_and_a_question_mark():
-    sc = {"emotion": ("ang", 0.95), "sounds": {**QUIET, "laugh": 0.5, "sigh": 0.1}}
+    sc = {"emotion": ("angry", 0.95), "sounds": {**QUIET, "laugh": 0.5, "sigh": 0.1}}
     assert emotion.tags_for(sc, "Why?", CFG) == ["question", "angry", "laugh"]
-    assert emotion.tags_for({**sc, "emotion": ("hap", 0.8)}, "Fine.", CFG) == ["laugh"]  # not sure enough: no emotion
+    assert emotion.tags_for({**sc, "emotion": ("happy", 0.8)}, "Fine.", CFG) == ["laugh"]  # not sure enough: no emotion
+    assert emotion.tags_for({**sc, "emotion": ("fearful", 0.99)}, "No.", CFG) == ["scared", "laugh"]  # Ming acts it
+    assert emotion.tags_for({**sc, "emotion": ("other", 0.99)}, "No.", CFG) == ["laugh"]
 
 
 def test_heard_tags_go_on_every_sentence_but_the_reviewers(tmp_path, monkeypatch):
@@ -31,6 +33,8 @@ def test_reviewer_change_sticks_and_heard_tags_keep_the_voice(tmp_path, monkeypa
     segment.edit(s, "", ["laugh"])  # saved without touching the tags
     assert not s.get("tags_edited")
     cfg = config.load("ko", "en")
+    monkeypatch.setattr(tts, "MING_PY", tmp_path / "missing.exe")  # the voices before Ming / CosyVoice
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path / "missing.exe")
     monkeypatch.setattr(tts, "CHATTERBOX_PY", tmp_path)  # exists
     data = {"segments": [{"speaker": "S1", **s}], "speakers": {"S1": {"voice": "af_bella"}}}
     assert tts.tts_cfg(data, cfg)["voice"] == "af_bella"  # a heard [laugh] does not switch the whole video to Chatterbox

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Inter+Tight:wght@300;400;600&family=Inter:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{ ASSET_V }}">
 <script>document.documentElement.classList.add("js")</script>{# entrance animations only when the script that ends them runs #}
 {% block head %}{% endblock %}
 </head>
@@ -88,6 +88,6 @@
   </div>
 </footer>
 {% endblock %}
-<script src="/static/app.js" defer></script>
+<script src="/static/app.js?v={{ ASSET_V }}" defer></script>
 </body>
 </html>

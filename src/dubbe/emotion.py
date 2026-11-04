@@ -1,10 +1,12 @@
 """Delivery tags heard in the original: every source sentence is listened to by two classifiers and its text is read,
 and what they find becomes the sentence's tags, so the translated sentence is spoken the same way (tags.py).
 
-- emotion: superb/hubert-large-superb-er (IEMOCAP: neutral / happy / angry / sad) -> [excited] [angry] [sad], only
-  when the model is at least emotion_min sure. CREMA-D (real actors, English, 160 sentences, 77 actors): 68 % right
-  over the 4 classes (wav2vec2-base: 44 %); at 0.9, 82 % of its emotion tags were right and it found 34 % of the
-  emotional sentences - a wrong emotion is worse than none. Not measured on Korean: no labelled Korean set at hand.
+- emotion: emotion2vec+ large (FunASR model license: credit the source, keep the model name) -> [excited] [angry]
+  [sad] [scared] [surprised] [disgusted], only when the model is at least emotion_min sure - a wrong emotion is worse
+  than none. At 0.9 (test-results C39), vs superb/hubert-large-superb-er before: CREMA-D (English actors, 6 emotions,
+  180 clips) 93 % of its tags right, 79 % of the emotional clips found (hubert, 4 emotions: 83 % / 33 %); Hi,KIA
+  (Korean actors, 488 clips of 0.6 s) 71 % right, 19 % found (hubert 3 tags, 0 found). Calm read speech (FLEURS)
+  0 tags, but it is sure of some wrong ones in real videos (narration heard angry): the reviewer removes them.
 - sounds: the AudioSet classifier (AST, multi-label) -> [laugh] [sigh] [gasp] [cough] [whisper]
 - [question]: the original sentence ends with "?"
 Tags a reviewer changed (tags_edited) are never touched; auto_tags keeps what was heard, for the editor.
@@ -17,9 +19,10 @@ import soundfile as sf
 from . import device, free_gpu, read_json, write_json
 from .tags import ALL
 
-SER = "superb/hubert-large-superb-er"
+SER = "emotion2vec/emotion2vec_plus_large"
 AST = "MIT/ast-finetuned-audioset-10-10-0.4593"
-EMOTION = {"ang": "angry", "hap": "excited", "sad": "sad"}
+EMOTION = {"angry": "angry", "happy": "excited", "sad": "sad", "fearful": "scared", "surprised": "surprised",
+           "disgusted": "disgusted"}
 SOUNDS = {"laugh": ("Laughter", "Giggle", "Snicker", "Belly laugh", "Chuckle, chortle"), "sigh": ("Sigh",),
           "gasp": ("Gasp",), "cough": ("Cough",), "whisper": ("Whispering",)}
 MIN_EMOTION_S = 0.8  # "Yes." says too little about an emotion
@@ -27,16 +30,22 @@ MIN_EMOTION_S = 0.8  # "Yes." says too little about an emotion
 
 def scores(clips: list[np.ndarray]) -> list[dict]:
     """Per 16 kHz clip: the emotion model's best label and score, and the probability of each sound."""
-    import torch
-    from transformers import AutoFeatureExtractor, AutoModelForAudioClassification, pipeline
+    import logging
 
+    import torch
+    from funasr import AutoModel
+    from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
+
+    logging.getLogger().setLevel(logging.WARNING)  # importing funasr sets INFO: hundreds of lines per load
     dev = device()
-    out = [{"emotion": ("neu", 0.0), "sounds": {}} for _ in clips]
-    ser = pipeline("audio-classification", model=SER, device=0 if dev == "cuda" else -1)
+    out = [{"emotion": ("neutral", 0.0), "sounds": {}} for _ in clips]
+    ser = AutoModel(model=SER, hub="hf", device="cuda:0" if dev == "cuda" else "cpu", disable_update=True,
+                    disable_pbar=True)
     for o, c in zip(out, clips):
         if len(c) >= MIN_EMOTION_S * 16000:
-            best = max(ser({"raw": c, "sampling_rate": 16000}, top_k=4), key=lambda r: r["score"])
-            o["emotion"] = (best["label"], best["score"])
+            r = ser.generate(c, granularity="utterance", extract_embedding=False)[0]
+            k = int(np.argmax(r["scores"]))
+            o["emotion"] = (r["labels"][k].split("/")[-1], float(r["scores"][k]))  # "生气/angry" -> "angry"
     del ser
     fe, ast = AutoFeatureExtractor.from_pretrained(AST), AutoModelForAudioClassification.from_pretrained(AST).to(dev)
     ids = {t: [ast.config.label2id[n] for n in names] for t, names in SOUNDS.items()}

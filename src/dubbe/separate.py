@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 import soundfile as sf
@@ -24,7 +25,8 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     audio, sr = sf.read(work / "original.wav", dtype="float32")  # 44.1 kHz stereo from extract
     x = torch.from_numpy(audio.T.copy())[None]
     mean, std = x.mean(), x.std() + 1e-8
-    with torch.no_grad():
+    random.seed(0)  # apply_model shifts the audio by a random.randint offset: unseeded, every run gave another vocals.wav,
+    with torch.no_grad():  # so other speaker turns, other ASR pieces and other words (KOR news, runs 11 vs 12)
         out = apply_model(model, (x - mean) / std, device=device(), progress=False)[0] * std + mean
     vocals = out[model.sources.index("vocals")]
     bg = (out.sum(0) - vocals).cpu().numpy().T

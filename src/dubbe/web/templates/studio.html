@@ -33,8 +33,7 @@
   {% else %}
   <div class="studio-empty">{{ orb_art(0, "lg") }}
     <div><h3>Publish your first voice</h3>
-      <p class="muted">Read three sentences aloud (about 15 seconds). DUBBE checks the recording, makes a clone of your voice and opens
-        the listing editor. You choose whether it goes to the Marketplace.</p>
+      <p class="muted">Read three sentences (about 15 s). You decide whether it goes to the Marketplace.</p>
       {% if cloning %}<a role="button" href="/app/voices/new">{{ icon("mic") }} Record my voice</a>{% else %}<p class="notice">Voice cloning is not set up on this server.</p>{% endif %}</div>
   </div>
   {% endfor %}

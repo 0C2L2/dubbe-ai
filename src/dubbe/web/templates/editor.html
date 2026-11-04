@@ -2,7 +2,7 @@
 {% block title %}{{ p.title }} — review — DUBBE{% endblock %}
 {% block main %}
 <span class="eyebrow">{{ NAMES[p.src] }} → {{ NAMES[p.tgt] }} · {{ total_segs }} sentences</span>
-<h1>{{ p.title }}</h1>
+<h1 class="app-h1 task-title">{{ p.title | replace("_", " ") }}</h1>
 
 {% if job and job.status in ("waiting", "running") %}
 <p class="notice">A re-dub is {{ job.status }} — the video below is the previous version. <a href="/app/jobs/{{ job.id }}">Progress</a></p>
@@ -30,8 +30,7 @@
   <div class="row-head"><h2>Speakers <span class="muted small">· {{ speakers | length }} detected</span></h2>
     <span class="small">Transcript by speaker: <a href="/app/p/{{ p.id }}/download/src.txt">{{ NAMES[p.src] }}</a> ·
       <a href="/app/p/{{ p.id }}/download/tgt.txt">{{ NAMES[p.tgt] }}</a></span></div>
-  <p class="muted small" style="margin-top:0">Detected from each sentence's voice; wrong ones can be moved below each sentence, a person
-    split in two can be merged. Give each a name and a voice, then press Re-dub. <a href="/app/market">More voices →</a></p>
+  <p class="muted small" style="margin-top:0">Fix a wrong speaker below its sentence, name each one, pick a voice, then Re-dub. <a href="/app/market">More voices →</a></p>
   <form method="post" action="/app/p/{{ p.id }}/detect-speakers" class="spk-detect">
     <button class="secondary">Detect speakers again</button>
     <span class="muted small">{{ "Only one voice found. Dubbed before speaker detection existed? " if speakers | length < 2 }}Re-runs
