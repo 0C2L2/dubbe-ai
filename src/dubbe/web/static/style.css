@@ -447,7 +447,7 @@ article, .slide, .voice { transition: transform var(--dur) var(--ease), box-shad
 @keyframes acct-in { from { opacity: 0; transform: translateY(-4px); } }
 .acct-menu form { margin: 0; }
 .acct-email { margin: 2px 6px 8px; font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
-.app-main { padding: 36px clamp(16px, 4vw, 56px) 64px; max-width: 1440px; width: 100%; }  /* next to the sidebar, not floating mid-screen on wide monitors */
+.app-main { padding: 36px clamp(16px, 4vw, 56px) 64px; max-width: 1600px; width: 100%; margin-inline: auto; }  /* centred; wide enough that big monitors keep only a small margin */
 :where(.app-main) h1, .app-h1 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); margin-bottom: 24px; }
 .app-sec { margin-top: 36px; }
 .task-title { font-size: clamp(1.4rem, 2.4vw, 1.9rem); max-width: 48rem; overflow-wrap: anywhere; }
