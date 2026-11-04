@@ -7,7 +7,7 @@ defaults:
   max_words: 40
   min_dur: 1.0       # shorter fragments are merged into a neighbour
   max_stretch: 1.3   # project tab: beyond ~1.3x sped-up speech sounds wrong
-  min_stretch: 0.85  # a dub shorter than the speaker's talking is slowed towards it, at most this much (1 = never)
+  min_stretch: 1.0   # 1 = never slow a short dub down (0.85 tried in C41: sounded unnaturally slow, C48)
   max_late: 1.0      # s a dub may run past the next sentence's start before it is sped up (that one waits; 0 = never)
   shorten_min_conf_ratio: 0.85  # shorter alternative translation must keep >= 85% of the best confidence
   max_video_slow: 1.0  # >1 (e.g. 1.2) slows the picture where dubbed speech is longer, so speech is sped up less;
