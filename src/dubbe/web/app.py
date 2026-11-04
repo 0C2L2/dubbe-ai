@@ -472,9 +472,49 @@ def projects_page(request: Request):
     return page(request, "dashboard.html", user=u, projects=projects, used=round(used_minutes(u["id"]), 1))
 
 
+PART_MAX = 8 * 1024 ** 2  # app.js sends bigger files in 8 MB pieces, kept in db.ROOT / "upload-parts"
+
+
+@app.post("/app/upload/{token}")
+async def upload_part(request: Request, token: str, at: int = 0):
+    """One piece of a file the browser sends in pieces: the public dev tunnel refuses requests over 10-20 MB (413).
+    Pieces arrive in order (`at` = bytes already sent); the form then names the token instead of carrying the file."""
+    u = auth.require_user(request)
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        raise HTTPException(404)
+    parts = db.ROOT / "upload-parts"
+    parts.mkdir(parents=True, exist_ok=True)
+    if at == 0:  # ponytail: abandoned uploads are cleared when someone starts a new one, not on a schedule
+        for old in parts.iterdir():
+            if old.stat().st_mtime < db.now() - 86400:
+                old.unlink(missing_ok=True)
+    f, body = parts / f"{u['id']}-{token}", await request.body()
+    size = f.stat().st_size if f.exists() else 0
+    if at != size:
+        return PlainTextResponse("Upload interrupted - please try again.", 409)
+    if len(body) > PART_MAX or size + len(body) > MAX_UPLOAD:
+        f.unlink(missing_ok=True)
+        return PlainTextResponse("File too large (2 GB at most).", 413)
+    with f.open("ab") as out:
+        out.write(body)
+    return {"size": size + len(body)}
+
+
+def chunked(u, token: str, file: UploadFile):
+    """The file the browser sent in pieces (form field `upload`), in place of the empty stand-in it put in the form."""
+    f = db.ROOT / "upload-parts" / f"{u['id']}-{token}"
+    if re.fullmatch(r"[0-9a-f]{32}", token or "") and f.exists():
+        return type("Parts", (), {"filename": file.filename, "path": f})()
+    return file
+
+
 def save_upload(file: UploadFile, dest: Path) -> bool:
     """Stream an upload to disk; False (and nothing left behind) when it is bigger than MAX_UPLOAD."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(file, "path"):  # sent in pieces (chunked): already on disk, moved into place
+        ok = file.path.stat().st_size <= MAX_UPLOAD
+        shutil.move(file.path, dest) if ok else file.path.unlink()
+        return ok
     size = 0
     with dest.open("wb") as out:
         while chunk := file.file.read(1 << 20):
@@ -514,8 +554,9 @@ def new_form(request: Request):
 
 @app.post("/app/new")
 def new_dub(request: Request, file: UploadFile = File(...), src: str = Form(...), tgt: str = Form(...),
-            keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form("")):
+            keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
+    file = chunked(u, upload, file)
     form = {"src": src, "tgt": tgt, "voice": voice}
     mine = clones.usable(u) if clones.enabled() else []
 
@@ -880,8 +921,9 @@ def translate_create(request: Request, text: str = Form(""), src: str = Form("ko
     return go(f"/app/tasks/{new_task(u, 'translate', text, {'text': text.strip(), 'src': src, 'tgt': tgt})}")
 
 
-def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, rights: str, form: dict):
+def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, rights: str, form: dict, upload: str = ""):
     """Speech to text and voice isolator: upload, check type, length and plan, then queue."""
+    file = chunked(u, upload, file)
     ext = Path(file.filename or "").suffix.lower()
     error = ("Please confirm your email first." if not u["verified_at"] else
              "Please confirm you own this file or may use it." if not rights else
@@ -906,18 +948,19 @@ def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, r
 
 @app.post("/app/stt")
 def stt_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), to: str = Form(""),
-               rights: str = Form(""), speakers: str = Form("")):
+               rights: str = Form(""), speakers: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
     return media_task(request, u, "stt", file, {"src": src, "to": to if to in LANGS and to != src else "", "speakers": bool(speakers)},
-                      rights, {"src": src, "to": to, "speakers": speakers})
+                      rights, {"src": src, "to": to, "speakers": speakers}, upload)
 
 
 @app.post("/app/speakers")
-def speakers_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), rights: str = Form("")):
+def speakers_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), rights: str = Form(""),
+                    upload: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
-    return media_task(request, u, "speakers", file, {"src": src}, rights, {"src": src})
+    return media_task(request, u, "speakers", file, {"src": src}, rights, {"src": src}, upload)
 
 
 def own_speaker(request: Request, tid: int, sp: str):
@@ -959,11 +1002,11 @@ def task_speaker_name(request: Request, tid: int, sp: str, name: str = Form(""))
 
 @app.post("/app/captions")
 def captions_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), to: str = Form(""),
-                    rights: str = Form("")):
+                    rights: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
     return media_task(request, u, "captions", file, {"src": src, "to": to if to in LANGS and to != src else ""}, rights,
-                      {"src": src, "to": to})
+                      {"src": src, "to": to}, upload)
 
 
 @app.post("/app/tasks/{tid}/burn")
@@ -1008,9 +1051,9 @@ def task_speaker_clone(request: Request, tid: int, sp: str, name: str = Form("")
 
 
 @app.post("/app/isolate")
-def isolate_create(request: Request, file: UploadFile = File(...), rights: str = Form("")):
+def isolate_create(request: Request, file: UploadFile = File(...), rights: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
-    return media_task(request, u, "isolate", file, {}, rights, {})
+    return media_task(request, u, "isolate", file, {}, rights, {}, upload)
 
 
 @app.get("/app/tasks/{tid}")
