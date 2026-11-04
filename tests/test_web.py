@@ -178,6 +178,17 @@ def test_upload_queues_a_job(client, tmp_path):
     p = db.one("select * from projects order by id desc limit 1")
     assert p["voice"] == "af_bella" and worker.command(p, None)[-2:] == ["--voice", "af_bella"]
 
+    # a video sent in pieces (the public dev tunnel refuses requests over 10-20 MB): the form carries an empty stand-in
+    tok, data = "ab" * 16, clip.read_bytes()
+    half = len(data) // 2
+    assert client.post(f"/app/upload/{tok}?at=0", content=data[:half]).json() == {"size": half}
+    assert client.post(f"/app/upload/{tok}?at=0", content=data[half:]).status_code == 409  # out of order: refused
+    client.post(f"/app/upload/{tok}?at={half}", content=data[half:])
+    r = client.post("/app/new", data={**form, "upload": tok}, files={"file": ("pieces.mp4", b"", "video/mp4")})
+    p = db.one("select * from projects order by id desc limit 1")
+    assert r.status_code == 303 and p["title"] == "pieces" and abs(p["minutes"] - 2 / 60) < 0.01  # the whole video arrived
+    assert not any((db.ROOT / "upload-parts").iterdir())  # moved into the project, nothing left behind
+
 
 def test_media_routes_serve_only_known_items(client, tmp_path):
     (tmp_path / "samples").mkdir()

@@ -68,6 +68,19 @@ def test_uzbek_is_cyrillic_only_for_the_mms_voice():
     assert not_performed(["disgusted"], "navoiy") == ["disgusted"]
 
 
+def test_uzbek_and_kazakh_numbers_are_spoken_as_words():
+    from dubbe.kazakh import read_numbers as kk
+    from dubbe.uzbek import read_numbers as uz
+    # Navoiy said "fayz sinf", "to'rt yuz tenziyroq" for "5-sinf", "210 000"; heard back right as words (C46)
+    assert uz("2026-yilda 47,9 % o'sdi.") == "ikki ming yigirma oltinchi yilda qirq yetti butun o'ndan to'qqiz foiz o'sdi."
+    assert uz("1,000 kishi, 210 000 nafar, 100 yil, 120 ta") == "ming kishi, ikki yuz o'n ming nafar, yuz yil, yuz yigirma ta"
+    assert uz("5-sinf, 5-da, 5-chi, 1990-2000") == "beshinchi sinf, beshda, beshinchi, ming to'qqiz yuz to'qson - ikki ming"
+    assert kk("Оның 120-сы, 4,5%, 1000.") == "Оның жүз жиырмасы, төрт бүтін бес пайыз, бір мың."
+    assert kk("5-сыныпта, 6-шы, 20-сынып, 2026-жылы") == "бесінші сыныпта, алтыншы, жиырмасыншы сынып, екі мың жиырма алтыншы жылы"
+    assert text_for_tts("5-sinf.", [], "navoiy", "uz") == "beshinchi sinf." and text_for_tts("5-sinf.", [], "navoiy", "en") == "5-sinf."
+    assert text_for_tts("1000.", [], "piper", "kk") == "бір мың."
+
+
 def test_korean_numbers_are_spoken_as_words():
     from dubbe.korean import read_numbers
     assert read_numbers("하나의 작업에 40초 동안, 5년 전 75초") == "하나의 작업에 사십초 동안, 오년 전 칠십오초"

@@ -14,6 +14,8 @@ from scipy.linalg import solve_toeplitz
 from scipy.signal import lfilter
 
 from .korean import read_numbers
+from .kazakh import read_numbers as kk_numbers
+from .uzbek import read_numbers as uz_numbers
 from .uzbek import to_cyrillic
 
 DELIVERY = {"slow": "speak slower", "fast": "speak faster", "soft": "quieter", "loud": "louder",
@@ -68,6 +70,10 @@ def text_for_tts(text: str, tags: list[str], engine: str = "", lang: str = "") -
     Korean digits are written out in words (the voices misread them)."""
     if lang == "ko":
         text = read_numbers(text)
+    if lang == "uz":
+        text = uz_numbers(text)  # Navoiy misreads digits ("2026-yilda", "47,9")
+    if lang == "kk":
+        text = kk_numbers(text)  # Piper garbled "1000", "4,5", "5-сынып"
     if lang == "uz" and engine == "mms":  # MMS's Uzbek voice reads Cyrillic only; NLLB writes Latin
         text = to_cyrillic(text)
     if "question" in tags and not text.rstrip().endswith("?"):

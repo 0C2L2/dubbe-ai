@@ -270,6 +270,34 @@ document.querySelectorAll('[data-tts]').forEach(form => {
   lang.addEventListener('change', sync); voice.addEventListener('change', sync); sync();
 });
 
+// Uploads over 8 MB go up in 8 MB pieces first (the public dev tunnel refuses requests over 10-20 MB with 413); the
+// form is then sent with an empty stand-in file of the same name and the upload id (app.py: upload_part, chunked).
+const PART = 8 * 1024 * 1024;
+document.querySelectorAll('form[enctype="multipart/form-data"]:not([data-recorder])').forEach(form => form.addEventListener('submit', async e => {
+  const input = form.querySelector('input[type=file]'), f = input && input.files[0];
+  if (!f || f.size <= PART) return;
+  e.preventDefault();
+  const id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const btn = form.querySelector('button:not([type=button])'), label = btn && btn.textContent;
+  if (btn) btn.disabled = true;
+  for (let at = 0; at < f.size; at += PART) {
+    if (btn) btn.textContent = `Uploading ${Math.floor(100 * at / f.size)} %`;
+    const r = await fetch(`/app/upload/${id}?at=${at}`, {method: 'POST', body: f.slice(at, at + PART)});
+    if (!r.ok) {
+      if (btn) { btn.textContent = label; btn.disabled = false; }
+      alert(await r.text());
+      return;
+    }
+  }
+  const dt = new DataTransfer();
+  dt.items.add(new File([], f.name, {type: f.type}));
+  input.files = dt.files;
+  const hidden = Object.assign(document.createElement('input'), {type: 'hidden', name: 'upload', value: id});
+  form.append(hidden);
+  if (btn) btn.textContent = 'Starting…';
+  form.submit();  // the native submit: no second pass through this handler
+}));
+
 // Translate: swap the two languages.
 document.querySelectorAll('[data-swap]').forEach(b => b.addEventListener('click', () => {
   const f = b.form, a = f.querySelector('[data-src]'), z = f.querySelector('[data-tgt]');
