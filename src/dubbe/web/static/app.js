@@ -9,12 +9,22 @@ if (pick) pick.addEventListener('input', () => {
 });
 
 // 2. Review editor: save text, tags and ratings without reloading, so the video keeps its place.
-document.querySelectorAll('form.ajax').forEach(f => f.addEventListener('submit', async e => {
-  e.preventDefault();
-  const out = f.querySelector('.saved');
-  const r = await fetch(f.action, {method: 'POST', body: new FormData(f), headers: {'X-Fetch': '1'}});
-  out.textContent = r.ok ? 'Saved ✓' + (f.dataset.hint || '') : 'Not saved (error ' + r.status + ')';
-}));
+//    Forms marked data-autosave (speaker name and voice) save on every change, so several rows can be changed in a row.
+document.querySelectorAll('form.ajax').forEach(f => {
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const out = f.querySelector('.saved');
+    out.textContent = 'Saving…';
+    try {
+      const r = await fetch(f.action, {method: 'POST', body: new FormData(f), headers: {'X-Fetch': '1'}});
+      out.textContent = r.ok ? 'Saved ✓' + (f.dataset.hint || '') : 'Not saved (error ' + r.status + ')';
+    } catch { out.textContent = 'Not saved (no connection)'; }
+  });
+  if ('autosave' in f.dataset) {
+    f.classList.add('autosaving');  // CSS hides the Save button: nothing to press
+    f.addEventListener('change', () => f.requestSubmit());
+  }
+});
 
 // 3. Upload areas: show the chosen file, highlight while dragging, and the file's length vs. the minutes left.
 document.querySelectorAll('[data-drop]').forEach(zone => {

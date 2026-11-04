@@ -740,6 +740,8 @@ def set_speaker(request: Request, pid: int, sp: str, name: str = Form(""), voice
         spk[sp].update(name=name.strip()[:40] or spk[sp].get("name") or sp, **({"voice": voice, "override": True} if voice else {}))
     data["speakers_edited"] = True  # a re-run never redoes the detection over the reviewer's corrections
     write_json(worker.work(p) / "segments.json", data)
+    if request.headers.get("x-fetch") and not merge:  # name/voice saved in place: other rows keep their unsaved changes
+        return Response(status_code=204)
     return go(f"/app/p/{pid}?m=speakers#speakers")
 
 

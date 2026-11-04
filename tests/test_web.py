@@ -313,7 +313,9 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     assert "2 detected" in page_ and "Speaker 2" in page_
     client.post(f"/app/p/{pid}/speakers/S2", data={"name": "Jesse"})
     assert client.post(f"/app/p/{pid}/speakers/S1", data={"voice": "nobody"}).status_code == 400
-    client.post(f"/app/p/{pid}/speakers/S1", data={"name": "Walter", "voice": "af_bella"})
+    # saved in place by the page (no reload), so the other rows keep what the reviewer changed there
+    r = client.post(f"/app/p/{pid}/speakers/S1", data={"name": "Walter", "voice": "af_bella"}, headers={"X-Fetch": "1"})
+    assert r.status_code == 204
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert data["speakers"]["S2"]["name"] == "Jesse" and data["speakers"]["S1"]["voice"] == "af_bella" and data["speakers_edited"]
     assert "Walter: Hello." in client.get(f"/app/p/{pid}/download/tgt.txt").text  # transcript by speaker

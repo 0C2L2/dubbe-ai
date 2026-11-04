@@ -30,20 +30,21 @@
   <div class="row-head"><h2>Speakers <span class="muted small">· {{ speakers | length }} detected</span></h2>
     <span class="small">Transcript by speaker: <a href="/app/p/{{ p.id }}/download/src.txt">{{ NAMES[p.src] }}</a> ·
       <a href="/app/p/{{ p.id }}/download/tgt.txt">{{ NAMES[p.tgt] }}</a></span></div>
-  <p class="muted small" style="margin-top:0">Fix a wrong speaker below its sentence, name each one, pick a voice, then Re-dub. <a href="/app/market">More voices →</a></p>
+  <p class="muted small" style="margin-top:0">Name each speaker and pick a voice — changes save by themselves. Then press
+    Re-dub to hear them all at once. A wrong speaker is fixed below its sentence. <a href="/app/market">More voices →</a></p>
   <form method="post" action="/app/p/{{ p.id }}/detect-speakers" class="spk-detect">
     <button class="secondary">Detect speakers again</button>
     <span class="muted small">{{ "Only one voice found. Dubbed before speaker detection existed? " if speakers | length < 2 }}Re-runs
       the dub; names, voices and clones from the video start over.</span></form>
   {% for sp, info in speakers.items() %}{% set c = colors[loop.index0 % colors | length] %}
   <div class="spk" style="--c:{{ c }}">
-    <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}" class="spk-main">
+    <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}" class="spk-main ajax" data-autosave>
       <span class="spk-dot" aria-hidden="true"></span>
       <input name="name" value="{{ info.name or sp }}" maxlength="40" aria-label="Name of {{ sp }}">
       <span class="muted small spk-n">{{ counts[sp] }} sentence{{ "s" if counts[sp] != 1 }}{{ " · " ~ info.register if info.register }}</span>
       <select name="voice" aria-label="Voice of {{ info.name or sp }}">{% for key, label in voice_opts[sp] %}
         <option value="{{ key }}" {{ 'selected' if key == info.voice }}>{{ label }}</option>{% endfor %}</select>
-      <button class="secondary">Save</button>
+      <span class="spk-act"><button class="secondary">Save</button><small class="saved" aria-live="polite"></small></span>
     </form>
     <div class="spk-more">
       {% if speakers | length > 1 %}
