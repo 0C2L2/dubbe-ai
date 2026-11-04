@@ -175,6 +175,37 @@ def test_uzbek_speaks_with_navoiy_and_kazakh_never_clones(monkeypatch, tmp_path)
     assert c["engine"] == "piper" and c["voice"] == "issai-0"  # no voice speaks Kazakh from a recording: the default
 
 
+def test_redub_speaks_only_changed_sentences(monkeypatch, tmp_path):
+    """A 20-minute video and one sentence fixed: one sentence is spoken again, not all of them (C49)."""
+    import json
+    monkeypatch.setattr(tts, "MING_PY", tmp_path)  # exists
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path)
+    monkeypatch.setattr(tts, "preset_prompt", lambda v: tmp_path / f"{v}.wav")
+    spoken = []
+    monkeypatch.setitem(tts.ENGINES, "ming", lambda texts, c: spoken.append((texts, c["seeds"])) or
+                        iter([(np.full(800, .5, "float32"), 16000)] * len(texts)))
+    segs = [{"id": i, "speaker": "S1", "tgt_text": f"Line {i}.", "tags": []} for i in (1, 2, 3)]
+    (tmp_path / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"voice": "am_michael"}}}))
+    cfg = config.load("ko", "en")
+    redub = lambda: tts.run(tmp_path / "v.mp4", tmp_path, cfg) or json.loads((tmp_path / "segments.json").read_text())  # noqa: E731
+
+    redub()
+    assert [len(t) for t, _ in spoken] == [3]  # first dub: every sentence
+    spoken.clear()
+    data = redub()
+    assert spoken == []  # nothing changed: every clip kept
+    data["segments"][1]["tgt_text"] = "Line two, fixed."
+    data["segments"][2]["take"] = 1  # "Try again"
+    (tmp_path / "segments.json").write_text(json.dumps(data))
+    data = redub()
+    assert [(len(t), seeds) for t, seeds in spoken] == [(2, [0, 1])]  # the fixed one and the retake, with its own seed
+    spoken.clear()
+    data["speakers"]["S1"]["voice"] = "af_bella"  # a new voice for the speaker: all their sentences again
+    (tmp_path / "segments.json").write_text(json.dumps(data))
+    redub()
+    assert [len(t) for t, _ in spoken] == [3]
+
+
 def test_every_speaker_is_spoken_in_one_call(monkeypatch, tmp_path):
     monkeypatch.setattr(tts, "MING_PY", tmp_path)  # exists
     monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path)

@@ -185,6 +185,8 @@ main #dubv { border-radius: 16px; display: block; }
 .sent[open] { background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px; padding: 0 18px 16px; margin: 8px 0; }
 .sent .src { color: var(--muted); margin: 4px 0 12px; }
 .sent audio { height: 36px; margin-bottom: 12px; }
+.take-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.take-row audio { margin-bottom: 0; }
 /* tags and error types as pill toggles; the checkbox stays in the label for keyboard and screen readers */
 .tagbox { display: flex; flex-wrap: wrap; gap: 6px; }
 .tagbox legend { width: 100%; }
