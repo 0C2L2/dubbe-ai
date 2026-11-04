@@ -220,3 +220,14 @@ def test_every_speaker_is_spoken_in_one_call(monkeypatch, tmp_path):
     assert calls == [[a, a, b]]  # one load for both speakers (KOR news: 5 speakers were 5 loads)
     assert [(s["id"], sp, t["voice"]) for s, _, _, t, sp in out] == [(1, "S1", "am_michael"), (3, "S1", "am_michael"),
                                                                     (2, "S2", "af_bella")]
+
+
+def test_every_sentence_is_spoken_at_one_level():
+    """One speaker's clips came out up to 12 dB apart (C50): each is set to LEVEL_DB, pauses not counted."""
+    sr = 16000
+    tone = np.sin(2 * np.pi * 150 * np.arange(sr) / sr).astype("float32")
+    quiet, loud = tone * .05, tone * .2  # 12 dB apart
+    with_pause = np.concatenate([np.zeros(sr, "float32"), quiet])
+    for x in (quiet, loud, with_pause):
+        assert abs(tts.speech_db(tts.level(x, sr), sr) - tts.LEVEL_DB) < .1
+    assert not tts.level(np.zeros(sr, "float32"), sr).any() and tts.level(quiet, sr).dtype == np.float32

@@ -296,10 +296,29 @@ def cut_babble(clips: list[tuple[np.ndarray, int]], texts: list[str], lang: str)
     free_gpu()
 
 
+LEVEL_DB = -22.0  # every sentence's speech at this level (dBFS): about where Ming's clips were on average (C50)
+
+
+def speech_db(audio: np.ndarray, sr: int) -> float:
+    """How loud the speech is: RMS of the 20 ms frames within 30 dB of the loudest one (pauses do not count)."""
+    n = max(1, int(.02 * sr))
+    if len(audio) < n:
+        return -120.0
+    f = np.sqrt(np.mean(audio[: len(audio) // n * n].astype("float64").reshape(-1, n) ** 2, axis=1))
+    return float(20 * np.log10(np.sqrt(np.mean(f[f >= f.max() / 31.6] ** 2)) + 1e-12))
+
+
+def level(audio: np.ndarray, sr: int) -> np.ndarray:
+    """One loudness for every sentence: the voices came out up to 12 dB apart within one speaker, which sounds like
+    another person (project 14, C50). Silence stays silence."""
+    db = speech_db(audio, sr)
+    return audio if db < -80 else (audio * 10 ** ((LEVEL_DB - db) / 20)).astype(audio.dtype)
+
+
 def finish(path: Path, audio: np.ndarray, sr: int, tags: list[str], engine: str = "") -> float:
-    """Apply the reviewer's delivery tags ([soft], [pause], [slow] ...) and write the sentence; returns its length.
-    Emotions the engine acted itself (CosyVoice) are not changed again."""
-    sf.write(path, shape_audio(audio, sr, dubbe_tags(tags, engine)), sr)
+    """Level the sentence, apply the reviewer's delivery tags ([soft], [pause], [slow] ...) and write it; returns its
+    length. Emotions the engine acted itself (CosyVoice) are not changed again."""
+    sf.write(path, shape_audio(level(audio, sr), sr, dubbe_tags(tags, engine)), sr)
     if speed(tags) != 1.0:
         tmp = path.with_suffix(".tag.wav")
         ffmpeg("-i", str(path), "-filter:a", f"atempo={speed(tags)}", str(tmp))  # keeps pitch
@@ -329,9 +348,14 @@ def synth(data: dict, cfg: dict, work: Path, items: list[tuple[dict, str]]):
             yield s, audio, sr, tts, sp
 
 
+CLIP_VERSION = 2  # raise when finish() changes how a clip sounds (2: one level, no glide on self-asked questions, C50)
+
+
 def fingerprint(s: dict, tts: dict) -> str:
-    """What a sentence's clip was made from: text, tags, take and voice. Same fingerprint: a re-dub keeps the clip (C49)."""
-    key = [s.get("tgt_text") or "", s.get("tags") or [], s.get("take", 0), tts["engine"], tts["voice"], tts.get("prompt")]
+    """What a sentence's clip was made from: text, tags, take, voice and DUBBE's clip processing. Same fingerprint: a re-dub
+    keeps the clip (C49)."""
+    key = [s.get("tgt_text") or "", s.get("tags") or [], s.get("take", 0), tts["engine"], tts["voice"], tts.get("prompt"),
+           CLIP_VERSION]
     return hashlib.sha1(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:16]
 
 
