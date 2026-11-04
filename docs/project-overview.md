@@ -73,7 +73,7 @@ Tiers are copied from the project tab. "Plan" is ours.
 | Error propagation measured: where does quality break down, how much does each stage contribute | Gold set (~20 min, human KO transcript + human EN translation). Compare: ASR CER; translation quality (reference-free QE) on gold transcript vs. on ASR transcript; stretch factor per segment. The deltas isolate each stage's contribution |
 | Timing when translation is substantially longer/shorter | Beyond 1.3×: ask the translator for a shorter rendering (length-aware prompt) — **TBD** whether this needs an LLM |
 | A second language pair | Adding a pair = one entry in `languages.yaml` (see [architecture.md](architecture.md#multi-language-design-many--many)). Candidate: English → Korean (TTS: MeloTTS). **TBD** — needs a fluent rater and instructor confirmation (Q-005) |
-| Multiple speakers distinguished | Speaker diarization (pyannote) → one preset voice per speaker |
+| Multiple speakers distinguished | Speaker diarization (NVIDIA Nemotron 3 turns, grouped by TitaNet voice fingerprints, C31) → one preset voice per speaker |
 | Cost per minute vs. professional dubbing, with honest quality statement | Our compute cost (free Colab ≈ $0, or rented GPU-hour) vs. ElevenLabs $0.33–2.20/min and human dubbing; quality gap from the rating study |
 
 ### Stretch (only after all Baseline items are done)
@@ -100,6 +100,7 @@ Video and audio files are **never committed** to the repository; the README reco
 | Segmentation | Whisper segments + Korean sentence enders + pause length (`kss` library) | — |
 | Translation | NLLB-200 distilled-600M (runs on Colab / CPU) | NLLB 1.3B if quality is insufficient; LLM only if permitted (Q-003) |
 | TTS (preset voices) | Per target language: Kokoro-82M for English (Apache 2.0, CPU), MeloTTS for Korean (MIT) | Coqui XTTS-v2 preset voices (tab suggestion), Piper |
+| Emotion tags | emotion2vec+ large (Alibaba DAMO / FunASR, FunASR model license: credit the source, keep the model name; test-results C39) | superb/hubert-large-superb-er (until 2026-11-04) |
 | Timing | ffmpeg `atempo` + TTS speed parameter | — |
 | Quality estimate (Target) | CometKiwi-22 or BLASER 2.0-QE (reference-free) | back-translation similarity |
 

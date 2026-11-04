@@ -23,7 +23,7 @@
     </div>
     <span class="eyebrow" style="margin-top:18px">Voice</span>
     <div class="voice-pick">
-      <select name="voice" aria-label="Voice of the dub" data-voice-pick>
+      <select name="voice" aria-label="Voice of the dub" data-voice-pick data-noclone="{{ NOCLONE }}">
         <option value="">Automatic — matched to the speaker's pitch</option>
         {% if clones %}<optgroup label="Your voices">{% for c in clones %}
           <option value="clone:{{ c.id }}" data-lang="any" data-sample="/app/voices/{{ c.id }}/sample" {{ 'selected' if form.voice == 'clone:' ~ c.id }}>
@@ -34,9 +34,8 @@
       </select>
       <button type="button" class="secondary play-btn" data-voice-hear hidden><span class="play"></span>Hear</button>
     </div>
-    <small class="muted voice-note">Your clones speak every language. Several people talking? This is the main speaker's voice;
-      DUBBE finds the others and gives each their own. Change any of them, or clone one from the video with their consent, in the review editor ·
-      <a href="/app/market">more voices in the Marketplace</a></small>
+    <small class="muted voice-note">The main speaker's voice; others get their own. Change any in the review editor ·
+      <a href="/app/market">more voices</a></small>
 
     <span class="eyebrow" style="margin-top:18px">Options</span>
     <label class="switch"><input type="checkbox" name="keep_bg" value="1" checked><span class="knob"></span>
@@ -48,8 +47,7 @@
     <label class="rights"><input type="checkbox" name="rights" required>
       <span>I own this video or have a licence that allows changing it (not "No-Derivatives"). <a href="/use-policy">Use policy</a></span></label>
     <button class="block">Upload and dub</button>
-    <p class="muted small" style="margin:12px 0 0">About 20 seconds of processing per video minute into English, about 2 minutes into Korean, plus any wait in the queue.
-      You can leave the page — the dub appears under <a href="/app/projects">Projects</a>.</p>
+    <p class="muted small" style="margin:12px 0 0">About 20 s per video minute into English, 2 min into Korean. You can leave — it appears in <a href="/app/projects">Projects</a>.</p>
   </aside>
 </form>
 {% endblock %}

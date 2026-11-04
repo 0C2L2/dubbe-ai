@@ -1,6 +1,6 @@
 import numpy as np
 
-from dubbe.tags import not_performed, shape_audio, speed, text_for_tts
+from dubbe.tags import dubbe_tags, not_performed, shape_audio, speed, text_for_tts
 
 
 def test_question_tag_makes_a_question():
@@ -30,6 +30,11 @@ def test_engine_tokens_go_in_front():
     assert text_for_tts("That is funny.", ["laugh", "slow"], "chatterbox") == "[laugh] That is funny."
     assert text_for_tts("Quiet now", ["whisper", "sigh", "question"], "chatterbox") == "[sigh] Quiet now?"
     assert text_for_tts("That is funny.", ["laugh"], "kokoro") == "That is funny."
+    # CosyVoice acts the emotion from an instruction in front; DUBBE then leaves its pitch/speed/level alone
+    assert text_for_tts("No.", ["sad", "laugh"], "cosyvoice") == "Please speak sadly, in a low and slow voice.<|endofprompt|>[laughter] No."
+    assert dubbe_tags(["sad", "slow", "question"], "cosyvoice") == ["slow", "question"] and dubbe_tags(["sad"], "kokoro") == ["sad"]
+    assert text_for_tts("No.", ["angry"], "ming") == "愤怒<|endofprompt|>No." and dubbe_tags(["angry", "soft"], "ming") == ["soft"]
+    assert not_performed(["sympathetic", "sad"], "kokoro") == ["sympathetic"] and not_performed(["sympathetic"], "ming") == []
 
 
 def test_expression_tags_change_the_sound():
@@ -52,6 +57,15 @@ def test_expression_tags_change_the_sound():
     assert np.abs(shape_audio(a * 1.9, sr, ["angry", "loud"])).max() <= .99  # never clipped
     assert w.dtype == q.dtype == np.float32
     assert len(shape_audio(np.zeros(0, "float32"), sr, ["whisper", "excited", "question"])) == 0  # "??": nothing to say
+
+
+def test_uzbek_is_cyrillic_only_for_the_mms_voice():
+    from dubbe.uzbek import to_cyrillic
+    assert to_cyrillic("Toshkent shahrida yomg‘ir yogʻdi. Ertaga choy ichamiz.") == "тошкент шаҳрида ёмғир ёғди. эртага чой ичамиз."
+    assert text_for_tts("Qo'ng'iroq.", [], "mms", "uz") == "қўнғироқ."
+    assert text_for_tts("Qo'ng'iroq.", ["sad"], "navoiy", "uz").endswith("<|endofprompt|>Qo'ng'iroq.")  # Navoiy reads Latin
+    assert dubbe_tags(["sad", "whisper", "disgusted"], "navoiy") == ["disgusted"]  # it acts the rest itself
+    assert not_performed(["disgusted"], "navoiy") == ["disgusted"]
 
 
 def test_korean_numbers_are_spoken_as_words():

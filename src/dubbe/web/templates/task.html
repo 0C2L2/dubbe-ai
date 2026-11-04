@@ -90,36 +90,87 @@
   {% elif t.kind == "speakers" %}
   {% set ids = result.speakers | map(attribute="id") | list %}
   <p class="actions">{% for f in result.files if not f.endswith(".mp3") %}<a role="button" class="{{ '' if loop.first else 'secondary' }}" href="/app/tasks/{{ t.id }}/file/{{ f }}?dl=1">{{ f }}</a>{% endfor %}</p>
-  <p class="muted">{{ ids | length }} speaker{{ "s" if ids | length != 1 }} · {{ result.sentences | length }} sentences ·
-    {{ "%d:%02d" | format(result.duration // 60, result.duration % 60) }}</p>
-  <div class="spk-time" role="img" aria-label="Who speaks when">
-    {% for s in result.sentences %}<i style="left:{{ '%.2f' | format(100 * s.start / result.duration) }}%;width:{{ '%.2f' | format(100 * (s.end - s.start) / result.duration) }}%;--c:{{ SPK_COLORS[ids.index(s.speaker) % SPK_COLORS | length] }}"></i>{% endfor %}
-  </div>
-  <div class="spk-cards">
+  {% from "_parts.html" import orb_art, ORB_PAL %}
+  {# hovering a speaker in the rail dims everyone else in the lanes and the transcript #}
+  <style>{% for x in result.speakers %}.spk-layout:has(#{{ x.id }}:hover) :is(.spk-lane, .tx-row):not([data-spk="{{ x.id }}"]) { opacity: .25; }{% endfor %}</style>
+  <div class="spk-layout" data-spk-editor>
+  <script type="application/json" data-spk-data>{{ {"save": "/app/tasks/" ~ t.id ~ "/speakers-edit",
+    "speakers": result.speakers | map(attribute="id") | list, "names": result.speakers | map(attribute="name") | list,
+    "colors": ORB_PAL | map(attribute=1) | list} | tojson }}</script>
+  <aside class="spk-rail" aria-label="Speakers">
   {% for x in result.speakers %}
-  <section class="card spk-card" id="{{ x.id }}" style="--c:{{ SPK_COLORS[loop.index0 % SPK_COLORS | length] }}">
-    <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}" class="spk-name">
-      <span class="spk-dot" aria-hidden="true"></span><input name="name" value="{{ x.name }}" maxlength="40" aria-label="Name of {{ x.name }}">
-      <button class="secondary">Rename</button></form>
-    <p class="muted small">{{ x.seconds }} s · {{ x.share }} % of the talking · {{ x.sentences }} sentence{{ "s" if x.sentences != 1 }}</p>
-    <audio controls preload="none" src="/app/tasks/{{ t.id }}/file/{{ x.id }}.mp3"></audio>
-    {% if cloning and t.owner_id == user.id %}
-    <details class="spk-clone"><summary>Clone this voice…</summary>
+  <section class="spk-p" id="{{ x.id }}" data-spk="{{ x.id }}" style="--c:{{ ORB_PAL[loop.index0 % 8][1] }}">
+    {{ orb_art(loop.index0, "spk", "/app/tasks/" ~ t.id ~ "/file/" ~ x.id ~ ".mp3", "Play " ~ x.name) }}
+    <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}" class="spk-rename">
+      <input name="name" value="{{ x.name }}" maxlength="40" aria-label="Rename {{ x.name }}" title="Click to rename">
+      <button class="secondary">Save name</button></form>
+    <p class="spk-meta">{{ x.share }} % of the talking · {{ "%d:%02d" | format(x.seconds // 60, x.seconds % 60) }}</p>
+    {% for m in x.maybe_same if m in ids %}
+    <button type="button" class="spk-merge" data-merge="{{ x.id }}" data-into="{{ m }}" title="The voices are close: maybe one person">
+      Same as {{ result.speakers[ids.index(m)].name }}? Merge</button>
+    {% endfor %}
+    {% if cloning and t.owner_id == user.id %}{% if x.seconds >= CLONE_MIN %}
+    <button type="button" class="secondary spk-clone-btn" onclick="this.nextElementSibling.showModal()">Clone voice</button>
+    <dialog class="modal">
       <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}/clone">
+        <h3>Clone {{ x.name }}'s voice</h3>
         <label>Name of the voice <input name="name" value="{{ x.name }}" maxlength="60"></label>
         <label class="rights"><input type="checkbox" name="consent" required><span>I am <b>{{ x.name }}</b>, or I have their written
-          permission to make a copy of their voice. It is saved in my voices and stays private: it can never be published to the
-          Marketplace. Everything it says is watermarked and labelled as AI.</span></label>
-        <button>Clone into my voices</button></form></details>
-    {% endif %}
+          permission to copy their voice.</span></label>
+        <p class="muted small">Private to you, never published. Everything it says is watermarked as AI.</p>
+        <div class="actions"><button>Clone into my voices</button>
+          <button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button></div>
+      </form>
+    </dialog>
+    {% else %}<span class="muted small spk-clone-note">Needs {{ CLONE_MIN }} s of speech to clone</span>{% endif %}{% endif %}
   </section>
   {% endfor %}
+  </aside>
+
+  <div class="spk-body">
+    <p class="spk-summary"><b>{{ ids | length }} speaker{{ "s" if ids | length != 1 }}</b> · {{ result.sentences | length }} sentences ·
+      {{ "%d:%02d" | format(result.duration // 60, result.duration % 60) }}</p>
+    <div class="spk-lanes" aria-label="Who speaks when{{ ' — click to play from there' if media_video is not none }}">
+      {% for x in result.speakers %}
+      <div class="spk-lane" data-spk="{{ x.id }}" style="--c:{{ ORB_PAL[loop.index0 % 8][1] }}"><span class="spk-lane-name">{{ x.name }}</span>
+        <div class="spk-lane-track">{% for s in result.sentences if s.speaker == x.id %}<i style="left:{{ '%.2f' | format(100 * s.start / result.duration) }}%;width:{{ '%.2f' | format(100 * (s.end - s.start) / result.duration) }}%"></i>{% endfor %}</div></div>
+      {% endfor %}
+      <div class="spk-lane-axis"><span>0:00</span><span>{{ "%d:%02d" | format(result.duration // 60, result.duration % 60) }}</span></div>
+    </div>
+
+    {# transcript (left) next to the original video (right, stays in view): a line plays from its start, the spoken line lights up #}
+    <div class="spk-review{{ ' has-player' if media_video is not none }}">
+    <div>
+    <div class="tx-head"><h3 class="spk-h">Transcript</h3>
+      {% if result.sentences and result.sentences[0].words %}<button type="button" class="secondary" data-spk-edit>Fix speakers</button>{% endif %}</div>
+    <p class="muted small tx-help" data-edit-help hidden>The bar in front of a line is where it begins: drag it right to give words
+      to the line above, or onto the line above to take its last words (or ← →). Click a word to play from it or start a new line
+      there. Pick a line's speaker from its name.</p>
+    <div class="spk-tx">
+    {% for s in result.sentences %}{% set i = ids.index(s.speaker) %}
+      <div class="tx-row{{ ' cont' if loop.previtem is defined and loop.previtem.speaker == s.speaker }}" data-spk="{{ s.speaker }}" data-t="{{ s.start }}" data-end="{{ s.end }}"
+        style="--c:{{ ORB_PAL[i % 8][1] }}"{% if media_video is not none %} role="button" tabindex="0" title="Play from here"{% endif %}>
+        <span class="tx-time">{{ "%d:%02d" | format(s.start // 60, s.start % 60) }}</span>
+        <div><span class="tx-name">{{ result.speakers[i].name }}</span>{% if s.flag %}<span class="tx-flag" title="Maybe two people in this sentence">⚠ check speaker</span>{% endif %}
+          <p class="tx-words">{% if s.words %}{% for w in s.words %}<span class="w" data-i="{{ w[0] }}" data-s="{{ w[2] }}">{{ w[1] }}</span> {% endfor %}{% else %}{{ s.text }}{% endif %}</p></div></div>
+    {% endfor %}
+    </div>
+    {% if result.sentences and result.sentences[0].words %}
+    <div class="tx-save" data-edit-bar hidden>
+      <span>Your changes are not saved yet.</span>
+      <button type="button" data-edit-save>Save</button><button type="button" class="secondary" data-edit-cancel>Discard</button>
+    </div>
+    {% endif %}
+    </div>
+    {% if media_video is not none %}
+    <div class="spk-player">
+      <{{ 'video' if media_video else 'audio' }} controls preload="metadata" src="/app/tasks/{{ t.id }}/media" data-spk-player data-duration="{{ result.duration }}"></{{ 'video' if media_video else 'audio' }}>
+      <p class="muted small">Click a line or a lane to play from there.</p>
+    </div>
+    {% endif %}
+    </div>
   </div>
-  <h2>Transcript</h2>
-  {% for s in result.sentences %}{% set i = ids.index(s.speaker) %}
-  <p class="spk-line" style="--c:{{ SPK_COLORS[i % SPK_COLORS | length] }}"><span class="muted small">{{ "%d:%02d" | format(s.start // 60, s.start % 60) }}</span>
-    <b>{{ result.speakers[i].name }}</b> {{ s.text }}</p>
-  {% endfor %}
+  </div>
 
   {% else %}
   <div class="stems">

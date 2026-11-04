@@ -168,13 +168,17 @@ def timeline_html(segs: list[dict], total: float, video_src: str, show_flags: bo
                 f"p.dispatchEvent(new Event('input',{{bubbles:true}}));}}")
         blocks.append(f'<div class="tl-b" title="{tip}" onclick="var v=document.getElementById(\'dubv\');'
                       f'v.currentTime={a:.2f};v.play();{pick}" style="left:{100 * a / total:.3f}%;'
-                      f'width:{max(100 * d / total, 0.5):.3f}%;background:{color}">{s["id"]}{" ✦" if s.get("tags") else ""}</div>')
+                      f'width:{max(100 * d / total, 0.5):.3f}%;background:{color}"><span>{s["id"]}'
+                      f'{"<b> ✦</b>" if s.get("tags") else ""}</span></div>')
     legend = ("<span style='background:#e5484d'>translation</span><span style='background:#f76b15'>speech recognition</span>"
               "<span style='background:#e2a336'>timing</span><span style='background:#30a46c'>OK</span>"
               if show_flags else "<span style='background:#8b8d98'>flags hidden (blind rating)</span>")
     return f"""<style>.tl{{position:relative;height:34px;background:#eee;border-radius:4px;margin:6px 0}}
 .tl-b{{position:absolute;top:3px;height:28px;border-radius:3px;color:#fff;font:11px system-ui;text-align:center;
-line-height:28px;cursor:pointer;overflow:hidden;opacity:.9}}.tl-b:hover{{opacity:1;outline:2px solid #000}}
+line-height:28px;cursor:pointer;overflow:hidden;opacity:.9;white-space:nowrap;container-type:inline-size;
+box-shadow:inset -1px 0 0 rgba(255,255,255,.7)}}.tl-b:hover{{opacity:1;outline:2px solid #000}}
+@container (max-width:36px){{.tl-b b{{display:none}}}}@container (max-width:16px){{.tl-b span{{display:none}}}}
+.tl-b b{{font-weight:400}}
 #tl-ph{{position:absolute;top:0;width:2px;height:34px;background:#000;pointer-events:none}}
 .tl-leg span{{color:#fff;font:12px system-ui;padding:2px 6px;border-radius:3px;margin-right:6px}}</style>
 <video id="dubv" src="{html.escape(video_src, quote=True)}" controls style="width:100%;max-height:480px;background:#000"
@@ -185,7 +189,7 @@ line-height:28px;cursor:pointer;overflow:hidden;opacity:.9}}.tl-b:hover{{opacity
 def _row(s: dict) -> str:
     e = html.escape
     cls = ' class="flag"' if s["flag"] else ""
-    reasons = ", ".join(f"{STAGE[f]}" for f in s["flag"]) or "—"
+    reasons = "".join(f'<span class="chip" style="background:{COLOR[f]}">{STAGE[f]}</span>' for f in s["flag"]) or "—"
     return (f"<tr{cls}><td>{s['id']}</td><td>{_t(s['start'])}</td><td>{e(s['src_text'])}</td>"
             f"<td>{e(s['tgt_text'] or '')}{' ✎' if s['edited'] else ''}</td><td>{s['asr_conf']}</td><td>{s.get('mt_conf')}</td>"
             f"<td>{s['stretch']}×</td><td>{reasons}</td><td><audio controls preload=none src='tts/{s['id']}.wav'></audio></td></tr>")
@@ -221,20 +225,41 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     flagged = [s for s in segs if s["flag"]]
     by_stage = {st_: sum(any(STAGE[f] == st_ for f in s["flag"]) for s in segs) for st_ in STAGE.values()}
     head = "<tr><th>#</th><th>Time</th><th>Source</th><th>Translation</th><th>ASR conf</th><th>MT conf</th><th>Stretch</th><th>Check</th><th>Audio</th></tr>"
-    page = f"""<!doctype html><meta charset="utf-8"><title>DUBBE review — {html.escape(video.name)}</title>
-<style>body{{font:14px system-ui;margin:24px;max-width:1200px}}table{{border-collapse:collapse;width:100%}}
-td,th{{border:1px solid #ddd;padding:6px;vertical-align:top;text-align:left}}tr.flag{{background:#fff4d6}}audio{{width:160px}}</style>
-<h1>Review: {html.escape(video.name)} ({data['src']} → {data['tgt']})</h1>
-<p><b>{len(flagged)} of {len(segs)} segments to check</b> —
-{', '.join(f'{st_}: {n}' for st_, n in by_stage.items())}. Video: <a href="dubbed.mp4">dubbed.mp4</a></p>
-{''.join(f"<p>Voice for {html.escape(v.get('name') or k)}: <b>{html.escape(str(v.get('voice')))}</b> — median pitch {v.get('median_f0')} Hz, {v.get('register')} register"
-         f"{' (set by reviewer)' if v.get('override') else ' (auto; change it in the review editor, or set voice and override: true in segments.json and run --from tts)'}</p>"
-         for k, v in data.get('speakers', {}).items())}
-<p>To fix a segment: edit <code>tgt_text</code> in <code>segments.json</code>, set <code>"edited": true</code>,
-then run <code>dubbe {html.escape(video.name)} --src {data['src']} --tgt {data['tgt']} --from tts</code>.</p>
-<h2>Video — coloured parts need checking (hover for text, click to jump)</h2>{timeline_html(segs, st['output_seconds'], 'dubbed.mp4')}
-<h2>Stats</h2>{stats_html(st)}
-<h2>Segments to check</h2><table>{head}{''.join(map(_row, flagged)) or '<tr><td colspan=9>None</td></tr>'}</table>
-<details><summary><h2 style="display:inline">All segments</h2></summary><table>{head}{''.join(map(_row, segs))}</table></details>
+    e = html.escape
+    voices = "".join(f"<tr><td>{e(v.get('name') or k)}</td><td><b>{e(str(v.get('voice')))}</b></td><td>{v.get('median_f0')} Hz</td>"
+                     f"<td>{v.get('register') or ''}</td><td>{'reviewer' if v.get('override') else 'auto'}</td></tr>"
+                     for k, v in data.get('speakers', {}).items())
+    page = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DUBBE review — {e(cfg.get('title', video.stem).replace('_', ' '))}</title>
+<style>*{{box-sizing:border-box}}body{{margin:0;background:#faf9f7;color:#151515;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}}
+main{{max-width:1120px;margin:0 auto;padding:32px 16px 64px}}
+h1{{font-weight:400;font-size:clamp(1.6rem,3vw,2.2rem);letter-spacing:-.02em;line-height:1.15;margin:4px 0 12px;overflow-wrap:anywhere}}
+h2{{font-weight:500;font-size:1.05rem;margin:0 0 12px}}.eyebrow{{font:12px ui-monospace,Consolas,monospace;letter-spacing:.06em;color:#6b6b6b}}
+.card{{background:#fff;border:1px solid #ebe8e4;border-radius:16px;padding:20px;margin:16px 0}}.muted{{color:#6b6b6b;font-size:13px}}
+.pills{{display:flex;flex-wrap:wrap;gap:8px;margin:0}}.pill{{background:#f1efec;border-radius:999px;padding:4px 12px;font-size:13px}}
+.pill b{{font-weight:600}}.chip{{display:inline-block;color:#fff;font-size:12px;border-radius:999px;padding:1px 8px;margin:0 4px 2px 0}}
+.scroll{{overflow-x:auto}}table{{border-collapse:collapse;width:100%;font-size:14px}}
+td,th{{padding:8px 10px;border-bottom:1px solid #eeebe7;text-align:left;vertical-align:top}}
+th{{font-weight:500;color:#6b6b6b;font-size:12px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}}
+.stats th{{text-transform:none;letter-spacing:0;font-size:13px;width:180px}}tr:last-child td,tr:last-child th{{border-bottom:0}}
+tr.flag td:first-child{{box-shadow:inset 3px 0 #e5484d}}audio{{width:180px;height:32px}}
+code{{background:#f1efec;border-radius:6px;padding:1px 6px;font-size:13px}}a{{color:inherit}}
+#dubv{{border-radius:14px;display:block}}.tl{{border-radius:10px!important;background:#efece8!important}}.tl-b{{border-radius:7px!important}}
+.tl-leg span{{border-radius:999px!important}}summary{{cursor:pointer}}summary h2{{display:inline}}</style>
+<main>
+<span class="eyebrow">DUBBE REVIEW · {data['src'].upper()} → {data['tgt'].upper()} · {len(segs)} SENTENCES</span>
+<h1>{e(cfg.get('title', video.stem).replace('_', ' '))}</h1>
+<p class="pills"><span class="pill"><b>{len(flagged)} of {len(segs)}</b> to check</span>
+{''.join(f'<span class="pill">{st_}: <b>{n}</b></span>' for st_, n in by_stage.items())}<a class="pill" href="dubbed.mp4">dubbed.mp4</a></p>
+<section class="card"><h2>Video</h2><p class="muted" style="margin-top:-8px">Coloured parts need checking — hover for the text, click to jump.</p>
+{timeline_html(segs, st['output_seconds'], 'dubbed.mp4')}</section>
+<section class="card"><h2>Voices</h2><div class="scroll"><table><tr><th>Speaker</th><th>Voice</th><th>Median pitch</th><th>Register</th><th>Chosen by</th></tr>
+{voices}</table></div><p class="muted">Change a voice in the review editor, or set <code>voice</code> and <code>override: true</code> in
+<code>segments.json</code> and run <code>--from tts</code>. To fix a sentence: edit <code>tgt_text</code>, set <code>"edited": true</code>, then run
+<code>dubbe {e(video.name)} --src {data['src']} --tgt {data['tgt']} --from tts</code>.</p></section>
+<section class="card"><h2>Stats</h2><div class="scroll stats">{stats_html(st)}</div></section>
+<section class="card"><h2>Sentences to check</h2><div class="scroll"><table>{head}{''.join(map(_row, flagged)) or '<tr><td colspan=9>None</td></tr>'}</table></div></section>
+<section class="card"><details><summary><h2>All sentences</h2></summary><div class="scroll"><table>{head}{''.join(map(_row, segs))}</table></div></details></section>
+</main>
 """
     (work / "report.html").write_text(page, encoding="utf8")

@@ -1,30 +1,24 @@
-"""C21: who speaks when, from the audio itself (speaker diarization), before sentences are formed.
+"""C21/C28/C31: who speaks when, from the audio itself, before sentences are formed.
 
-pyannote/speaker-diarization-3.1 (MIT) finds speaker turns and the number of speakers on its own; `segment` then splits
-sentences where the speaker changes and `speakers` names each sentence by the turn it overlaps most. The model is gated:
-accept its terms (and pyannote/segmentation-3.0's) on Hugging Face and set HF_TOKEN. Without a token, or with
-speaker_engine: wavlm, no diarization.json is written and `speakers` falls back to per-sentence voice fingerprints.
+NVIDIA Nemotron 3 Diarization (OpenMDW 1.1) finds the speaker turns: where each piece of speech starts and ends.
+Its own labels merge similar voices (12 known voices: it found 7), so every turn is then given a TitaNet-large voice
+fingerprint (NVIDIA, CC-BY-4.0) and the turns are grouped by voice from scratch (same average-linkage grouping as
+`speakers.cluster`) - 12 of 12 voices, 3 of 3 similar women, 4 of 4 voices right (test results C31). Both models run
+in .venv-nemo, in one load (nemotron_worker.py). `segment` then splits sentences where the speaker changes and
+`speakers` names each sentence by the turn it overlaps most. speaker_engine: wavlm, or no .venv-nemo, writes no
+diarization.json and `speakers` falls back to per-sentence WavLM fingerprints.
 """
+import json
 import os
+import subprocess
 from pathlib import Path
 
-import soundfile as sf
+import numpy as np
 
-from . import device, free_gpu, write_json
+from . import write_json
 
-MODEL = "pyannote/speaker-diarization-3.1"
-COMMUNITY = "pyannote/speaker-diarization-community-1"  # pyannote 4, run by diarize_worker.py in .venv-diarize
-DIARIZE_PY = Path(__file__).parents[2] / ".venv-diarize" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-
-
-def community_turns(wav: Path) -> list[dict]:
-    import json
-    import subprocess
-    p = subprocess.run([str(DIARIZE_PY), "-I", str(Path(__file__).with_name("diarize_worker.py"))],
-                       input=json.dumps({"wav": str(wav.resolve()), "model": COMMUNITY}), capture_output=True, text=True)
-    if p.returncode:
-        raise RuntimeError(f"diarize_worker failed: {p.stderr[-2000:]}")
-    return json.loads(p.stdout.strip().splitlines()[-1])
+MODEL = "nvidia/Nemotron-3-Diarization + nvidia/speakerverification_en_titanet_large"
+NEMO_PY = Path(__file__).parents[2] / ".venv-nemo" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
 def who(turns: list[dict], start: float, end: float) -> str | None:
@@ -42,55 +36,41 @@ def who(turns: list[dict], start: float, end: float) -> str | None:
     return min(turns, key=lambda t: max(t["start"] - mid, mid - t["end"]))["speaker"]
 
 
-def pipeline():
-    """The pyannote pipeline built from local files. pyannote 3.4 downloads with `use_auth_token`, which current
-    huggingface_hub no longer accepts, so the pipeline and its two sub-models are fetched here and passed as paths."""
-    import yaml
-    from huggingface_hub import snapshot_download
-    from pyannote.audio.pipelines import SpeakerDiarization
-    token = os.environ.get("HF_TOKEN") or None
-    conf = yaml.safe_load((Path(snapshot_download(MODEL, token=token)) / "config.yaml").read_text())
-    params = dict(conf["pipeline"]["params"])
-    for key in ("segmentation", "embedding"):  # Hugging Face ids -> local checkpoint files
-        params[key] = str(Path(snapshot_download(params[key], token=token)) / "pytorch_model.bin")
-    import torch
-    from pyannote.audio.core.task import Problem, Resolution, Specifications
-    # torch >= 2.6 loads checkpoints weights-only; allow just the few plain classes pyannote 3 stores in them
-    with torch.serialization.safe_globals([torch.torch_version.TorchVersion, Specifications, Problem, Resolution]):
-        pipe = SpeakerDiarization(**params)
-    pipe.instantiate(conf["params"])
-    return pipe
+def regroup(turns: list[dict], emb: np.ndarray, threshold: float) -> list[dict]:
+    """The turns' speakers decided by their voice fingerprints alone (Nemotron's own labels are dropped)."""
+    from .speakers import cluster
+    if len(turns) < 2:
+        return [{**t, "speaker": "SPEAKER_00"} for t in turns]
+    labels = cluster(emb, [t["end"] - t["start"] for t in turns], threshold)
+    return [{**t, "speaker": f"SPEAKER_{lab:02d}"} for t, lab in zip(turns, labels)]
 
 
-def turns(wav: Path) -> list[dict]:
-    """Speaker turns [{start, end, speaker}] in time order; overlapping speech gives overlapping turns."""
-    import torch
-    pipe = pipeline()
-    pipe.to(torch.device(device()))
-    x, sr = sf.read(wav, dtype="float32", always_2d=True)
-    result = pipe({"waveform": torch.from_numpy(x.mean(1))[None], "sample_rate": sr})  # pyannote resamples to 16 kHz
-    out = [{"start": round(t.start, 3), "end": round(t.end, 3), "speaker": spk}
-           for t, _, spk in result.itertracks(yield_label=True)]
-    del pipe
-    free_gpu()
-    return out
+def _worker(job: dict) -> dict:
+    p = subprocess.run([str(NEMO_PY), "-I", str(Path(__file__).with_name("nemotron_worker.py"))], capture_output=True,
+                       text=True, encoding="utf-8", input=json.dumps(job))
+    if p.returncode:
+        raise RuntimeError(f"nemotron_worker failed: {p.stderr[-2000:]}")
+    return json.loads(p.stdout.strip().splitlines()[-1])
+
+
+def embed_spans(wav: Path, spans: list[list[float]]) -> np.ndarray:
+    """TitaNet voice fingerprints of time spans (unit vectors) - used by `speakers` for parts of sentences."""
+    return np.array(_worker({"wav": str(Path(wav).resolve()), "spans": spans})["emb"]) if spans else np.zeros((0, 192))
 
 
 def run(video: Path, work: Path, cfg: dict) -> None:
     out = work / "diarization.json"
     out.unlink(missing_ok=True)  # never leave turns from an earlier run behind
-    engine = cfg.get("speaker_engine", "wavlm")
-    if engine not in ("pyannote", "community"):
+    if cfg.get("speaker_engine", "nemotron") != "nemotron":
         return
-    if engine == "community" and not DIARIZE_PY.exists():
-        print("         no .venv-diarize: speakers are found per sentence instead (voice fingerprints)")
+    if not NEMO_PY.exists():
+        print("         no .venv-nemo: speakers are found per sentence instead (voice fingerprints)")
         return
-    if not os.environ.get("HF_TOKEN"):
-        from huggingface_hub import get_token
-        if not get_token():
-            print("         no HF_TOKEN: speakers are found per sentence instead (voice fingerprints)")
-            return
     wav = work / "vocals.wav" if (work / "vocals.wav").exists() else work / "audio.wav"
-    t = community_turns(wav) if engine == "community" else turns(wav)
-    write_json(out, {"model": COMMUNITY if engine == "community" else MODEL, "turns": t})
-    print(f"         {len({x['speaker'] for x in t})} speaker(s), {len(t)} turns")
+    res = _worker({"wav": str(wav.resolve())})
+    emb = np.array(res["emb"])
+    turns = regroup(res["turns"], emb, cfg["speaker_group_threshold"])
+    for t, e in zip(turns, emb):  # kept for `speakers` (C33): it compares voices without loading the model again
+        t["emb"] = [round(float(v), 4) for v in e]
+    write_json(out, {"model": MODEL, "turns": turns})
+    print(f"         {len({t['speaker'] for t in turns})} speaker(s), {len(turns)} turns")

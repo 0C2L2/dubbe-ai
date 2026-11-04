@@ -81,7 +81,11 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals.update(PLANS=db.PLANS, NAMES=NAMES, STAGE=STAGE, MSG=MSG, TAGS=tags, ERRORS=ratings.ERRORS,
                              STAGES=worker.STAGE_NAMES, t=_t, TOPICS=TOPICS)
-templates.env.filters["date"] = lambda ts: datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "—"
+# cache-busting: /static/style.css?v=<last change> so browsers fetch the new file after every change. Read at each page
+# render, not once at start: a CSS edit without a server restart kept the old number and browsers kept the old file
+templates.env.globals["ASSET_V"] = type("AssetV", (), {"__str__": lambda _: str(int(max(
+    (HERE / "static" / f).stat().st_mtime for f in ("style.css", "app.js"))))})()
+templates.env.filters["date"] =lambda ts: datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "—"
 
 
 @app.middleware("http")
@@ -162,9 +166,9 @@ def voices(langs=("en", "ko")) -> list[dict]:
             vid = sample_name(v, lang, info)
             us_uk = {"a": "American", "b": "British"}.get(v[0], "")
             out.append({"id": vid, "key": v, "lang": lang, "f0": info["f0"], "register": info["register"],
-                        "name": v.split("_")[1].title() if lang == "en" or info.get("prompt") else NAMES[lang],
-                        "accent": us_uk if lang == "en" else f"{NAMES[lang]}, from the {us_uk} preset" if info.get("prompt")
-                        else "MMS" if "mms" in v else "Chatterbox",
+                        "name": info.get("name") or (v.split("_")[1].title() if lang == "en" or info.get("prompt") else NAMES[lang]),
+                        "accent": info.get("accent") or (us_uk if lang == "en" else f"{NAMES[lang]}, from the {us_uk} preset"
+                                                         if info.get("prompt") else "MMS" if "mms" in v else "Chatterbox"),
                         "sample": (db.ROOT / "samples" / f"{vid}.wav").exists(),
                         "default": v == _LANGS[lang]["tts"].get("voice")})
     return out
@@ -643,6 +647,8 @@ def voice_options(p, sp: str = "S1") -> list[tuple[str, str]]:
     owner = db.one("select * from users where id=?", p["owner_id"])
     own = [(f"video:{sp}", "Their own voice (cloned from the video, with consent)")] if clones.speaker_file(p["id"], sp).exists() else []
     presets = [(v, v) for v in _LANGS[p["tgt"]]["tts"].get("voices", {})]
+    if "clone" not in _LANGS[p["tgt"]]["tts"]:  # no voice that speaks from a recording in this language (Kazakh: Piper)
+        return presets
     return own + presets + [(f"clone:{c['id']}", f"{c['name']} — " + ("your voice" if c["owner_id"] == owner["id"] else
                             f"by {c['owner_name'] or 'a user'}")) for c in (clones.usable(owner) if clones.enabled() else [])]
 
@@ -816,7 +822,8 @@ TOOLS = {"tts": "Text to Speech", "stt": "Speech to Text", "speakers": "Speaker 
 SPK_COLORS = ["#f76b15", "#6e56cf", "#30a46c", "#3b82f6", "#e5484d", "#e2a336", "#12a594", "#d6409f"]
 MEDIA_TYPES = VIDEO_TYPES | {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 MAX_CHARS = {"tts": 2000, "translate": 5000}
-templates.env.globals.update(TOOLS=TOOLS, MAX_CHARS=MAX_CHARS, SPK_COLORS=SPK_COLORS)
+templates.env.globals.update(TOOLS=TOOLS, MAX_CHARS=MAX_CHARS, SPK_COLORS=SPK_COLORS, CLONE_MIN=clones.MIN_SECONDS,
+                             NOCLONE=" ".join(k for k in LANGS if "clone" not in _LANGS[k]["tts"]))  # voice pickers hide clones
 
 
 def new_task(u, kind: str, title: str, params: dict, status: str = "waiting") -> int:
@@ -922,6 +929,22 @@ def own_speaker(request: Request, tid: int, sp: str):
     return u, t, data
 
 
+@app.post("/app/tasks/{tid}/speakers-edit")
+async def task_speakers_edit(request: Request, tid: int):
+    """Save a person's fix of who said what: words moved between sentences, sentences split, joined or given to
+    another speaker. The whole transcript comes back as speakers and word indices; nothing may be lost or doubled."""
+    u, t = own_task(request, tid)
+    if t["kind"] != "speakers" or t["status"] != "done":
+        raise HTTPException(404)
+    body = await request.json()
+    try:
+        result = tools.edit_speakers(tools.folder(tid), body.get("sentences") or [])
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    db.run("update tasks set result=? where id=?", json.dumps(result, ensure_ascii=False), tid)
+    return {"ok": True}
+
+
 @app.post("/app/tasks/{tid}/speakers/{sp}")
 def task_speaker_name(request: Request, tid: int, sp: str, name: str = Form("")):
     """Name a speaker: the transcript and subtitles are written again with the name."""
@@ -995,8 +1018,23 @@ def task_page(request: Request, tid: int):
     u, t = own_task(request, tid)
     ahead = db.one("select count(*) n from tasks where status='waiting' and id<?", tid)["n"] + \
         db.one("select count(*) n from jobs where status in ('waiting','running')")["n"]
-    return page(request, "task.html", user=u, t=t, p=json.loads(t["params"]), ahead=ahead,
-                result=json.loads(t["result"]) if t["result"] else None, cloning=clones.enabled())
+    m = tools.media(tid)
+    result = json.loads(t["result"]) if t["result"] else None
+    if t["kind"] == "speakers" and result and result.get("sentences") and "words" not in result["sentences"][0] \
+            and (tools.folder(tid) / "segments.json").exists():
+        result = tools.speaker_files(tools.folder(tid))  # a result from before the word editor: add the words
+    return page(request, "task.html", user=u, t=t, p=json.loads(t["params"]), ahead=ahead, result=result, cloning=clones.enabled(),
+                media_video=(m.suffix.lower() in VIDEO_TYPES) if m else None)
+
+
+@app.get("/app/tasks/{tid}/media")
+def task_media(request: Request, tid: int):
+    """The task's own upload, for the result page's player (owner or admin only; seeking uses range requests)."""
+    own_task(request, tid)
+    m = tools.media(tid)
+    if not m:
+        raise HTTPException(404)
+    return FileResponse(m)
 
 
 @app.get("/app/tasks/{tid}/file/{name}")

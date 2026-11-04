@@ -7,11 +7,22 @@ defaults:
   max_words: 40
   min_dur: 1.0       # shorter fragments are merged into a neighbour
   max_stretch: 1.3   # project tab: beyond ~1.3x sped-up speech sounds wrong
+  min_stretch: 0.85  # a dub shorter than the speaker's talking is slowed towards it, at most this much (1 = never)
+  max_late: 1.0      # s a dub may run past the next sentence's start before it is sped up (that one waits; 0 = never)
   shorten_min_conf_ratio: 0.85  # shorter alternative translation must keep >= 85% of the best confidence
   max_video_slow: 1.0  # >1 (e.g. 1.2) slows the picture where dubbed speech is longer, so speech is sped up less;
                        # barely visible on slides/talking heads, noticeable on action (--slow-video 1.2)
   register_split_hz: 122  # lower vs higher voice; calibrated on FLEURS ko, 95% on held-out FLEURS en (C10)
-  speaker_engine: wavlm  # wavlm = per-sentence fingerprints; pyannote (3.1) / community (community-1, .venv-diarize) = turns from the audio, need HF_TOKEN - neither better in test C27
+  speaker_engine: nemotron  # nemotron = turns from Nemotron 3, grouped by TitaNet voice (.venv-nemo; C31); wavlm = per-sentence fingerprints only (also the fallback)
+  speaker_group_threshold: 0.35  # TitaNet cosine distance that joins two turns into one speaker: 12 known voices 12/12 at 0.30-0.35, 11/12 from 0.40 (C31)
+  # speakers stage (C33): who said which words of a sentence
+  split_min_words: 3     # another speaker's run of words this long ...
+  split_min_s: 1.0       # ... and this long (s) ...
+  split_gap: 0.2         # ... next to a pause this long (s) is split off as their own sentence
+  handover_min_s: 0.6    # shorter runs count as bleed (flagged from 0.5 s); 0.8 -> 0.6: similar women 90 -> 97 % (C33)
+  handover_margin: 0.05  # a mid-sentence hand-over is split when its voice is this much closer to its own speaker
+  merge_auto: 0.25       # two speakers whose voice prints are closer than this are one person
+  merge_ask: 0.30        # closer than this: "maybe the same person" in review; 0.45 asked 11 times on Akatsuki, 0.30 once (C33)
   speaker_threshold: 0.3  # speaker detection (C7): cosine distance between sentence voice fingerprints; test-results C21
   keep_background: true   # separate music/effects and keep them under the dub (--no-background to skip)
   background_floor_db: 35  # background stem this far below the original = only separation residue -> voice-only mix
@@ -21,9 +32,9 @@ defaults:
   delivery_max_db: 6     # at most this much louder / softer than the dub's median sentence
   delivery_pitch: 0.5    # share of the original sentence's pitch movement (semitones) given to the dub ...
   delivery_max_st: 1.5   # ... at most this much
-  # delivery tags heard in the original (emotion stage, test-results C22); a reviewer's tags always win
+  # delivery tags heard in the original (emotion stage, test-results C22, C39); a reviewer's tags always win
   auto_tags: true
-  emotion_min: 0.9   # emotion model this sure -> [excited] [angry] [sad]: 82 % of its tags right on CREMA-D (34 % found)
+  emotion_min: 0.9   # emotion2vec+ this sure -> [excited] [angry] [sad] [scared] [surprised] [disgusted]: 93 % of its tags right on CREMA-D (79 % found)
   sound_min: 0.3     # AudioSet probability -> [laugh] [sigh] [gasp] [cough] [whisper]; narration / read speech stayed < 0.2
   # review flags - first guesses, tune on the gold set (test plan T-07)
   min_asr_conf: 0.8  # mean word probability
@@ -45,43 +56,51 @@ ko:
   sentence_end: '[.?!]$|(다|요|까|죠)$'
   join: " "
   tts:
-    engine: chatterbox_ml   # Chatterbox Multilingual (MIT) in .venv-chatterbox, built-in voice only (no prompt = no cloning);
-    voice: built-in         # Whisper round-trip CER 4.1 % vs MMS 15.3 %; 5.1 s per sentence on the RTX 4060 (C9a, 2026-10-15)
+    engine: ming   # ming = Ming-3.0-tts, with CosyVoice 3 for emotions beyond Ming's 7 and sentences Whisper heard off (tts._ming);
+                   # or cosyvoice (CosyVoice 3 alone, C35). Every voice speaks from a recording
+    voice: af_heart
     lang: ko
-    clone: chatterbox_ml   # a consented voice clone (web/clones.py) speaks Korean with Multilingual
-    voices: &chatterbox_voices   # built-in: measured with voice.median_f0, no f/m label. The rest: the English presets speaking Korean (Chatterbox
-              # Multilingual with a Kokoro reference, tts.preset_prompt): Whisper heard 8 Korean sentences as well as the built-in voice
-              # (2.3 % CER) for 20, 3-6 % for bm_daniel, bm_george, af_aoede, af_heart, af_bella; af_alloy left out at first (29 %, babbles
-              # after the sentence). f0 measured on their Korean speech; register = the preset's own label (test-results C24)
-      built-in: {f0: 113, register: lower}
-      <<: &english_presets
-        af_alloy: {f0: 137, register: higher, prompt: kokoro}   # back 2026-10-19 with tts.cut_babble: Korean 29.3 -> 8.1 %, Spanish 4.2 % (C24)
-        af_aoede: {f0: 154, register: higher, prompt: kokoro}
-        af_bella: {f0: 170, register: higher, prompt: kokoro}
-        af_heart: {f0: 170, register: higher, prompt: kokoro}
-        af_jessica: {f0: 177, register: higher, prompt: kokoro}
-        af_kore: {f0: 134, register: higher, prompt: kokoro}
-        af_nova: {f0: 147, register: higher, prompt: kokoro}
-        af_river: {f0: 160, register: higher, prompt: kokoro}
-        af_sarah: {f0: 163, register: higher, prompt: kokoro}
-        af_sky: {f0: 143, register: higher, prompt: kokoro}
-        am_adam: {f0: 111, register: lower, prompt: kokoro}
-        am_echo: {f0: 104, register: lower, prompt: kokoro}
-        am_eric: {f0: 136, register: lower, prompt: kokoro}
-        am_fenrir: {f0: 118, register: lower, prompt: kokoro}
-        am_liam: {f0: 115, register: lower, prompt: kokoro}
-        am_michael: {f0: 114, register: lower, prompt: kokoro}
-        am_onyx: {f0: 91, register: lower, prompt: kokoro}
-        am_puck: {f0: 105, register: lower, prompt: kokoro}
-        bf_alice: {f0: 167, register: higher, prompt: kokoro}
-        bf_emma: {f0: 165, register: higher, prompt: kokoro}
-        bf_isabella: {f0: 174, register: higher, prompt: kokoro}
-        bf_lily: {f0: 160, register: higher, prompt: kokoro}
-        bm_daniel: {f0: 115, register: lower, prompt: kokoro}
-        bm_fable: {f0: 112, register: lower, prompt: kokoro}
-        bm_george: {f0: 124, register: lower, prompt: kokoro}
-        bm_lewis: {f0: 99, register: lower, prompt: kokoro}
-    fallback: {engine: mms, voice: facebook/mms-tts-kor, voices: {facebook/mms-tts-kor: {f0: 170, register: higher}}}   # when .venv-chatterbox is missing; MMS-TTS, CC BY-NC 4.0
+    clone: ming
+    retry_cer: 0.05   # ming: a sentence Whisper hears more than this far off is spoken again by CosyVoice, the better take kept (1 = never)
+    plain: cosyvoice  # ming: plain sentences by CosyVoice, Ming only for emotions - Whisper found 17 of Ming's 42 Korean TED-Ed sentences off (C36)
+    fallback:   # without .venv-cosyvoice: Chatterbox Multilingual, then MMS
+      engine: chatterbox_ml   # Chatterbox Multilingual (MIT) in .venv-chatterbox, built-in voice only (no prompt = no cloning);
+      voice: built-in         # Whisper round-trip CER 4.1 % vs MMS 15.3 %; 5.1 s per sentence on the RTX 4060 (C9a, 2026-10-15)
+      clone: chatterbox_ml   # a consented voice clone (web/clones.py) speaks Korean with Multilingual
+      voices: &chatterbox_voices     # built-in: measured with voice.median_f0, no f/m label. The rest: the English presets speaking Korean (Chatterbox
+                # Multilingual with a Kokoro reference, tts.preset_prompt): Whisper heard 8 Korean sentences as well as the built-in voice
+                # (2.3 % CER) for 20, 3-6 % for bm_daniel, bm_george, af_aoede, af_heart, af_bella; af_alloy left out at first (29 %, babbles
+                # after the sentence). f0 measured on their Korean speech; register = the preset's own label (test-results C24)
+        built-in: {f0: 113, register: lower}
+        <<: &english_presets
+          af_alloy: {f0: 137, register: higher, prompt: kokoro}   # back 2026-10-19 with tts.cut_babble: Korean 29.3 -> 8.1 %, Spanish 4.2 % (C24)
+          af_aoede: {f0: 154, register: higher, prompt: kokoro}
+          af_bella: {f0: 170, register: higher, prompt: kokoro}
+          af_heart: {f0: 170, register: higher, prompt: kokoro}
+          af_jessica: {f0: 177, register: higher, prompt: kokoro}
+          af_kore: {f0: 134, register: higher, prompt: kokoro}
+          af_nova: {f0: 147, register: higher, prompt: kokoro}
+          af_river: {f0: 160, register: higher, prompt: kokoro}
+          af_sarah: {f0: 163, register: higher, prompt: kokoro}
+          af_sky: {f0: 143, register: higher, prompt: kokoro}
+          am_adam: {f0: 111, register: lower, prompt: kokoro}
+          am_echo: {f0: 104, register: lower, prompt: kokoro}
+          am_eric: {f0: 136, register: lower, prompt: kokoro}
+          am_fenrir: {f0: 118, register: lower, prompt: kokoro}
+          am_liam: {f0: 115, register: lower, prompt: kokoro}
+          am_michael: {f0: 114, register: lower, prompt: kokoro}
+          am_onyx: {f0: 91, register: lower, prompt: kokoro}
+          am_puck: {f0: 105, register: lower, prompt: kokoro}
+          bf_alice: {f0: 167, register: higher, prompt: kokoro}
+          bf_emma: {f0: 165, register: higher, prompt: kokoro}
+          bf_isabella: {f0: 174, register: higher, prompt: kokoro}
+          bf_lily: {f0: 160, register: higher, prompt: kokoro}
+          bm_daniel: {f0: 115, register: lower, prompt: kokoro}
+          bm_fable: {f0: 112, register: lower, prompt: kokoro}
+          bm_george: {f0: 124, register: lower, prompt: kokoro}
+          bm_lewis: {f0: 99, register: lower, prompt: kokoro}
+      fallback: {engine: mms, voice: facebook/mms-tts-kor, voices: {facebook/mms-tts-kor: {f0: 170, register: higher}}}   # when .venv-chatterbox is missing; MMS-TTS, CC BY-NC 4.0
+    voices: *english_presets   # CosyVoice: the English presets' recordings; f0 measured on Chatterbox's Korean (C24)
 
 en:
   name: English
@@ -90,10 +109,16 @@ en:
   sentence_end: '[.?!]$'
   join: " "
   tts:
-    engine: kokoro
+    engine: ming   # ming or cosyvoice (see ko); the Kokoro presets are their reference recordings (tts.preset_prompt)
     voice: af_heart   # used when voice matching has no library
-    clone: chatterbox        # a consented voice clone (web/clones.py) speaks English with Turbo
-    expressive: chatterbox   # whole video switches to Chatterbox Turbo (built-in voice) when a reviewer adds a vocal tag it can do; needs .venv-chatterbox
+    clone: ming
+    retry_cer: 0.05
+    base: cosyvoice
+    passes: 1
+    fallback:   # without .venv-cosyvoice
+      engine: kokoro
+      clone: chatterbox        # a consented voice clone (web/clones.py) speaks English with Turbo
+      expressive: chatterbox   # whole video switches to Chatterbox Turbo (built-in voice) when a reviewer adds a vocal tag it can do; needs .venv-chatterbox
     voices:   # measured median pitch (scripts/tag_voices.py); register = the preset's own f/m label, not pitch
       # left out: af_nicole (whispering style), am_santa (novelty voice)
       af_alloy: {f0: 138, register: higher}
@@ -273,3 +298,39 @@ zh:
   sentence_end: '[。？！.?!]$'
   join: ""
   tts: {engine: chatterbox_ml, voice: built-in, lang: zh, clone: chatterbox_ml, voices: *chatterbox_voices}
+
+# Central Asian languages Chatterbox does not speak: free models measured on FLEURS dev, 20 sentences each (test-results C43)
+uz:
+  name: Uzbek
+  whisper: uz
+  asr_model: islomov/rubaistt_v2_medium   # Apache-2.0 Whisper fine-tune, converted once for faster-whisper (asr.whisper_model): CER 3.1 % vs 25.2 % large-v3
+  nllb: uzn_Latn   # Latin script, which Navoiy reads
+  sentence_end: '[.?!]$'
+  join: " "
+  tts:
+    engine: navoiy   # Navoiy TTS (Apache-2.0): CosyVoice 2 + Uzbek weights, in .venv-cosyvoice; round-trip CER 3.1 %, 10 trained emotions
+    voice: af_heart
+    lang: uz
+    clone: navoiy
+    voices: *english_presets   # their Kokoro recordings are the reference voices, as for Korean
+    fallback: {engine: mms, voice: facebook/mms-tts-uzb-script_cyrillic, lang: uz,   # without .venv-cosyvoice; reads Cyrillic (uzbek.to_cyrillic), 2.7 % CER; CC BY-NC 4.0
+               voices: {facebook/mms-tts-uzb-script_cyrillic: {f0: 115, register: lower}}}
+kk:
+  name: Kazakh
+  whisper: kk
+  asr_model: large-v3-turbo   # CER 3.7 % vs 5.8 % for large-v3
+  nllb: kaz_Cyrl
+  sentence_end: '[.?!]$'
+  join: " "
+  tts:   # Piper (MIT), ISSAI voice (CC BY 4.0), CPU: round-trip CER 7.3 % vs MMS 11.7 %. No reference recording: no cloning, no acted emotions
+    engine: piper
+    model: kk/kk_KZ/issai/high/kk_KZ-issai-high
+    voice: issai-0
+    lang: kk
+    voices:   # its 6 speakers; f0 measured on 3 FLEURS sentences each
+      issai-0: {f0: 138, register: higher, name: Kazakh 1, accent: Piper}
+      issai-1: {f0: 114, register: lower, name: Kazakh 2, accent: Piper}
+      issai-2: {f0: 204, register: higher, name: Kazakh 3, accent: Piper}
+      issai-3: {f0: 202, register: higher, name: Kazakh 4, accent: Piper}
+      issai-4: {f0: 204, register: higher, name: Kazakh 5, accent: Piper}
+      issai-5: {f0: 174, register: higher, name: Kazakh 6, accent: Piper}

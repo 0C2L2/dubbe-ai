@@ -18,7 +18,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     segs, total = data["segments"], video_duration(video)
     todo = []
     for i, s in enumerate(segs):
-        slot = (segs[i + 1]["start"] if i + 1 < len(segs) else total) - s["start"]
+        slot = (segs[i + 1]["start"] + cfg["max_late"] if i + 1 < len(segs) else total) - s["start"]  # as timing.place
         s["shortened"] = False
         if s["edited"] or not s.get("alts") or s["tts_dur"] <= slot * cfg["max_stretch"] * cfg["max_video_slow"]:
             continue

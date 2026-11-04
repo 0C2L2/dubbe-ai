@@ -31,6 +31,27 @@ def test_delay_does_not_accumulate():
 
 
 
+def test_a_little_long_dub_ends_late_instead_of_speeding_up():
+    s = place(segs((0, 5.5), (5, 2.0)), total=10, max_stretch=1.3, late=1.0)
+    assert s[0]["stretch"] == 1.0 and s[0]["overflow"] == 0  # 0.5 s past the next start: allowed, not sped up
+    assert s[1]["placed_start"] == 5.5  # ... and the next one waits for it
+    s = place(segs((0, 6.6), (5, 2.0)), total=10, max_stretch=1.3, late=1.0)
+    assert s[0]["stretch"] == 1.1  # more than 1 s over: sped up only for the rest
+    assert place(segs((0, 2.0), (5, 5.5)), total=10, max_stretch=1.3, late=1.0)[1]["stretch"] == 1.1  # the last: no late
+    s = place(segs((0, 5.8), (5, 5.8), (10, 1.0), (20, 1.0)), total=30, max_stretch=1.3, late=1.0)
+    assert s[1]["placed_start"] == 5.8 and s[1]["stretch"] > 1.0  # starts 0.8 late: only 0.2 s left to borrow
+    assert s[2]["placed_start"] - s[2]["out_start"] <= 1.0  # back-to-back lines never fall more than 1 s behind
+
+
+def test_short_dub_is_slowed_towards_the_speaker():
+    a = [{"start": 0, "end": 4.0, "tts_dur": 3.6}, {"start": 5, "end": 9.0, "tts_dur": 2.0}, {"start": 10, "end": 11, "tts_dur": 1.5}]
+    s = place(a, total=12, max_stretch=1.3, min_stretch=0.85)
+    assert s[0]["stretch"] == 0.9    # 3.6 s of dub for 4 s of talking: played at 0.9x, ends with the speaker
+    assert s[1]["stretch"] == 0.85   # far shorter: slowed only as far as min_stretch
+    assert s[2]["stretch"] == 1.0    # longer than the talking but fits the slot: unchanged
+    assert place(a, total=12, max_stretch=1.3)[0]["stretch"] == 1.0  # default: never slowed
+
+
 def test_video_slowing_shares_the_extra_time():
     # needs 1.44x: picture slows 1.2x, speech speeds up 1.2x instead of 1.44x
     s = place(segs((0, 7.2), (5, 1.0)), total=10, max_stretch=1.3, max_slow=1.2)

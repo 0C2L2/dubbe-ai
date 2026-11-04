@@ -69,7 +69,7 @@ def text_to_speech(p: dict, out: Path, owner=None) -> dict:
         parts, info, sr = [], [], 24000
         for i, ((x, k, unknown), (audio, sr)) in enumerate(zip(sents, ENGINES[tts["engine"]](texts, tts))):
             f = out / f"s{i}.wav"
-            finish(f, trim(audio), sr, k)
+            finish(f, trim(audio), sr, k, tts["engine"])
             a, sr = sf.read(f, dtype="float32")
             f.unlink()
             parts += [a, np.zeros(int(.35 * sr), dtype="float32")]
@@ -92,7 +92,7 @@ def speech_to_text(p: dict, out: Path, video: Path) -> dict:
     cfg = config.load(p["src"], to or ("en" if p["src"] == "ko" else "ko"))
     cfg["keep_background"] = False
     who = p.get("speakers")
-    for stage in (extract, asr) + ((diarize,) if who else ()) + (segment,) + ((speakers,) if who else ()) + ((translate,) if to else ()):
+    for stage in (extract,) + ((diarize,) if who else ()) + (asr, segment) + ((speakers,) if who else ()) + ((translate,) if to else ()):
         stage.run(video, out, cfg)
     data = read_json(out / "segments.json")
     segs, names = data["segments"], {k: v.get("name") for k, v in (data.get("speakers") or {}).items()}
@@ -113,24 +113,79 @@ def find_speakers(p: dict, out: Path, video: Path) -> dict:
     from .. import asr, diarize, extract, segment, separate, speakers
     cfg = config.load(p["src"], "en" if p["src"] == "ko" else "ko")
     cfg.update(keep_background=True, keep_voice_hq=True)
-    for stage in (extract, separate, asr, diarize, segment, speakers):
+    for stage in (extract, separate, diarize, asr, segment, speakers):
         stage.run(video, out, cfg)
     data = read_json(out / "segments.json")
     data["speakers"], data["duration"] = data.get("speakers") or {}, sf.info(out / "audio.wav").duration
-    x, sr = sf.read(out / "vocals44.wav", dtype="float32")
-    for sp in data["speakers"]:  # their longest sentence, at most 12 s
-        s = max((s for s in data["segments"] if s["speaker"] == sp), key=lambda s: s["end"] - s["start"])
-        sf.write(out / f"{sp}.wav", x[int(s["start"] * sr):int(min(s["end"], s["start"] + 12) * sr)], sr)
-        ffmpeg("-i", str(out / f"{sp}.wav"), "-b:a", "128k", str(out / f"{sp}.mp3"))
-        (out / f"{sp}.wav").unlink()
+    speaker_clips(out, data)
     write_json(out / "segments.json", data)
     for f in ("audio.wav", "original.wav", "background.wav", "vocals.wav"):
         (out / f).unlink(missing_ok=True)
     return speaker_files(out)
 
 
+def speaker_clips(out: Path, data: dict) -> None:
+    """A clip of each speaker to listen to: their longest sentence, at most 12 s, from the full-quality voice."""
+    x, sr = sf.read(out / "vocals44.wav", dtype="float32")
+    for sp in data["speakers"]:
+        s = max((s for s in data["segments"] if s["speaker"] == sp), key=lambda s: s["end"] - s["start"], default=None)
+        if s is None:
+            continue
+        sf.write(out / f"{sp}.wav", x[int(s["start"] * sr):int(min(s["end"], s["start"] + 12) * sr)], sr)
+        ffmpeg("-y", "-i", str(out / f"{sp}.wav"), "-b:a", "128k", str(out / f"{sp}.mp3"))
+        (out / f"{sp}.wav").unlink()
+
+
+def sentence_words(segs: list[dict], words: list[dict]) -> list[list[int]]:
+    """Which words (indices into words.json) each sentence holds: a word belongs to the last sentence starting at or
+    before it, if it ends inside that sentence."""
+    out, k = [[] for _ in segs], 0
+    for i, w in enumerate(words):
+        while k + 1 < len(segs) and segs[k + 1]["start"] <= w["start"] + 1e-3:
+            k += 1
+        if segs and segs[k]["start"] - 1e-3 <= w["start"] and w["end"] <= segs[k]["end"] + 1e-3:
+            out[k].append(i)
+    return out
+
+
+def edit_speakers(out: Path, parts: list[dict]) -> dict:
+    """A person's fix of who said what (Speaker Detection review): `parts` is the whole transcript again, in order -
+    [{"speaker": "S1" or "new", "words": [word indices]}] - after moving words between sentences, splitting or
+    joining sentences, or giving a sentence to another speaker. Every word must appear exactly once, in order, so
+    nothing can be lost or duplicated. The sentences are rebuilt from the words, the result is marked as a person's
+    (`speakers_edited`: a re-run never overwrites it) and the files and clips are written again."""
+    data, words = read_json(out / "segments.json"), read_json(out / "words.json")["words"]
+    before = [i for idx in sentence_words(data["segments"], words) for i in idx]
+    if not parts or [i for p in parts for i in p.get("words", [])] != before or any(not p.get("words") for p in parts):
+        raise ValueError("every word must stay, exactly once and in order")
+    spk = data["speakers"]
+    new_id = f"S{max((int(k[1:]) for k in spk if k[1:].isdigit()), default=0) + 1}"
+    src = data.get("src") or "en"
+    join = config.load(src, "ko" if src == "en" else "en")["src"].get("join", " ")
+    segs = []
+    for n, p in enumerate(parts, 1):
+        sp = new_id if p.get("speaker") == "new" else p.get("speaker")
+        if sp not in spk and sp != new_id:
+            raise ValueError(f"unknown speaker {sp}")
+        ws = [words[i] for i in p["words"]]
+        sc = [w["score"] for w in ws if "score" in w]
+        segs.append({"id": n, "start": ws[0]["start"], "end": ws[-1]["end"], "speaker": sp, "src_text": join.join(w["w"] for w in ws),
+                     "asr_conf": round(sum(sc) / len(sc), 3) if sc else None})
+    if any(s["speaker"] == new_id for s in segs):
+        spk[new_id] = {"name": f"Speaker {new_id[1:]}"}
+    used = {s["speaker"] for s in segs}
+    data["speakers"] = {k: {**v, "maybe_same": [x for x in v.get("maybe_same", []) if x in used and x != k]}
+                        for k, v in spk.items() if k in used}
+    data.update(segments=segs, speakers_edited=True)
+    if (out / "vocals44.wav").exists():
+        speaker_clips(out, data)
+    write_json(out / "segments.json", data)
+    return speaker_files(out)
+
+
 def speaker_files(out: Path) -> dict:
-    """Transcript and subtitles with the speakers' names, and the task's result. Runs again after a rename."""
+    """Transcript and subtitles with the speakers' names, and the task's result. Runs again after a rename or an edit.
+    Each sentence carries its words (index, text) so the review can move words between sentences."""
     data = read_json(out / "segments.json")
     segs, spk = data["segments"], data["speakers"]
     named = segs if len(spk) < 2 else [{**s, "src_text": f"{spk[s['speaker']]['name']}: {s['src_text']}"} for s in segs]
@@ -138,11 +193,16 @@ def speaker_files(out: Path) -> dict:
              "transcript.vtt": subtitles(named, "src_text", vtt=True)}
     for name, text in files.items():
         (out / name).write_text(text, encoding="utf8")
+    words = read_json(out / "words.json")["words"] if (out / "words.json").exists() else []
+    idx = sentence_words(segs, words) if words else [[] for _ in segs]
     talk = {sp: sum(s["end"] - s["start"] for s in segs if s["speaker"] == sp) for sp in spk}
-    return {"duration": data["duration"],
+    return {"duration": data["duration"], "edited": bool(data.get("speakers_edited")),
             "speakers": [{"id": sp, "name": v["name"], "seconds": round(talk[sp], 1), "sentences": sum(s["speaker"] == sp for s in segs),
-                          "share": round(100 * talk[sp] / (sum(talk.values()) or 1))} for sp, v in spk.items()],
-            "sentences": [{"start": s["start"], "end": s["end"], "speaker": s["speaker"], "text": s["src_text"]} for s in segs],
+                          "share": round(100 * talk[sp] / (sum(talk.values()) or 1)), "maybe_same": v.get("maybe_same", [])}
+                         for sp, v in spk.items()],
+            "sentences": [{"start": s["start"], "end": s["end"], "speaker": s["speaker"], "text": s["src_text"],
+                           "flag": bool(s.get("speaker_flag")), "words": [[i, words[i]["w"], words[i]["start"]] for i in ix]}
+                          for s, ix in zip(segs, idx)],
             "files": list(files) + [f"{sp}.mp3" for sp in spk]}
 
 
@@ -150,7 +210,7 @@ def captions(p: dict, out: Path, tid: int) -> dict:
     """Subtitles as a service: speech recognition, speakers told apart (on the separated voice), an optional translation,
     and captions coloured by speaker. A dub's captions come from its project instead (p["project"]: its sentences, timed
     to the dubbed video). Burning them into the video is a second step, after the speakers are named (p["burn"])."""
-    from .. import asr, extract, segment, separate, speakers, translate
+    from .. import asr, diarize, extract, segment, separate, speakers, translate
     if not (out / "segments.json").exists():
         if p.get("project"):
             shutil.copy(project_work(p["project"]) / "segments.json", out / "segments.json")
@@ -158,7 +218,7 @@ def captions(p: dict, out: Path, tid: int) -> dict:
             to = p.get("to") or ""
             cfg = config.load(p["src"], to or ("en" if p["src"] == "ko" else "ko"))
             cfg["keep_background"] = True
-            for stage in (extract, separate, asr, segment, speakers) + ((translate,) if to else ()):
+            for stage in (extract, separate, diarize, asr, segment, speakers) + ((translate,) if to else ()):
                 stage.run(media(tid), out, cfg)
             for f in ("audio.wav", "original.wav", "background.wav", "vocals.wav"):
                 (out / f).unlink(missing_ok=True)

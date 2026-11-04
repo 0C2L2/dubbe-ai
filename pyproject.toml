@@ -11,7 +11,7 @@ dependencies = ["pyyaml", "numpy", "soundfile", "scipy", "num2words"]
 
 [project.optional-dependencies]
 # versions verified together on 2026-10-05 (Python 3.12, torch 2.8.0+cu128, RTX 4060); torch is installed separately for CUDA, see README
-models = ["faster-whisper==1.2.1", "transformers==5.18.0", "sentencepiece==0.2.2", "kokoro==0.9.4", "uroman", "demucs==4.1.0"]
+models = ["faster-whisper==1.2.1", "transformers==5.18.0", "sentencepiece==0.2.2", "kokoro==0.9.4", "uroman", "demucs==4.1.0", "funasr==1.4.21", "piper-tts==1.8.0"]
 gui = ["gradio==6.29.1"]  # local web page: dubbe-gui
 web = ["fastapi==0.142.4", "uvicorn==0.54.0", "jinja2==3.1.6", "python-multipart==0.0.32", "cryptography==46.0.1"]  # the website: dubbe-web
 eval = ["sacrebleu==2.6.0"]  # scripts/eval_propagation.py

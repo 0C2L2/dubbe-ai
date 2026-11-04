@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 
 from dubbe import config, tts
@@ -14,6 +16,8 @@ def test_cut_tail_keeps_pauses_and_cuts_after_the_last_speech(monkeypatch):
 
 
 def test_korean_voice_falls_back_to_mms_without_chatterbox(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "MING_PY", tmp_path / "missing.exe")  # the voices before Ming / CosyVoice
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path / "missing.exe")
     cfg = config.load("en", "ko")
     data = {"segments": [], "speakers": {"S1": {"voice": "built-in"}}}
     monkeypatch.setattr(tts, "CHATTERBOX_PY", tmp_path / "missing.exe")
@@ -23,6 +27,8 @@ def test_korean_voice_falls_back_to_mms_without_chatterbox(monkeypatch, tmp_path
 
 
 def test_english_question_switches_to_the_expressive_voice(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "MING_PY", tmp_path / "missing.exe")  # the voices before Ming / CosyVoice
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path / "missing.exe")
     cfg = config.load("ko", "en")
     monkeypatch.setattr(tts, "CHATTERBOX_PY", tmp_path)  # exists
     asked = {"segments": [{"tags": ["question"]}], "speakers": {"S1": {"voice": "af_heart"}}}
@@ -33,6 +39,8 @@ def test_english_question_switches_to_the_expressive_voice(monkeypatch, tmp_path
 
 
 def test_clone_speaks_only_with_its_recording(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "MING_PY", tmp_path / "missing.exe")  # the voices before Ming / CosyVoice
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path / "missing.exe")
     from dubbe.web.clones import cer
     monkeypatch.setattr(tts, "CHATTERBOX_PY", tmp_path)  # exists
     data = {"segments": [], "speakers": {"S1": {"voice": "clone:7"}}}
@@ -46,6 +54,8 @@ def test_clone_speaks_only_with_its_recording(monkeypatch, tmp_path):
 
 
 def test_english_preset_speaks_korean_through_chatterbox_with_its_reference(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "MING_PY", tmp_path / "missing.exe")  # the voices before Ming / CosyVoice
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path / "missing.exe")
     cfg = config.load("en", "ko")
     cfg["tgt"]["tts"]["voices"]["af_heart"] = {"f0": 150, "register": "higher", "prompt": "kokoro"}
     data = {"segments": [], "speakers": {"S1": {"voice": "af_heart"}}}
@@ -57,11 +67,33 @@ def test_english_preset_speaks_korean_through_chatterbox_with_its_reference(monk
     assert tts.tts_cfg(data, cfg)["engine"] == "mms"  # without Chatterbox: the Korean fallback voice
 
 
+def test_korean_and_english_speak_from_a_recording(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "MING_PY", tmp_path)  # exists
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path)
+    monkeypatch.setattr(tts, "preset_prompt", lambda v: tmp_path / f"{v}.wav")
+    data = {"segments": [{"tags": ["question"]}], "speakers": {"S1": {"voice": "am_michael"}, "S2": {"voice": "clone:7"}}}
+    prompt = tmp_path / "voice_prompt.wav"
+    prompt.write_bytes(b"RIFF")
+    for engine in tts.PROMPTED:  # Ming (the setting now) and CosyVoice
+        for src, tgt in [("ko", "en"), ("en", "ko")]:
+            cfg = config.load(src, tgt)
+            cfg["tgt"]["tts"].update(engine=engine, clone=engine)
+            c = tts.tts_cfg(data, cfg)
+            assert c["engine"] == engine and c["voice"] == "am_michael" and c["prompt"].endswith("am_michael.wav")
+            c = tts.tts_cfg(data, cfg, prompt, "S2")
+            assert c["engine"] == engine and c["prompt"] == str(prompt)  # a consented clone, same engine
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path / "missing.exe")  # Ming hands lines to CosyVoice
+    monkeypatch.setattr(tts, "MING_PY", tmp_path / "missing.exe")
+    plain = {"segments": [{"tags": []}], "speakers": {"S1": {"voice": "am_michael"}}}
+    assert tts.tts_cfg(plain, config.load("ko", "en"))["engine"] == "kokoro"  # no base environment: the earlier voices
+
+
 def test_every_language_loads_with_its_codes_and_voices():
     import yaml
     from pathlib import Path
     langs = [k for k in yaml.safe_load((Path(config.__file__).parent / "languages.yaml").read_text(encoding="utf8")) if k != "defaults"]
-    assert len(langs) == 22 and "no" in langs and "he" not in langs  # a bare `no:` would be YAML's false; Hebrew failed (C25)
+    assert len(langs) == 24 and "no" in langs and "he" not in langs  # a bare `no:` would be YAML's false; Hebrew failed (C25)
+    assert {"uz", "kk"} <= set(langs)  # free Central Asian voices (C43)
     for code in langs:
         tgt = config.load("ko" if code == "en" else "en", code)["tgt"]
         assert tgt["tts"]["engine"] in tts.ENGINES and isinstance(tgt["whisper"], str) and "_" in tgt["nllb"]
@@ -79,3 +111,81 @@ def test_babble_after_the_sentence_is_cut_but_a_misheard_word_is_not():
     assert tts.babble_cut([("Merci", .4), (" beaucoup", .9), (" Paula.", 1.3)], "Merci beaucoup pour l'offre.") is None
     assert tts.babble_cut(heard[:10], said) is None  # nothing after the sentence
     assert tts.babble_cut([("[laugh]", .2), ("Ha", .5)], "[laugh] Ha") is None
+
+
+def test_ming_hands_cosyvoice_what_it_cannot_say(monkeypatch, tmp_path):
+    from dubbe.tags import text_for_tts
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path)  # exists
+    calls = []
+
+    def speak(texts, cfg):
+        calls.append((cfg["engine"], texts))
+        return iter([(np.full(4, len(calls), "float32"), 44100 if cfg["engine"] == "ming" else 24000)] * len(texts))
+    monkeypatch.setattr(tts, "_prompted", speak)
+    errs = iter([[0.0, 0.3, 0.0], [0.1]])  # Whisper: Ming's 2nd sentence 30 % off; CosyVoice's take of it 10 %
+    monkeypatch.setattr(tts, "word_errors", lambda clips, texts, lang: next(errs))
+    texts = [text_for_tts("Hi.", [], "ming"), text_for_tts("Oh no.", ["sad"], "ming"),
+             text_for_tts("I am sorry.", ["sympathetic"], "ming")]
+    out = list(tts._ming(texts, {"engine": "ming", "prompt": "p.wav"}))
+    assert calls == [("ming", ["Hi.", "悲伤<|endofprompt|>Oh no."]),  # Ming: what it can do
+                     ("cosyvoice", ["Please speak gently and warmly, with deep sympathy.<|endofprompt|>I am sorry."]),  # beyond Ming
+                     ("cosyvoice", ["Please speak sadly, in a low and slow voice.<|endofprompt|>Oh no."])]  # off: again, same emotion
+    assert [round(float(c[0][0])) for c in out] == [1, 3, 2] and {c[1] for c in out} == {44100}  # better take, one rate
+
+    calls.clear()
+    errs = iter([[0.3, 0.0], [0.4]])  # Korean: CosyVoice speaks plain lines and is checked too; a worse retry keeps the first
+    texts = [text_for_tts("안녕.", [], "ming"), text_for_tts("싫어.", ["angry"], "ming")]
+    out = list(tts._ming(texts, {"engine": "ming", "prompt": "p.wav", "plain": "cosyvoice"}))
+    assert calls == [("ming", ["愤怒<|endofprompt|>싫어."]), ("cosyvoice", ["안녕."]), ("cosyvoice", ["안녕."])]
+    assert [round(float(c[0][0])) for c in out] == [2, 1]
+
+    voices = []  # two speakers in one call: every part of the hybrid keeps each sentence's own recording
+    monkeypatch.setattr(tts, "_prompted", lambda texts, cfg: voices.append(cfg["prompts"]) or speak(texts, cfg))
+    errs = iter([[0.0, 0.0]])
+    list(tts._ming([text_for_tts("안녕.", [], "ming"), text_for_tts("싫어.", ["angry"], "ming")],
+                   {"engine": "ming", "prompts": ["a.wav", "b.wav"], "plain": "cosyvoice"}))
+    assert voices == [["b.wav"], ["a.wav"]]
+
+
+def test_uzbek_speaks_with_navoiy_and_kazakh_never_clones(monkeypatch, tmp_path):
+    import json
+    import subprocess
+    import soundfile as sf
+    sent = {}
+
+    def run(cmd, input, **kw):  # the worker: write a wav per item, as cosyvoice_worker.py would
+        sent.update(cmd=cmd, job=json.loads(input))
+        for it in sent["job"]["items"]:
+            sf.write(it["out"], np.zeros(10, "float32"), 24000)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(tts.subprocess, "run", run)
+    from dubbe.tags import text_for_tts
+    texts = [text_for_tts("Salom.", [], "navoiy", "uz"), text_for_tts("Yo'q.", ["sad"], "navoiy", "uz")]
+    list(tts._prompted(texts, {"engine": "navoiy", "prompt": "p.wav"}))
+    items = sent["job"]["items"]
+    assert sent["cmd"][-1].endswith("cosyvoice_worker.py") and sent["job"]["llm"] == list(tts.NAVOIY_LLM)
+    assert sent["job"]["model"] == tts.NAVOIY_MODEL and items[0]["instruct"].startswith("Speak in a calm")  # plain: calm
+    assert items[1]["text"] == "Yo'q." and items[1]["instruct"].startswith("Speak in a sad")
+
+    monkeypatch.setattr(tts, "CHATTERBOX_PY", tmp_path)  # exists: before the fix this sent a Kazakh clone to tts["clone"]
+    prompt = tmp_path / "voice_prompt.wav"
+    prompt.write_bytes(b"RIFF")
+    data = {"segments": [{"tags": []}], "speakers": {"S1": {"voice": "clone:7"}}}
+    c = tts.tts_cfg(data, config.load("en", "kk"), prompt)
+    assert c["engine"] == "piper" and c["voice"] == "issai-0"  # no voice speaks Kazakh from a recording: the default
+
+
+def test_every_speaker_is_spoken_in_one_call(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "MING_PY", tmp_path)  # exists
+    monkeypatch.setattr(tts, "COSYVOICE_PY", tmp_path)
+    monkeypatch.setattr(tts, "preset_prompt", lambda v: tmp_path / f"{v}.wav")
+    calls = []
+    monkeypatch.setitem(tts.ENGINES, "ming", lambda texts, c: calls.append(c["prompts"]) or
+                        iter([(np.zeros(2, "float32"), 44100)] * len(texts)))
+    data = {"segments": [{"id": 1, "speaker": "S1"}, {"id": 2, "speaker": "S2"}, {"id": 3, "speaker": "S1"}],
+            "speakers": {"S1": {"voice": "am_michael"}, "S2": {"voice": "af_bella"}}}
+    out = list(tts.synth(data, config.load("ko", "en"), tmp_path, [(s, f"Line {s['id']}.") for s in data["segments"]]))
+    a, b = str(tmp_path / "am_michael.wav"), str(tmp_path / "af_bella.wav")
+    assert calls == [[a, a, b]]  # one load for both speakers (KOR news: 5 speakers were 5 loads)
+    assert [(s["id"], sp, t["voice"]) for s, _, _, t, sp in out] == [(1, "S1", "am_michael"), (3, "S1", "am_michael"),
+                                                                    (2, "S2", "af_bella")]

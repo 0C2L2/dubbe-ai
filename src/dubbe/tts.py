@@ -11,10 +11,27 @@ import numpy as np
 import soundfile as sf
 
 from . import device, ffmpeg, free_gpu, read_json, write_json
-from .tags import VOCAL_TOKENS, not_performed, shape_audio, speed, text_for_tts
+from .tags import INSTRUCT_END, MING_TO_COSY, NAVOIY_CALM, VOCAL_TOKENS, dubbe_tags, not_performed, shape_audio, speed, text_for_tts
 
 # Chatterbox pins torch 2.6 / numpy < 2, so it lives in its own environment next to .venv (see README)
 CHATTERBOX_PY = Path(__file__).parents[2] / ".venv-chatterbox" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+# CosyVoice 3 pins torch 2.3: its own environment too, with its code checked out in .cosyvoice (README)
+COSYVOICE_PY = Path(__file__).parents[2] / ".venv-cosyvoice" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+COSYVOICE_REPO = Path(__file__).parents[2] / ".cosyvoice"
+COSYVOICE_MODEL = "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+# Ming-3.0-tts pins torch 2.6 / transformers 4.46: its own environment, its code checked out in .ming (README)
+MING_PY = Path(__file__).parents[2] / ".venv-ming" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+MING_REPO = Path(__file__).parents[2] / ".ming"
+MING_MODEL = "inclusionAI/Ming-3.0-tts-0.5B"
+# Navoiy TTS (Uzbek, Apache-2.0): CosyVoice 2 with its own LLM weights, run by cosyvoice_worker.py in .venv-cosyvoice (C43)
+NAVOIY_MODEL, NAVOIY_LLM = "FunAudioLLM/CosyVoice2-0.5B", ("aisha-org/navoiy-tts", "emotion_600h_joint.pt")
+PROMPTED = ("cosyvoice", "ming", "navoiy")  # engines that speak every voice from a reference recording
+
+
+def env_py(engine: str) -> Path | None:
+    """The Python of an engine that runs in its own environment (None: it runs in .venv)."""
+    return {"cosyvoice": COSYVOICE_PY, "navoiy": COSYVOICE_PY, "ming": MING_PY, "chatterbox": CHATTERBOX_PY,
+            "chatterbox_ml": CHATTERBOX_PY}.get(engine)
 
 
 def _kokoro(texts: list[str], tts: dict):
@@ -43,6 +60,20 @@ def _mms(texts: list[str], tts: dict):
             yield model(**ids).waveform[0].cpu().numpy(), model.config.sampling_rate
 
 
+def _piper(texts: list[str], tts: dict):
+    # Piper (MIT) voices from rhasspy/piper-voices, CPU. Kazakh: kk_KZ-issai-high (ISSAI corpus, CC BY 4.0), 6 speakers -
+    # voice "issai-<n>" is speaker n; FLEURS round-trip CER 7.3 % vs MMS 11.7 % (C43). No reference recording: no cloning
+    from huggingface_hub import hf_hub_download
+    from piper import PiperVoice, SynthesisConfig
+
+    hf_hub_download("rhasspy/piper-voices", tts["model"] + ".onnx.json")
+    voice = PiperVoice.load(hf_hub_download("rhasspy/piper-voices", tts["model"] + ".onnx"))
+    cfg = SynthesisConfig(speaker_id=int(tts["voice"].rsplit("-", 1)[1]))
+    for text in texts:
+        chunks = list(voice.synthesize(text, syn_config=cfg)) if text.strip() else []
+        yield (np.concatenate([c.audio_float_array for c in chunks]) if chunks else np.zeros(1, "float32")), voice.config.sample_rate
+
+
 def _chatterbox(texts: list[str], tts: dict):
     # Chatterbox (MIT): Turbo for English, Multilingual for tts["lang"]; the built-in voice or a reference recording.
     # Run by chatterbox_worker.py in .venv-chatterbox. -I: the worker's folder (src/dubbe) must not shadow that environment
@@ -60,8 +91,99 @@ def _chatterbox(texts: list[str], tts: dict):
     yield from cut_babble(clips, texts, tts.get("lang", "en"))
 
 
+def _prompted(texts: list[str], tts: dict):
+    # CosyVoice 3 (Apache-2.0) or Ming-3.0-tts (MIT), run by <engine>_worker.py in its own environment: every sentence in
+    # the voice of tts["prompt"]; an instruction in front ("<instruction><|endofprompt|>...", tags.text_for_tts) sets the emotion
+    # Navoiy (Uzbek) is CosyVoice 2 with its own weights: the CosyVoice worker, calm when the sentence has no emotion
+    repo, model = {"cosyvoice": (COSYVOICE_REPO, COSYVOICE_MODEL), "navoiy": (COSYVOICE_REPO, NAVOIY_MODEL),
+                   "ming": (MING_REPO, MING_MODEL)}[tts["engine"]]
+    navoiy = tts["engine"] == "navoiy"
+    prompts = tts.get("prompts") or [tts["prompt"]] * len(texts)  # one recording per sentence: several speakers, one load
+    with tempfile.TemporaryDirectory() as tmp:
+        items = [{"text": t.rpartition(INSTRUCT_END)[2], "instruct": t.rpartition(INSTRUCT_END)[0] or (NAVOIY_CALM if navoiy else ""),
+                  "prompt_wav": p, "out": str(Path(tmp) / f"{i}.wav")} for i, (t, p) in enumerate(zip(texts, prompts))]
+        worker = Path(__file__).with_name("cosyvoice_worker.py" if navoiy else f"{tts['engine']}_worker.py")
+        p = subprocess.run([str(env_py(tts["engine"])), "-I", "-X", "utf8", str(worker)],
+                           input=json.dumps({"repo": str(repo), "model": model, "items": items, **({"llm": NAVOIY_LLM} if navoiy else {})}),
+                           capture_output=True, text=True, encoding="utf8", errors="replace")
+        if p.returncode != 0:
+            raise SystemExit(f"{tts['engine']} failed: " + ((p.stderr.strip().splitlines() or ["no output"])[-1]))
+        clips = [sf.read(it["out"], dtype="float32") for it in items]
+    yield from clips
+
+
+def word_errors(clips: list[tuple[np.ndarray, int]], texts: list[str], lang: str) -> list[float]:
+    """How far off its text Whisper (large-v3) heard each clip: 1 - difflib ratio on the letters (0 = every word)."""
+    import torch  # noqa: F401 - loads the CUDA DLLs (cublas) that ctranslate2 needs on Windows
+    from faster_whisper import WhisperModel
+
+    dev = device()
+    model = WhisperModel("large-v3", device=dev, compute_type="float16" if dev == "cuda" else "int8")
+    errs = []
+    for (audio, sr), text in zip(clips, texts):
+        x = np.interp(np.arange(0, len(audio), sr / 16000), np.arange(len(audio)), audio).astype("float32")
+        heard = "".join(s.text for s in model.transcribe(x, language=lang or None, condition_on_previous_text=False)[0])
+        errs.append(1 - difflib.SequenceMatcher(None, _letters(text), _letters(heard)).ratio())
+    del model
+    free_gpu()
+    return errs
+
+
+def _ming(texts: list[str], tts: dict):
+    # Ming-3.0-tts speaks; CosyVoice 3 speaks what Ming cannot or should not: an emotion beyond Ming's 7 (its instruction
+    # is then CosyVoice's sentence, tags.EMOTIONS) and plain sentences when tts["plain"] is "cosyvoice" (Korean: Whisper found
+    # 17 of Ming's 42 TED-Ed sentences off, C36). Then every sentence Whisper hears more than tts["retry_cer"] off is said
+    # once more by CosyVoice (CosyVoice varies too: the TED-Ed URL line 4 % off in C35, 34 % in C37) - the better take stays
+    split = [t.rpartition(INSTRUCT_END) for t in texts]
+    prompts = tts.get("prompts") or [tts["prompt"]] * len(texts)
+    some = lambda ids, **kw: {**tts, **kw, "prompts": [prompts[i] for i in ids]}  # noqa: E731 - each sentence keeps its voice
+    cosy = COSYVOICE_PY.exists()
+    if cosy:
+        ming = [i for i, (how, _, _) in enumerate(split) if how in MING_TO_COSY or (not how and tts.get("plain") != "cosyvoice")]
+    else:  # no CosyVoice: Ming says everything, without the emotions it does not have
+        ming = list(range(len(texts)))
+        texts = [t if how in MING_TO_COSY else text for t, (how, _, text) in zip(texts, split)]
+    clips = [None] * len(texts)
+    if ming:
+        for i, clip in zip(ming, _prompted([texts[i] for i in ming], some(ming))):
+            clips[i] = clip
+    first = [i for i in range(len(texts)) if clips[i] is None]
+    if not first and (not cosy or tts.get("retry_cer", .05) >= 1):
+        yield from clips
+        return
+    from math import gcd
+
+    from scipy.signal import resample_poly
+    sr = next((c[1] for c in clips if c), 44100)  # Ming's rate: one video / one file keeps one rate
+
+    def by_cosyvoice(ids):
+        how = [MING_TO_COSY.get(split[i][0], split[i][0]) for i in ids]
+        for i, (audio, r) in zip(ids, _prompted([(h + INSTRUCT_END if h else "") + split[i][2] for i, h in zip(ids, how)],
+                                                 some(ids, engine="cosyvoice"))):
+            g = gcd(sr, r)
+            yield i, (resample_poly(audio, sr // g, r // g).astype("float32"), sr)  # CosyVoice: 24 kHz
+
+    if first:
+        for i, c in by_cosyvoice(first):
+            clips[i] = c
+    lang, limit, better = tts.get("lang", "en"), tts.get("retry_cer", .05), 0
+    off = []
+    if limit < 1:
+        errs = word_errors(clips, [s[2] for s in split], lang)
+        off = [i for i, e in enumerate(errs) if e > limit]
+        if off:
+            again = dict(by_cosyvoice(off))
+            for i, e in zip(off, word_errors([again[i] for i in off], [split[i][2] for i in off], lang)):
+                if e < errs[i]:  # keep the take Whisper heard better
+                    clips[i], better = again[i], better + 1
+    print(f"         Ming: {len(texts) - len(first)} by Ming, {len(first)} by CosyVoice (plain or an emotion beyond Ming); "
+          f"{len(off)} heard off and said again, the new take better for {better}")
+    yield from clips
+
+
 # one adapter per engine, not per language
-ENGINES = {"kokoro": _kokoro, "mms": _mms, "chatterbox": _chatterbox, "chatterbox_ml": _chatterbox}
+ENGINES = {"kokoro": _kokoro, "mms": _mms, "chatterbox": _chatterbox, "chatterbox_ml": _chatterbox, "cosyvoice": _prompted,
+           "ming": _ming, "navoiy": _prompted, "piper": _piper}
 
 PROMPT_TEXT = ("Hello, this is the voice you will hear in the dub. I speak at an easy pace, with clear words and a calm tone, "
                "so every sentence sounds natural.")
@@ -94,10 +216,15 @@ def tts_cfg(data: dict, cfg: dict, prompt: Path | None = None, speaker: str = "S
     web/clones.py) speaks only when its reference recording was put at `prompt` for this job; otherwise a preset does.
     Everything is per speaker: their voice, and the tags in their own sentences."""
     tts = cfg["tgt"]["tts"]
+    if tts["engine"] in PROMPTED and not env_py(tts["engine"]).exists():
+        tts = {**tts, **tts["fallback"]}  # without its environment: the voices DUBBE had before CosyVoice / Ming
     chosen = data.get("speakers", {}).get(speaker, {}).get("voice")
-    if (chosen or "").startswith(("clone:", "video:")) and prompt and Path(prompt).exists() and CHATTERBOX_PY.exists():
+    clone_py = env_py(tts.get("clone", "")) or CHATTERBOX_PY
+    if (chosen or "").startswith(("clone:", "video:")) and prompt and Path(prompt).exists() and clone_py.exists() and "clone" in tts:
         return {**tts, "engine": tts["clone"], "voice": chosen, "prompt": str(prompt)}
     preset = chosen if chosen in tts.get("voices", {}) else tts["voice"]  # no voice chosen yet: the language's default
+    if tts["engine"] in PROMPTED:  # these always speak from a recording: here the synthetic preset's (preset_prompt)
+        return {**tts, "voice": preset, "prompt": str(preset_prompt(preset))}
     if (tts.get("voices", {}).get(preset) or {}).get("prompt") and CHATTERBOX_PY.exists():  # an English preset, in this language
         return {**tts, "engine": tts["clone"], "voice": preset, "prompt": str(preset_prompt(preset))}
     if tts["engine"].startswith("chatterbox") and not CHATTERBOX_PY.exists():
@@ -167,9 +294,10 @@ def cut_babble(clips: list[tuple[np.ndarray, int]], texts: list[str], lang: str)
     free_gpu()
 
 
-def finish(path: Path, audio: np.ndarray, sr: int, tags: list[str]) -> float:
-    """Apply the reviewer's delivery tags ([soft], [pause], [slow] ...) and write the sentence; returns its length."""
-    sf.write(path, shape_audio(audio, sr, tags), sr)
+def finish(path: Path, audio: np.ndarray, sr: int, tags: list[str], engine: str = "") -> float:
+    """Apply the reviewer's delivery tags ([soft], [pause], [slow] ...) and write the sentence; returns its length.
+    Emotions the engine acted itself (CosyVoice) are not changed again."""
+    sf.write(path, shape_audio(audio, sr, dubbe_tags(tags, engine)), sr)
     if speed(tags) != 1.0:
         tmp = path.with_suffix(".tag.wav")
         ffmpeg("-i", str(path), "-filter:a", f"atempo={speed(tags)}", str(tmp))  # keeps pitch
@@ -183,12 +311,18 @@ def synth(data: dict, cfg: dict, work: Path, items: list[tuple[dict, str]]):
     groups: dict[str, list] = {}
     for it in items:
         groups.setdefault(it[0].get("speaker", "S1"), []).append(it)
-    for sp, its in groups.items():
+    calls: dict = {}  # Ming / CosyVoice speak every speaker in one call (each sentence from its speaker's recording), so
+    for sp, its in groups.items():  # their models load once, not once per speaker; other engines: one call per speaker
         tts = tts_cfg(data, cfg, work / f"voice_prompt_{sp}.wav", sp)
         if tts["engine"] not in ENGINES:
             raise SystemExit(f"TTS engine '{tts['engine']}' is not implemented yet (have: {', '.join(ENGINES)})")
-        texts = [text_for_tts(t, s.get("tags") or [], tts["engine"], tts.get("lang", "")) for s, t in its]
-        for (s, _), (audio, sr) in zip(its, ENGINES[tts["engine"]](texts, tts)):
+        calls.setdefault(tts["engine"] if tts["engine"] in PROMPTED else sp, []).append((sp, tts, its))
+    for call in calls.values():
+        flat = [(s, t, tts, sp) for sp, tts, its in call for s, t in its]
+        texts = [text_for_tts(t, s.get("tags") or [], tts["engine"], tts.get("lang", "")) for s, t, tts, _ in flat]
+        first = call[0][1]
+        run = {**first, "prompts": [tts["prompt"] for _, _, tts, _ in flat]} if first["engine"] in PROMPTED else first
+        for (s, _, tts, sp), (audio, sr) in zip(flat, ENGINES[first["engine"]](texts, run)):
             yield s, audio, sr, tts, sp
 
 
@@ -198,7 +332,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     out_dir.mkdir(exist_ok=True)
     used = {}
     for s, audio, sr, tts, sp in synth(data, cfg, work, [(s, s["tgt_text"] or "") for s in data["segments"]]):
-        s["tts_dur"] = finish(out_dir / f"{s['id']}.wav", trim(audio), sr, s.get("tags") or [])
+        s["tts_dur"] = finish(out_dir / f"{s['id']}.wav", trim(audio), sr, s.get("tags") or [], tts["engine"])
         s["tags_not_performed"] = not_performed(s.get("tags") or [], tts["engine"])
         used[sp] = {"engine": tts["engine"], "voice": tts["voice"]}
     for sp, u in used.items():

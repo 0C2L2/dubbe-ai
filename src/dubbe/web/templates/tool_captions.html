@@ -20,9 +20,7 @@
       <select name="to"><option value="">No translation</option>{% for l in langs %}<option value="{{ l }}" {{ 'selected' if form.to == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select></label>
     <label><input type="checkbox" name="rights" required> I own this file or may use it.</label>
     <button class="block">Make subtitles</button>
-    <p class="muted small" style="margin-top:14px">Speech recognition, then speakers told apart by voice — similar voices can be taken
-      for one person. Name the speakers, then burn the captions into the video if you need them in the picture. Counts the file's
-      length against your monthly minutes. A dub's captions: Download → Make the video with captions.</p>
+    <p class="muted small" style="margin-top:14px">Similar voices can merge into one speaker. Counts against your monthly minutes.</p>
   </aside>
 </form>
 <section class="app-sec">

@@ -261,7 +261,8 @@ document.querySelectorAll('[data-tts]').forEach(form => {
   // only the voices of the chosen language; "hear this voice" plays the chosen one
   const lang = form.querySelector('[data-lang]'), voice = form.querySelector('[data-voice]'), hear = form.querySelector('[data-sample-btn]');
   const sync = () => {
-    [...voice.options].forEach(o => { o.hidden = o.dataset.lang !== lang.value && o.dataset.lang !== 'any'; });  // clones speak both
+    const noclone = voice.dataset.noclone.split(' ').includes(lang.value);  // e.g. Kazakh: its voice cannot speak from a recording
+    [...voice.options].forEach(o => { o.hidden = o.dataset.lang !== lang.value && (o.dataset.lang !== 'any' || noclone); });
     if (voice.selectedOptions[0]?.hidden) voice.value = [...voice.options].find(o => !o.hidden)?.value;
     const s = voice.selectedOptions[0]?.dataset.sample;
     hear.hidden = !s; if (s) hear.dataset.play = s;
@@ -280,7 +281,8 @@ document.querySelectorAll('[data-swap]').forEach(b => b.addEventListener('click'
 document.querySelectorAll('[data-voice-pick]').forEach(sel => {
   const tgt = sel.form.querySelector('[data-tgt]'), hear = sel.form.querySelector('[data-voice-hear]');
   const sync = () => {
-    [...sel.options].forEach(o => { if (o.dataset.lang) o.hidden = o.disabled = o.dataset.lang !== tgt.value && o.dataset.lang !== 'any'; });
+    const noclone = sel.dataset.noclone.split(' ').includes(tgt.value);
+    [...sel.options].forEach(o => { if (o.dataset.lang) o.hidden = o.disabled = o.dataset.lang !== tgt.value && (o.dataset.lang !== 'any' || noclone); });
     if (sel.selectedOptions[0]?.hidden) sel.value = '';  // a preset of the other language: back to automatic
     const s = sel.selectedOptions[0]?.dataset.sample;
     hear.hidden = !s;
@@ -401,3 +403,209 @@ document.querySelectorAll('form[data-studio]').forEach(form => {
 document.querySelectorAll('form[data-confirm]').forEach(f => f.addEventListener('submit', e => {
   if (!confirm(f.dataset.confirm)) e.preventDefault();
 }));
+
+// Speaker detection: a transcript line or a click on the lanes plays the original from there; while it plays, the
+// spoken line lights up (and stays in view) and a playhead runs over the lanes.
+document.querySelectorAll('[data-spk-player]').forEach(v => {
+  const root = v.closest('.spk-layout'), lanes = root.querySelector('.spk-lanes'), dur = parseFloat(v.dataset.duration) || 1;
+  const rows = [...root.querySelectorAll('.tx-row[data-t]')];
+  const seek = t => { player.pause(); stop(); v.currentTime = t; v.play(); };
+  const editing = () => root.classList.contains('editing');  // fixing speakers: clicks belong to the editor
+  rows.forEach(r => {
+    r.addEventListener('click', () => { if (!editing()) seek(+r.dataset.t); });
+    r.addEventListener('keydown', e => { if (!editing() && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); seek(+r.dataset.t); } });
+  });
+  root.querySelectorAll('.spk-lane-track').forEach(tr => tr.addEventListener('click', e => {
+    const b = tr.getBoundingClientRect();
+    seek(Math.max(0, Math.min(1, (e.clientX - b.left) / b.width)) * dur);
+  }));
+  let on = null;
+  v.addEventListener('timeupdate', () => {
+    const t = v.currentTime;
+    lanes.style.setProperty('--p', Math.min(1, t / dur));
+    lanes.classList.add('playing');
+    const r = rows.find(r => t >= +r.dataset.t && t < +r.dataset.end) || null;
+    if (r === on) return;
+    on?.classList.remove('on');
+    on = r;
+    if (r) { r.classList.add('on'); if (!v.paused) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  });
+});
+
+// Speaker Detection - fix who said what, like trimming clips: in edit mode a handle between two lines moves words
+// from one line to the other (drag it onto a word, or arrow keys), a word click plays from it or starts a new line
+// there, and a line's name becomes a speaker list. Save sends every line back as speaker + word indices; the server
+// checks that no word was lost or doubled.
+document.querySelectorAll('[data-spk-editor]').forEach(root => {
+  const tx = root.querySelector('.spk-tx'), editBtn = root.querySelector('[data-spk-edit]');
+  const bar = root.querySelector('[data-edit-bar]'), help = root.querySelector('[data-edit-help]');
+  const info = JSON.parse(root.querySelector('[data-spk-data]').textContent);
+  const video = root.querySelector('[data-spk-player]');
+  const color = id => id === 'new' ? '#8a8a8a' : info.colors[Math.max(0, info.speakers.indexOf(id)) % info.colors.length];
+  const name = id => id === 'new' ? 'New speaker' : info.names[info.speakers.indexOf(id)] || id;
+  const rows = () => [...tx.querySelectorAll('.tx-row')];
+  const words = r => [...r.querySelectorAll('.w')];
+  const clock = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  let menu = null;
+  const changed = () => { bar.hidden = false; refresh(); };
+
+  const setSpeaker = (r, id) => {
+    r.dataset.spk = id;
+    r.style.setProperty('--c', color(id));
+    const sel = r.querySelector('.tx-name select');
+    if (sel) sel.value = id; else r.querySelector('.tx-name').textContent = name(id);
+  };
+  // after a change: each line's time from its first word, "continued" lines, and the handles between lines
+  const refresh = () => {
+    rows().forEach((r, k, all) => {
+      const ws = words(r);
+      r.dataset.t = ws[0].dataset.s;
+      r.querySelector('.tx-time').textContent = clock(+ws[0].dataset.s);
+      r.classList.toggle('cont', k > 0 && all[k - 1].dataset.spk === r.dataset.spk);
+    });
+    tx.querySelectorAll('.tx-cut').forEach(h => h.remove());
+    if (!root.classList.contains('editing')) return;
+    rows().slice(1).forEach(r => {  // a word-high bar in front of each line's first word: where this line begins
+      const h = document.createElement('span');
+      h.className = 'tx-cut';
+      h.tabIndex = 0;
+      h.setAttribute('role', 'separator');
+      h.setAttribute('aria-label', 'Start of this line: drag, or use the arrow keys, to move words between this line and the one above');
+      h.title = 'Drag right: these words go to the line above. Drag onto the line above: its words come here. (← →)';
+      r.querySelector('.tx-words').prepend(h);
+    });
+    if (dragging) dragging.querySelector('.tx-cut')?.classList.add('drag');
+  };
+  let dragging = null;  // the line whose start bar is being dragged (the bar itself is rebuilt as words move)
+  const above = r => rows()[rows().indexOf(r) - 1];
+  // move the boundary between line `up` and the next line so that `w` becomes the next line's first word
+  const cutAt = (up, w) => {
+    const down = rows()[rows().indexOf(up) + 1], all = [...words(up), ...words(down)], k = all.indexOf(w);
+    if (k < 1 || k > all.length - 1 || words(down)[0] === w) return;  // each line keeps at least one word
+    const pu = up.querySelector('.tx-words'), pd = down.querySelector('.tx-words');
+    all.slice(0, k).forEach(x => pu.append(x, ' '));
+    all.slice(k).reverse().forEach(x => pd.prepend(x, ' '));
+    changed();
+  };
+
+  tx.addEventListener('pointerdown', e => {
+    const h = e.target.closest('.tx-cut');
+    if (!h) return;
+    e.preventDefault();
+    dragging = h.closest('.tx-row');
+    h.classList.add('drag');
+    tx.classList.add('dragging');
+    const move = ev => {
+      const up = above(dragging);
+      const w = document.elementsFromPoint(ev.clientX, ev.clientY).find(x => x.classList && x.classList.contains('w'));
+      if (w && up && (up.contains(w) || dragging.contains(w))) cutAt(up, w);
+    };
+    const end = () => {
+      tx.querySelectorAll('.tx-cut.drag').forEach(x => x.classList.remove('drag'));
+      tx.classList.remove('dragging');
+      dragging = null;
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', end);
+    };
+    document.addEventListener('pointermove', move);  // on the page, not the bar: the bar is rebuilt while dragging
+    document.addEventListener('pointerup', end);
+  });
+  tx.addEventListener('keydown', e => {
+    const h = e.target.closest('.tx-cut');
+    if (!h || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const down = h.closest('.tx-row'), up = above(down);
+    // right: this line's first word goes up; left: the line above's last word comes down
+    if (e.key === 'ArrowRight') cutAt(up, words(down)[1] || null);
+    else cutAt(up, words(up).at(-1));
+    down.querySelector('.tx-cut')?.focus();  // the bars were rebuilt: keep the focus on this line's bar
+  });
+
+  // a word: play from it, or start a new line there (the new line keeps the speaker until another is picked)
+  tx.addEventListener('click', e => {
+    const w = e.target.closest('.w');
+    if (!w || !root.classList.contains('editing')) return;
+    e.stopPropagation();
+    if (menu) menu.remove();
+    const row = w.closest('.tx-row'), first = words(row)[0] === w;
+    menu = document.createElement('span');
+    menu.className = 'tx-menu';
+    menu.innerHTML = (video ? '<button type="button" data-a="play">Play from here</button>' : '') +
+      (first ? '' : '<button type="button" data-a="split">New line from here</button>');
+    if (!menu.innerHTML) { menu = null; return; }
+    w.after(menu);
+    menu.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const b = ev.target.closest('button');
+      const a = b && b.dataset.a;
+      if (a === 'play') { video.currentTime = +w.dataset.s; video.play(); }
+      if (a === 'split') {
+        const n = row.cloneNode(true);
+        n.classList.remove('on');
+        const f = n.querySelector('.tx-flag');
+        if (f) f.remove();
+        const pn = n.querySelector('.tx-words'), rest = words(row).slice(words(row).indexOf(w));
+        pn.textContent = '';
+        rest.forEach(x => pn.append(x, ' '));
+        row.after(n);
+        n.querySelector('.tx-name select').value = row.dataset.spk;
+        changed();
+      }
+      menu.remove();
+      menu = null;
+    });
+  });
+  document.addEventListener('click', e => {
+    if (menu && !menu.contains(e.target) && !e.target.closest('.w')) { menu.remove(); menu = null; }
+  });
+
+  // a line's speaker: in edit mode the name is a list of the speakers (+ a new one)
+  tx.addEventListener('change', e => {
+    const sel = e.target.closest('.tx-name select');
+    if (!sel) return;
+    setSpeaker(sel.closest('.tx-row'), sel.value);
+    changed();
+  });
+  if (editBtn) editBtn.addEventListener('click', () => {
+    root.classList.add('editing');
+    editBtn.hidden = true;
+    help.hidden = false;
+    rows().forEach(r => {
+      const sel = document.createElement('select');
+      sel.setAttribute('aria-label', 'Speaker of this line');
+      sel.innerHTML = info.speakers.map((id, k) => `<option value="${id}">${info.names[k]}</option>`).join('') +
+        '<option value="new">New speaker</option>';
+      sel.value = r.dataset.spk;
+      const tn = r.querySelector('.tx-name');
+      tn.textContent = '';
+      tn.append(sel);
+      r.removeAttribute('role');
+      r.removeAttribute('tabindex');
+      r.removeAttribute('title');
+    });
+    refresh();
+  });
+
+  const save = async () => {
+    const sentences = rows().map(r => ({ speaker: r.dataset.spk, words: words(r).map(w => +w.dataset.i) }));
+    const btn = bar.querySelector('[data-edit-save]');
+    btn.disabled = true;
+    const res = await fetch(info.save, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sentences }) });
+    if (res.ok) { bar.hidden = true; location.reload(); return; }
+    btn.disabled = false;
+    const err = await res.json().catch(() => ({}));
+    alert('Could not save: ' + (err.detail || res.status));
+  };
+  if (bar) {
+    bar.querySelector('[data-edit-save]').addEventListener('click', save);
+    bar.querySelector('[data-edit-cancel]').addEventListener('click', () => { bar.hidden = true; location.reload(); });
+  }
+  window.addEventListener('beforeunload', e => { if (bar && !bar.hidden) e.preventDefault(); });
+
+  // "Same as ...? Merge": every line of one speaker goes to the other, saved at once
+  root.querySelectorAll('[data-merge]').forEach(b => b.addEventListener('click', () => {
+    if (!confirm(`Merge ${name(b.dataset.merge)} into ${name(b.dataset.into)}? All their lines go to ${name(b.dataset.into)}.`)) return;
+    rows().filter(r => r.dataset.spk === b.dataset.merge).forEach(r => setSpeaker(r, b.dataset.into));
+    save();
+  }));
+});

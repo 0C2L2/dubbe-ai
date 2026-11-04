@@ -5,7 +5,7 @@ from pathlib import Path
 from . import (asr, config, diarize, emotion, extract, mux, read_json, report, segment, separate, shorten, speakers, timing,
                translate, tts, voice, write_json)
 
-STAGES = {"extract": extract, "separate": separate, "asr": asr, "diarize": diarize, "segment": segment, "speakers": speakers,
+STAGES = {"extract": extract, "separate": separate, "diarize": diarize, "asr": asr, "segment": segment, "speakers": speakers,
           "emotion": emotion, "voice": voice,
           "translate": translate, "tts": tts, "shorten": shorten, "timing": timing, "mux": mux, "report": report}
 
@@ -23,6 +23,7 @@ def main(argv=None) -> None:
     p.add_argument("--no-background", action="store_true", help="voice only: drop music/effects (faster, no separation)")
     p.add_argument("--voice", help="voice of the dub: a preset of the target language, or clone:<id> when the website has put "
                    "that clone's recording in the work folder; default: matched to the speaker's pitch")
+    p.add_argument("--title", help="name shown on the review report (the website's project title); default: the file name")
     a = p.parse_args(argv)
 
     if not a.video.exists():
@@ -34,6 +35,7 @@ def main(argv=None) -> None:
         cfg["keep_background"] = False
     if a.voice:
         cfg["voice"] = a.voice
+    cfg["title"] = a.title or a.video.stem
     work = a.work / f"{a.video.stem}.{a.src}-{a.tgt}"
     work.mkdir(parents=True, exist_ok=True)
     log_path = work / "run.json"
