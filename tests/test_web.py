@@ -341,7 +341,7 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     r = client.post(f"/app/p/{pid}/detect-speakers")  # start over: detection runs again, the old clone may be someone else now
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert r.status_code == 303 and "speakers_edited" not in data and not f.exists()
-    assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "diarize"
+    assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "separate"
     db.run("update jobs set status='done' where project_id=?", pid)
     client.post(f"/app/p/{pid}/rerun")  # newer recognition / translation models: from the transcript on
     assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "asr"

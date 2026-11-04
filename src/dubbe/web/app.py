@@ -708,7 +708,9 @@ def start_over(request: Request, pid: int, stage: str):
 @app.post("/app/p/{pid}/detect-speakers")
 def detect_speakers(request: Request, pid: int):
     """Find the speakers again: projects dubbed before detection existed, or a detection the reviewer wants redone."""
-    return start_over(request, pid, "diarize")  # turns first, then sentences split by speaker (edits carry over)
+    # from the voice separation, not the turns: the turns are found on vocals.wav, and a track from before Demucs was
+    # seeded (C40) kept its result - KOR dub 12 merged the two children again and again; rebuilt, 6 of 6 like the tool
+    return start_over(request, pid, "separate")  # then turns, then sentences split by speaker (edits carry over)
 
 
 @app.post("/app/p/{pid}/rerun")
