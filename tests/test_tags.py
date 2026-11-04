@@ -32,7 +32,9 @@ def test_engine_tokens_go_in_front():
     assert text_for_tts("That is funny.", ["laugh"], "kokoro") == "That is funny."
     # CosyVoice acts the emotion from an instruction in front; DUBBE then leaves its pitch/speed/level alone
     assert text_for_tts("No.", ["sad", "laugh"], "cosyvoice") == "Please speak sadly, in a low and slow voice.<|endofprompt|>[laughter] No."
-    assert dubbe_tags(["sad", "slow", "question"], "cosyvoice") == ["slow", "question"] and dubbe_tags(["sad"], "kokoro") == ["sad"]
+    assert dubbe_tags(["sad", "slow", "question"], "cosyvoice") == ["slow"] and dubbe_tags(["sad"], "kokoro") == ["sad"]
+    # a voice that asks by itself gets no tape glide on top (it sounded like another voice, C50); Kokoro still does
+    assert dubbe_tags(["question"], "ming") == [] and dubbe_tags(["question"], "kokoro") == ["question"]
     assert text_for_tts("No.", ["angry"], "ming") == "愤怒<|endofprompt|>No." and dubbe_tags(["angry", "soft"], "ming") == ["soft"]
     assert not_performed(["sympathetic", "sad"], "kokoro") == ["sympathetic"] and not_performed(["sympathetic"], "ming") == []
 

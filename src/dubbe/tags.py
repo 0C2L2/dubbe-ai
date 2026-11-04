@@ -83,9 +83,14 @@ def text_for_tts(text: str, tags: list[str], engine: str = "", lang: str = "") -
     return (how + INSTRUCT_END if how else "") + " ".join([tokens[t] for t in tags if t in tokens] + [text])
 
 
+# voices that end a "?" sentence like a question by themselves: DUBBE's tape glide on top made the end sound like another,
+# higher voice (project 14: 6 of the 8 least speaker-like Ming clips were questions, C50). The glide stays for Kokoro (C19c)
+ASKS_ITSELF = ("ming", "cosyvoice", "navoiy", "chatterbox", "chatterbox_ml")
+
+
 def dubbe_tags(tags: list[str], engine: str) -> list[str]:
-    """The tags DUBBE applies to the audio itself: all but the emotions the engine acted."""
-    return [t for t in tags if t not in INSTRUCT.get(engine, {})]
+    """The tags DUBBE applies to the audio itself: all but the emotions the engine acted (and a question it asked itself)."""
+    return [t for t in tags if t not in INSTRUCT.get(engine, {}) and not (t == "question" and engine in ASKS_ITSELF)]
 
 
 def speed(tags: list[str]) -> float:
