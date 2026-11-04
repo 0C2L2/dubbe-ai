@@ -338,6 +338,14 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     client.post(f"/app/p/{pid}/s/2", data={"text": "Yes, I know.", "speaker": "new"})  # two voices detected as one: split
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert data["segments"][1]["speaker"] == "S2" and data["speakers"]["S2"]["voice"] != data["speakers"]["S1"]["voice"]
+    # one sentence spoken again with the same text: a new take for it alone, then a re-dub (C49)
+    assert "Try again" in client.get(f"/app/p/{pid}").text
+    assert client.post(f"/app/p/{pid}/s/2/retake").status_code == 303
+    data = json.loads((w / "segments.json").read_text(encoding="utf8"))
+    assert data["segments"][1]["take"] == 1 and "take" not in data["segments"][0]
+    assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "tts"
+    assert client.post(f"/app/p/{pid}/s/99/retake").status_code == 404
+    db.run("update jobs set status='done' where project_id=?", pid)
     r = client.post(f"/app/p/{pid}/detect-speakers")  # start over: detection runs again, the old clone may be someone else now
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert r.status_code == 303 and "speakers_edited" not in data and not f.exists()

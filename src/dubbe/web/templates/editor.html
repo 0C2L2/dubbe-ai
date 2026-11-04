@@ -80,7 +80,10 @@
     {% if r %}<span class="chip ok">rated {{ r.score }}</span>{% endif %}
     {{ s.tgt_text }}</summary>
   <p class="src">{{ s.src_text }}</p>
-  <audio controls preload="none" src="/app/p/{{ p.id }}/file/tts/{{ s.id }}.wav"></audio>
+  <div class="take-row"><audio controls preload="none" src="/app/p/{{ p.id }}/file/tts/{{ s.id }}.wav"></audio>
+    <form method="post" action="/app/p/{{ p.id }}/s/{{ s.id }}/retake" class="inline"
+      title="Speak this sentence again with the same text; the rest of the dub stays as it is">
+      <button class="secondary outline">Try again</button></form></div>
   {% if s.tags_not_performed %}<p class="muted">Not performed by this voice: {{ s.tags_not_performed | join(", ") }}</p>{% endif %}
   <div class="grid">
     <form method="post" action="/app/p/{{ p.id }}/s/{{ s.id }}" class="ajax" data-hint=" — press Re-dub to hear it">

@@ -1,4 +1,5 @@
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -50,8 +51,8 @@ def _mms(texts: list[str], tts: dict):
     dev = device()
     tok = AutoTokenizer.from_pretrained(tts["voice"])
     model = VitsModel.from_pretrained(tts["voice"]).to(dev)
-    torch.manual_seed(0)  # VITS samples noise: fixed seed keeps reruns identical
-    for text in texts:
+    for i, text in enumerate(texts):
+        torch.manual_seed((tts.get("seeds") or [0] * len(texts))[i])  # VITS samples noise: same take, same clip; a retake differs
         ids = tok(text, return_tensors="pt").to(dev)
         if ids["input_ids"].shape[1] == 0:  # nothing pronounceable
             yield np.zeros(1, dtype="float32"), model.config.sampling_rate
@@ -80,7 +81,8 @@ def _chatterbox(texts: list[str], tts: dict):
     with tempfile.TemporaryDirectory() as tmp:
         p = subprocess.run([str(CHATTERBOX_PY), "-I", str(Path(__file__).with_name("chatterbox_worker.py"))],
                            input=json.dumps({"texts": texts, "out_dir": tmp, "lang": tts.get("lang", "en"),
-                                             "prompt": tts.get("prompt"), "prompts": tts.get("prompts")}), capture_output=True,
+                                             "prompt": tts.get("prompt"), "prompts": tts.get("prompts"),
+                                             "seeds": tts.get("seeds")}), capture_output=True,
                            text=True, encoding="utf8", errors="replace")
         if p.returncode != 0:
             raise SystemExit("Chatterbox failed: " + ((p.stderr.strip().splitlines() or ["no output"])[-1]))
@@ -322,19 +324,33 @@ def synth(data: dict, cfg: dict, work: Path, items: list[tuple[dict, str]]):
         texts = [text_for_tts(t, s.get("tags") or [], tts["engine"], tts.get("lang", "")) for s, t, tts, _ in flat]
         first = call[0][1]
         run = {**first, "prompts": [tts["prompt"] for _, _, tts, _ in flat]} if first["engine"] in PROMPTED else first
+        run = {**run, "seeds": [s.get("take", 0) for s, _, _, _ in flat]}  # engines with a fixed seed: a retake sounds new
         for (s, _, tts, sp), (audio, sr) in zip(flat, ENGINES[first["engine"]](texts, run)):
             yield s, audio, sr, tts, sp
 
 
+def fingerprint(s: dict, tts: dict) -> str:
+    """What a sentence's clip was made from: text, tags, take and voice. Same fingerprint: a re-dub keeps the clip (C49)."""
+    key = [s.get("tgt_text") or "", s.get("tags") or [], s.get("take", 0), tts["engine"], tts["voice"], tts.get("prompt")]
+    return hashlib.sha1(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
 def run(video: Path, work: Path, cfg: dict) -> None:
+    """Speak every sentence whose text, tags, take or voice changed since its clip was made; the others keep their clip,
+    so fixing one sentence of a 20-minute video re-speaks one sentence."""
     data = read_json(work / "segments.json")
+    segs = data["segments"]
     out_dir = work / "tts"
     out_dir.mkdir(exist_ok=True)
-    used = {}
-    for s, audio, sr, tts, sp in synth(data, cfg, work, [(s, s["tgt_text"] or "") for s in data["segments"]]):
+    voices = {sp: tts_cfg(data, cfg, work / f"voice_prompt_{sp}.wav", sp) for sp in {s.get("speaker", "S1") for s in segs}}
+    todo = [s for s in segs if s.get("tts_key") != fingerprint(s, voices[s.get("speaker", "S1")])
+            or not (out_dir / f"{s['id']}.wav").exists()]
+    for s, audio, sr, tts, sp in synth(data, cfg, work, [(s, s["tgt_text"] or "") for s in todo]):
         s["tts_dur"] = finish(out_dir / f"{s['id']}.wav", trim(audio), sr, s.get("tags") or [], tts["engine"])
         s["tags_not_performed"] = not_performed(s.get("tags") or [], tts["engine"])
-        used[sp] = {"engine": tts["engine"], "voice": tts["voice"]}
+        s["tts_key"] = fingerprint(s, tts)
+    print(f"         spoke {len(todo)} of {len(segs)} sentences (the others are unchanged)")
+    used = {sp: {"engine": t["engine"], "voice": t["voice"]} for sp, t in voices.items()}
     for sp, u in used.items():
         data.setdefault("speakers", {}).setdefault(sp, {})["used"] = u
     data["tts_used"] = used.get("S1") or next(iter(used.values()), {})  # the main speaker's, for older readers

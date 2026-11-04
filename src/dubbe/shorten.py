@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from . import free_gpu, read_json, video_duration, write_json
-from .tts import finish, synth, trim
+from .tts import fingerprint, finish, synth, trim
 
 
 def pick(alts: list[dict], current: str, min_ratio: float) -> str | None:
@@ -28,7 +28,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
 
     if todo:
         texts = {s["id"]: t for s, t in todo}
-        for s, audio, sr, _, _ in synth(data, cfg, work, todo):  # each speaker with their own voice
+        for s, audio, sr, tts, _ in synth(data, cfg, work, todo):  # each speaker with their own voice
             text = texts[s["id"]]
             tmp = work / "tts" / f"{s['id']}.short.wav"
             dur = finish(tmp, trim(audio), sr, s.get("tags") or [])
@@ -36,6 +36,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
                 tmp.replace(work / "tts" / f"{s['id']}.wav")
                 s.update(tgt_text=text, tts_dur=dur, shortened=True,
                          mt_conf=next(a["conf"] for a in s["alts"] if a["text"] == text))
+                s["tts_key"] = fingerprint(s, tts)  # the clip is the shorter text's: a re-dub keeps it
         free_gpu()
     print(f"         shortened {sum(s['shortened'] for s in segs)} of {len(todo)} overflowing segments")
     write_json(work / "segments.json", data)

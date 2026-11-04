@@ -765,7 +765,20 @@ def clone_speaker(request: Request, pid: int, sp: str, consent: str = Form("")):
 @app.post("/app/p/{pid}/redub")
 def redub(request: Request, pid: int):
     own_project(request, pid)
-    return go(f"/app/jobs/{queue(pid, 'tts')}")  # new text, tags and voice take effect from speech synthesis on
+    return go(f"/app/jobs/{queue(pid, 'tts')}")  # only sentences whose text, tags or voice changed are spoken again (C49)
+
+
+@app.post("/app/p/{pid}/s/{sid}/retake")
+def retake(request: Request, pid: int, sid: int):
+    """Same text, a new take: the sentence is spoken again, every other sentence keeps its clip."""
+    u, p = own_project(request, pid)
+    data = segments(p)
+    s = next((x for x in data["segments"] if x["id"] == sid), None)
+    if not s:
+        raise HTTPException(404)
+    s["take"] = s.get("take", 0) + 1
+    write_json(worker.work(p) / "segments.json", data)
+    return go(f"/app/jobs/{queue(pid, 'tts')}")
 
 
 # files the report and the editor link to; nothing else in the project folder is served
