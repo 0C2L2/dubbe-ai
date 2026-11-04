@@ -447,7 +447,7 @@ article, .slide, .voice { transition: transform var(--dur) var(--ease), box-shad
 @keyframes acct-in { from { opacity: 0; transform: translateY(-4px); } }
 .acct-menu form { margin: 0; }
 .acct-email { margin: 2px 6px 8px; font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
-.app-main { padding: 36px clamp(16px, 4vw, 56px) 64px; max-width: 1440px; width: 100%; margin-inline: auto; }
+.app-main { padding: 36px clamp(16px, 4vw, 56px) 64px; max-width: 1440px; width: 100%; }  /* next to the sidebar, not floating mid-screen on wide monitors */
 :where(.app-main) h1, .app-h1 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); margin-bottom: 24px; }
 .app-sec { margin-top: 36px; }
 .task-title { font-size: clamp(1.4rem, 2.4vw, 1.9rem); max-width: 48rem; overflow-wrap: anywhere; }
@@ -936,16 +936,27 @@ label.pick-pill { display: inline-flex; margin: 0; position: relative; cursor: p
 .spk-line { margin: 4px 0 0; padding: 6px 0 6px 12px; border-left: 3px solid var(--c); }
 .spk-detect { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
 .spk-detect button { margin: 0; }
-.spk { border-top: 1px solid var(--line); padding: 12px 0 8px; }
-.spk-main { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto minmax(160px, 1.3fr) auto; gap: 10px; align-items: center; margin: 0; }
-.spk-main input, .spk-main select { margin: 0; }
+.spk { border-top: 1px solid var(--line); padding: 12px 0 10px; }
+/* fixed columns, so the name boxes and voice menus line up from row to row */
+.spk-main { display: grid; grid-template-columns: 14px minmax(140px, 1fr) 10.5rem minmax(200px, 1.5fr) 8.5rem; gap: 12px; align-items: center; margin: 0; }
+.spk-main input, .spk-main select { margin: 0; width: 100%; }
 .spk-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
-.spk-n { white-space: nowrap; }
-.spk-more { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0 0 24px; }
+.spk-n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spk-act { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.spk-act button { margin: 0; }
+.spk-act .saved { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.spk-main.autosaving .spk-act button { display: none; }  /* saves on change: no button to press */
+.spk-more { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 6px 0 0 26px; font-size: .85rem; }
 .spk-more form { margin: 0; display: flex; gap: 6px; align-items: center; }
-.spk-clone summary { cursor: pointer; font-size: .88rem; color: var(--ink-3); }
+.spk-more select.compact, .spk-more button { height: 32px; margin: 0; padding-block: 0; font-size: .82rem; }
+/* "Use their own voice…" is a plain disclosure link here, not an FAQ row: no "+", no rule, no padding */
+.spk-more .spk-clone, .spk-more .spk-clone[open] { border: 0; padding: 0; }
+.spk-more .spk-clone > summary { padding: 0; }
+.spk-more .spk-clone > summary::after { content: none; }
+.spk-clone summary { cursor: pointer; font-size: .85rem; color: var(--ink-3); text-decoration: underline dotted; text-underline-offset: 3px; }
+.spk-clone summary:hover { color: var(--ink); }
 .spk-clone form { display: block; margin-top: 8px; max-width: 560px; }
 .spk-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font: 500 .72rem/1 var(--font);
   color: #fff; background: var(--c); }
 .spk-pick { margin: 6px 0 10px; } .spk-pick select { margin: 4px 0 0; }
-@media (max-width: 800px) { .spk-main { grid-template-columns: auto 1fr; } .spk-main select, .spk-main .spk-n { grid-column: 2; } }
+@media (max-width: 800px) { .spk-main { grid-template-columns: 14px 1fr; } .spk-main select, .spk-main .spk-n, .spk-act { grid-column: 2; } }
