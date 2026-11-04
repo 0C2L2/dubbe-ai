@@ -35,8 +35,9 @@ if job.get("prompt"):
 prompts = job.get("prompts")  # or one reference per text (the voice samples: every voice in one run); null = built-in voice
 out = Path(job["out_dir"])
 out.mkdir(parents=True, exist_ok=True)
-torch.manual_seed(0)  # both sample tokens (temperature 0.8): fixed seed keeps reruns identical
+seeds = job.get("seeds") or [0] * len(job["texts"])  # a sentence's take: same take, same clip; a retake sounds different
 for i, text in enumerate(job["texts"]):
+    torch.manual_seed(seeds[i])  # both sample tokens (temperature 0.8)
     if prompts:
         model.prepare_conditionals(prompts[i]) if prompts[i] else setattr(model, "conds", built_in)
     wav = model.generate(text, **kw)

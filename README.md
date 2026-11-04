@@ -16,7 +16,7 @@ Every stage of a dubbing pipeline is a model, and errors compound: a misheard wo
 
 ![DUBBE main architecture](docs/diagrams/architecture-overview.png)
 
-Details: [docs/architecture.md](docs/architecture.md) (C4 Level 1 and 2, pipeline flow).
+Details: [docs/architecture.md](docs/architecture.md) (C4 Level 1 and 2, pipeline flow, [model per task](docs/architecture.md#model-per-task): each stage uses a model built for its job, swappable in `languages.yaml`).
 
 ## Documents
 
@@ -47,15 +47,16 @@ Tiers follow the project tab's Definition of Done. ✅ built and tested · 🟡 
 **Target**
 - 🟡 Error propagation: review flags per stage built (`report.html`); the gold-set study (T-05/T-06) not started
 - ✅ Long translations: shorter alternative wording + optional picture slow-down (`--slow-video 1.2`)
-- 🟡 22 languages, any pair (test results C25): Korean ↔ English tested in depth; Arabic, Chinese, Danish, Dutch, Finnish, French, German, Greek, Hindi, Italian, Japanese, Malay, Norwegian, Polish, Portuguese, Russian, Spanish, Swahili, Swedish, Turkish only on read speech (FLEURS) — recognition weak for Swahili, Turkish, Hindi; Hebrew left out
-- 🟡 Second language pair: English → Korean runs (Chatterbox Multilingual built-in voice; MMS when `.venv-chatterbox` is missing); needs a fluent Korean rater and approval (Q-005)
-- 🟡 Multiple speakers: detected per sentence by voice, each speaker their own voice, transcripts by speaker; the reviewer renames, merges or splits speakers — similar voices get merged (test results C21). Optional speaker diarization from the audio (`speaker_engine` in `languages.yaml`: `pyannote` = pyannote 3.1, `community` = community-1 in `.venv-diarize`; both need `HF_TOKEN`) splits sentences where the speaker changes; tested on our clips it was not better than the default `wavlm` and slower (test results C27)
+- 🟡 Uzbek and Kazakh, with free models (test results C43): Uzbek recognition by **rubaistt v2 medium** (Apache-2.0, 2.3–3.5 % CER vs 25 % for Whisper), voice **Navoiy TTS** (Apache-2.0, on CosyVoice 2 in `.venv-cosyvoice`; clones and acts 7 emotion tags); Kazakh voice **Piper ISSAI** (MIT, CPU, 6 voices, no cloning). FLEURS read speech, 12 sentences each way: chrF++ 53–59, dub heard back 0–11 % off
+- 🟡 24 languages, any pair (test results C25, C43): Korean ↔ English tested in depth; Arabic, Chinese, Danish, Dutch, Finnish, French, German, Greek, Hindi, Italian, Japanese, Malay, Norwegian, Polish, Portuguese, Russian, Spanish, Swahili, Swedish, Turkish only on read speech (FLEURS) — recognition weak for Swahili, Turkish, Hindi; Hebrew left out
+- 🟡 Second language pair: English → Korean runs (Ming-3.0-tts + CosyVoice 3; Chatterbox Multilingual, then MMS, when their environments are missing); needs a fluent Korean rater and approval (Q-005)
+- 🟡 Multiple speakers: detected per sentence by voice, each speaker their own voice, transcripts by speaker; the reviewer renames, merges or splits speakers — similar voices get merged (test results C21). Speaker diarization from the audio, before speech recognition: **NVIDIA Nemotron 3 Diarization** finds the speaker turns, then **TitaNet** voice fingerprints group the turns by voice from scratch (both in `.venv-nemo`) — 12 of 12 known voices, 3 of 3 similar women and 4 of 4 voices right, no 8-speaker limit (test results C31); speech recognition then runs per speaker turn, so sentences never mix two people and interview clips are no longer skipped (C29). Without `.venv-nemo` it falls back to per-sentence WavLM fingerprints. Step 6 (`speakers`) then decides who said each word, splits a sentence two people share (also a mid-sentence hand-over, checked by voice), flags doubtful sentences and asks when two speakers may be one person (C33); on a hand-labelled real news clip 20 of 20 sentences and 6 of 6 people were right (C34). The Speaker Detection page shows each speaker as a painted orb (play their voice, rename, clone with consent, merge when asked) above per-speaker lanes and the transcript next to the original video (a line or a lane plays from there); **Fix speakers** lets a person move words between speakers with a word-high bar at the start of each line (drag or ← →), start a new line from a word, or give a line to another speaker — every word is kept exactly once, and a fixed result is never overwritten by a re-run
 - 🟡 Cost per minute vs. professional dubbing: computed for every run (`stats.json`, report, web page); price assumptions in `languages.yaml` still need sources
 
 **Stretch / beyond the DoD**
 - ✅ Background sound kept (music, effects, a phone ringing) under the new voice
 - 🟡 Voice matching: preset voice chosen by the speaker's pitch register (per speaker; reviewer can override); Korean dubs choose from 26 voices — the built-in one and 25 English presets speaking Korean (test results C24)
-- 🟡 Expressive voice: reviewer delivery tags per sentence ([slow], [question], [whisper], [excited], [sad] … made by DUBBE, any voice — [question] switches English to Chatterbox, whose end rose in 11 of 12; [laugh], [sigh], [gasp], [cough] English only via Chatterbox and weak, Korean cannot — see test results); tags heard in the original are put on each sentence automatically (emotion, laugh / sigh / gasp / cough, whisper, question — dashed in the editor, the reviewer unticks wrong ones); the emotion effects did not measurably change the dub yet (test results C22, [plan C9](docs/project-plan.md)). Expression transfer is approved (Q-009); CosyVoice 3 (instruction-controlled emotion, Apache-2.0) runs in its own environment through `cosyvoice_worker.py` and passed a smoke test, but is not wired into the pipeline yet
+- 🟡 Expressive voice: reviewer delivery tags per sentence ([slow], [question], [whisper], [excited], [sad] … made by DUBBE, any voice — [question] switches English to Chatterbox, whose end rose in 11 of 12; [laugh], [sigh], [gasp], [cough] English only via Chatterbox and weak, Korean cannot — see test results); tags heard in the original are put on each sentence automatically (emotion, laugh / sigh / gasp / cough, whisper, question — dashed in the editor, the reviewer unticks wrong ones); the emotion effects did not measurably change the dub yet (test results C22, [plan C9](docs/project-plan.md)). Expression transfer is approved (Q-009); Korean and English speak with **Ming-3.0-tts** (MIT, `.venv-ming`), which acts [excited], [sad], [angry], [scared], [surprised], [disgusted] itself; **CosyVoice 3** (Apache-2.0, `.venv-cosyvoice`) speaks [sympathetic] (beyond Ming's 7 emotions), the plain Korean sentences, and says again every sentence Whisper hears more than 5 % off - the better take stays (test results C35–C38)
 - 🟡 Natural delivery: each dubbed sentence follows the original's loudness and pitch, fades and a soft limiter (test results C20; needs a listening test)
 - ✅ Voice cloning of **your own voice** (approved, Q-010): live recording of sentences picked at that moment, Whisper check, encrypted storage (`DUBBE_VOICE_KEY`), watermark + AI label; voice **Marketplace** (store front with search, categories, sorting, ratings and reviews; get a voice to use it; admin review; no payouts) and a **Voice Studio** for publishers (progress from recording to live, listing editor with live preview, uses / rating / "would earn"); a speaker **from the video** only with the uploader's consent, kept encrypted inside that project (plan C13/C14, C7)
 - 🟡 Website (`dubbe-web`): public pages, accounts, plans and limits, upload → background job → review editor → downloads (MP4, SRT/VTT, report), contact — runs locally, tested end to end; not deployed yet
@@ -91,7 +92,7 @@ Details in [docs/team.md](docs/team.md).
 
 ## Tech stack (all free, run locally)
 
-ffmpeg · faster-whisper (Whisper large-v3 for Korean, large-v3-turbo for English) · NLLB-200 3.3B (int8, CTranslate2) · Kokoro-82M · Chatterbox (Turbo and Multilingual, optional environment; MMS-TTS as Korean fallback) · Demucs · WavLM speaker verification · pyannote 3.1 / community-1 (optional) · CosyVoice 3 (optional, experimental) · Python 3.10–3.12
+ffmpeg · faster-whisper (Whisper large-v3 for Korean, large-v3-turbo for English) · NLLB-200 3.3B (int8, CTranslate2) · Kokoro-82M · Chatterbox (Turbo and Multilingual, optional environment; MMS-TTS as Korean fallback) · Demucs · NVIDIA Nemotron 3 Diarization + TitaNet-large · WavLM speaker verification (fallback) · Ming-3.0-tts 0.5B + CosyVoice 3 (Korean and English voices, optional environments) · emotion2vec+ large (emotions heard in the original) + AST AudioSet (sounds) · Python 3.10–3.12
 
 Starter template: [humblebeeai/module-python-template](https://github.com/humblebeeai/module-python-template) — chosen because the core of DUBBE is a batch command-line pipeline. The website (`src/dubbe/web/`) adds FastAPI, SQLite and HTML templates on top of it; plan: [docs/website-plan.md](docs/website-plan.md).
 
@@ -130,11 +131,23 @@ py -3.12 -m venv .venv-chatterbox
 .venv-chatterbox/Scripts/python -m pip install chatterbox-tts==0.1.7
 # voice cloning (your own voice): needs the Chatterbox environment above and DUBBE_VOICE_KEY set in the environment
 # (make one: see .env.example). Recordings are encrypted with it; if the key is lost they cannot be read again
-# optional diarization: accept the terms of pyannote/speaker-diarization-3.1 and pyannote/segmentation-3.0 on Hugging Face,
-# set HF_TOKEN (.env.example) and speaker_engine: pyannote in languages.yaml. community-1 needs pyannote.audio 4 in its own env:
-py -3.12 -m venv .venv-diarize
-.venv-diarize/Scripts/python -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
-.venv-diarize/Scripts/python -m pip install pyannote.audio==4.0.7
+# speaker diarization (default engine): Nemotron 3 runs in its own environment with NeMo from GitHub (its rotary
+# attention is not in the pip release yet). Without .venv-nemo, speakers are found per sentence by WavLM instead
+py -3.12 -m venv .venv-nemo
+.venv-nemo/Scripts/python -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+.venv-nemo/Scripts/python -m pip install Cython packaging
+.venv-nemo/Scripts/python -m pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git"
+# Korean and English voices: Ming-3.0-tts (emotions) with CosyVoice 3 (more emotions, Korean plain lines, retries), each in
+# its own environment with its code checked out next to them. Without them Korean / English use Chatterbox / Kokoro
+git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git .cosyvoice
+py -3.12 -m venv .venv-cosyvoice
+.venv-cosyvoice/Scripts/python -m pip install -r .cosyvoice/requirements.txt   # torch 2.3.1; first use downloads ~5 GB
+git clone --depth 1 https://github.com/inclusionAI/Ming-3.0-tts.git .ming
+py -3.12 -m venv .venv-ming
+.venv-ming/Scripts/python -m pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+.venv-ming/Scripts/python -m pip install -r .ming/requirements.txt              # first use downloads ~3 GB
+# Uzbek uses .venv-cosyvoice too (Navoiy: CosyVoice2-0.5B + 1.9 GB of weights, ~6 GB on first use); Kazakh's Piper is in
+# the models extra. Uzbek recognition (rubaistt) is converted for faster-whisper on first use (~1.5 GB)
 python scripts/ratings_summary.py work/lecture.ko-en                          # scores, flag precision/recall, rater agreement
 python scripts/eval_propagation.py work/lecture.ko-en reference.json          # which stage causes the errors (C17)
 pytest                                          # unit tests: sentence grouping, timing
@@ -150,4 +163,4 @@ Every stage writes its result into `work/<video>.<src>-<tgt>/`. To correct a tra
 
 ## Credits
 
-Problem statement and Definition of Done are from the HBAI Capstone Project Pool, tab C2b. Third-party models and their licences are listed in [docs/project-overview.md](docs/project-overview.md#8-tools-models-free-path-hardware). AI tools (Claude) were used to write code and documentation; the team reviewed and tested it.
+Problem statement and Definition of Done are from the HBAI Capstone Project Pool, tab C2b. Third-party models and their licences are listed in [docs/project-overview.md](docs/project-overview.md#8-tools-models-free-path-hardware). The emotion tags use emotion2vec+ large by Alibaba DAMO Academy / [FunASR](https://github.com/modelscope/FunASR) (FunASR model license). AI tools (Claude) were used to write code and documentation; the team reviewed and tested it.

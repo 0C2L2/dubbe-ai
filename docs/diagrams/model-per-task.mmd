@@ -1,0 +1,57 @@
+%% One task, one model built for it: each pipeline stage (row) and the models that can do its job, default first.
+%% Blue = default, white dashed = tested alternative (switch in languages.yaml), orange = experimental, grey = no AI model
+flowchart TB
+    in(["video"])
+
+    subgraph SEP["1 separate: voice vs background"]
+        direction LR
+        sep1["Demucs htdemucs<br/><i>MIT</i>"]
+    end
+    subgraph ASR["2 asr: what is said"]
+        direction LR
+        asr1["Whisper large-v3 (ko) / large-v3-turbo (en)<br/><i>faster-whisper, MIT</i>"]
+    end
+    subgraph SPK["3 speakers: who speaks when"]
+        direction LR
+        spk0["NVIDIA Nemotron 3 Diarization<br/><i>where each speaker turn starts and ends,<br/>OpenMDW</i>"] ~~~ spk2["TitaNet-large<br/><i>voice fingerprint per turn: turns grouped<br/>by voice, any number of people, CC-BY-4.0</i>"] ~~~ spk1["WavLM base-plus-sv<br/><i>voice fingerprint per sentence,<br/>fallback, MIT</i>"]
+    end
+    subgraph SEG["4 segment: sentences"]
+        direction LR
+        seg1["rules: sentence endings, pauses,<br/>speaker changes"]
+    end
+    subgraph EMO["5 emotion: how it is said"]
+        direction LR
+        emo1["emotion2vec+ large<br/><i>happy / angry / sad / fear / surprise / disgust</i>"] ~~~ emo2["AST AudioSet<br/><i>laugh, sigh, gasp, whisper</i>"]
+    end
+    subgraph TR["6 translate"]
+        direction LR
+        tr1["NLLB-200 3.3B<br/><i>200 languages, any pair</i>"]
+    end
+    subgraph TTS["7 tts: speak it in the new language"]
+        direction LR
+        tts1["Kokoro-82M<br/><i>English fallback, Apache-2.0</i>"] ~~~ tts2["Chatterbox Multilingual<br/><i>Korean fallback, MIT</i>"] ~~~ tts3["MMS-TTS<br/><i>Korean fallback</i>"] ~~~ tts4["Ming-3.0-tts + CosyVoice 3<br/><i>Korean + English with emotions, MIT / Apache-2.0</i>"]
+    end
+    subgraph MIX["8 timing + mux"]
+        direction LR
+        mix1["ffmpeg + rules<br/><i>fit each sentence to its time, keep background</i>"]
+    end
+    out(["dubbed video + review report"])
+
+    in --> SEP --> ASR --> SPK --> SEG --> EMO --> TR --> TTS --> MIX --> out
+
+    subgraph KEY["legend"]
+        direction LR
+        k1["default"] ~~~ k2["tested alternative<br/>(languages.yaml)"] ~~~ k3["experimental"] ~~~ k4["no AI model"]
+    end
+    out ~~~ KEY
+
+    classDef def fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef alt fill:#ffffff,stroke:#438dd5,color:#0b3a66,stroke-dasharray:5 4
+    classDef exp fill:#fff1e6,stroke:#ea580c,color:#7c2d12
+    classDef rule fill:#f1f5f9,stroke:#94a3b8,color:#334155
+    classDef file fill:#eaf2fb,stroke:#438dd5,color:#0b3a66
+    class sep1,asr1,spk0,spk2,emo1,emo2,tr1,tts4,k1 def
+    class spk1,tts1,tts2,tts3,k2 alt
+    class k3 exp
+    class seg1,mix1,k4 rule
+    class in,out file

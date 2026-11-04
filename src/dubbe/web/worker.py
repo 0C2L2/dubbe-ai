@@ -34,7 +34,7 @@ def work(p) -> Path:
 
 def command(p, from_stage: str | None) -> list[str]:
     cmd = [sys.executable, "-m", "dubbe.cli", str(video(p["id"])), "--src", p["src"], "--tgt", p["tgt"],
-           "--work", str(folder(p["id"]))]
+           "--work", str(folder(p["id"])), "--title", p["title"]]
     cmd += ["--from", from_stage] if from_stage else []
     cmd += [] if p["keep_bg"] else ["--no-background"]
     cmd += ["--slow-video", str(p["slow"])] if p["slow"] > 1 else []

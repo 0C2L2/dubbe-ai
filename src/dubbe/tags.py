@@ -14,18 +14,47 @@ from scipy.linalg import solve_toeplitz
 from scipy.signal import lfilter
 
 from .korean import read_numbers
+from .kazakh import read_numbers as kk_numbers
+from .uzbek import read_numbers as uz_numbers
+from .uzbek import to_cyrillic
 
 DELIVERY = {"slow": "speak slower", "fast": "speak faster", "soft": "quieter", "loud": "louder",
             "pause": "short pause before the line", "question": "pitch rises at the end", "whisper": "breathy whisper",
             "excited": "higher, faster, a bit louder", "sad": "lower, slower, quieter", "angry": "louder, a bit higher and faster"}
 VOCAL = ["laugh", "sigh", "gasp", "cough"]
-ALL = list(DELIVERY) + VOCAL
+# emotions only a voice model can act - no DUBBE effect: Ming-3.0-tts / CosyVoice 3 (tts._ming)
+ACTED = {"scared": "fear in the voice", "surprised": "surprised", "disgusted": "disgust", "sympathetic": "warm and caring"}
+ALL = list(DELIVERY) + list(ACTED) + VOCAL
 
 # vocal tag -> the engine's token (Chatterbox Turbo's added_tokens.json). An AudioSet classifier heard the sound on
 # 3 sentences each: cough 0.37, gasp 0.17, laugh 0.11, sigh 0.08 (plain speech ~0.00) - weak but there. Chatterbox
 # Multilingual has [laughter] [sigh] [gasp] [cough] in its vocabulary but made none of them in Korean (all 0.00), so
 # Korean has no tokens: those tags are reported "not performed" (test-results C19d).
-VOCAL_TOKENS = {"chatterbox": {"laugh": "[laugh]", "sigh": "[sigh]", "gasp": "[gasp]", "cough": "[cough]"}}
+VOCAL_TOKENS = {"chatterbox": {"laugh": "[laugh]", "sigh": "[sigh]", "gasp": "[gasp]", "cough": "[cough]"},
+                "cosyvoice": {"laugh": "[laughter]"}}  # CosyVoice's own token (.cosyvoice/example.py); not measured yet
+# emotion tag -> (Ming-3.0-tts value, None = beyond Ming's 7; CosyVoice 3 instruction, any wording)
+EMOTIONS = {"excited": ("高兴", "Please speak very happily and excitedly."),
+            "sad": ("悲伤", "Please speak sadly, in a low and slow voice."),
+            "angry": ("愤怒", "Please speak angrily."),
+            "scared": ("恐惧", "Please speak fearfully, with a trembling voice."),
+            "surprised": ("惊讶", "Please speak with great surprise."),
+            "disgusted": ("厌恶", "Please speak with disgust."),
+            "sympathetic": (None, "Please speak gently and warmly, with deep sympathy.")}
+MING_TO_COSY = {m: c for m, c in EMOTIONS.values() if m}
+# emotion tag -> the engine's instruction. These engines act the emotion themselves, so DUBBE does not also change its pitch,
+# speed and level. "ming" gets CosyVoice's sentence for what Ming cannot do: tts._ming hands those sentences to CosyVoice
+INSTRUCT = {"cosyvoice": {t: c for t, (_, c) in EMOTIONS.items()},
+            "ming": {t: m or c for t, (m, c) in EMOTIONS.items()},
+            # Navoiy TTS (Uzbek): its own 10 trained instructions (aisha-org/navoiy-tts emotions_40h.json); none for [disgusted]
+            "navoiy": {"excited": "Speak in a happy, excited and energetic voice with bright rising intonation and a quicker, lively pace.",
+                       "sad": "Speak in a sad, sorrowful voice with low energy, slow pace and a falling, heavy intonation.",
+                       "angry": "Speak in an angry voice with sharp, clipped, forceful delivery, loud volume and tense, hard intonation.",
+                       "scared": "Speak in a fearful, nervous voice that is shaky and tense, with a higher pitch, uneven breathy pace and trembling intonation.",
+                       "surprised": "Speak in a surprised, astonished voice with a sudden sharp rise in pitch, wide-eyed energy and an abrupt expressive burst.",
+                       "whisper": "Speak in a soft, quiet whisper with breathy, low-volume voice and gentle careful articulation.",
+                       "sympathetic": "Speak in a warm, gentle, affectionate voice with soft tone, smooth slow pacing and caring, soothing intonation."}}
+NAVOIY_CALM = "Speak in a calm, steady, neutral voice with even pacing and relaxed intonation."  # its plain sentences (C43: 3.1 % CER)
+INSTRUCT_END = "<|endofprompt|>"  # text_for_tts puts "<instruction><|endofprompt|>" in front; tts._prompted splits it off
 
 SPEED = {"slow": 0.85, "fast": 1.15}
 GAIN_DB = {"soft": -6.0, "loud": 4.0, "whisper": -3.0, "excited": 2.0, "sad": -3.0, "angry": 5.0}
@@ -41,10 +70,27 @@ def text_for_tts(text: str, tags: list[str], engine: str = "", lang: str = "") -
     Korean digits are written out in words (the voices misread them)."""
     if lang == "ko":
         text = read_numbers(text)
+    if lang == "uz":
+        text = uz_numbers(text)  # Navoiy misreads digits ("2026-yilda", "47,9")
+    if lang == "kk":
+        text = kk_numbers(text)  # Piper garbled "1000", "4,5", "5-сынып"
+    if lang == "uz" and engine == "mms":  # MMS's Uzbek voice reads Cyrillic only; NLLB writes Latin
+        text = to_cyrillic(text)
     if "question" in tags and not text.rstrip().endswith("?"):
         text = text.rstrip().rstrip(".!") + "?"
     tokens = VOCAL_TOKENS.get(engine, {})
-    return " ".join([tokens[t] for t in tags if t in tokens] + [text])
+    how = next((INSTRUCT[engine][t] for t in tags if t in INSTRUCT.get(engine, {})), "")
+    return (how + INSTRUCT_END if how else "") + " ".join([tokens[t] for t in tags if t in tokens] + [text])
+
+
+# voices that end a "?" sentence like a question by themselves: DUBBE's tape glide on top made the end sound like another,
+# higher voice (project 14: 6 of the 8 least speaker-like Ming clips were questions, C50). The glide stays for Kokoro (C19c)
+ASKS_ITSELF = ("ming", "cosyvoice", "navoiy", "chatterbox", "chatterbox_ml")
+
+
+def dubbe_tags(tags: list[str], engine: str) -> list[str]:
+    """The tags DUBBE applies to the audio itself: all but the emotions the engine acted (and a question it asked itself)."""
+    return [t for t in tags if t not in INSTRUCT.get(engine, {}) and not (t == "question" and engine in ASKS_ITSELF)]
 
 
 def speed(tags: list[str]) -> float:
@@ -101,4 +147,5 @@ def shape_audio(audio: np.ndarray, sr: int, tags: list[str]) -> np.ndarray:
 
 
 def not_performed(tags: list[str], engine: str) -> list[str]:
-    return [t for t in tags if t in VOCAL and t not in VOCAL_TOKENS.get(engine, {})]
+    return [t for t in tags if (t in VOCAL and t not in VOCAL_TOKENS.get(engine, {}))
+            or (t in ACTED and t not in INSTRUCT.get(engine, {}))]  # e.g. [sympathetic] with Kokoro

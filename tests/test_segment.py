@@ -40,14 +40,11 @@ def test_tiny_fragment_merged_into_closer_neighbour():
     assert texts(group(w, CFG)) == ["long sentence. 음.", "next one."]
 
 
-def test_speaker_change_closes_sentence_and_short_reply_stays_its_own():
-    # A talks without a pause; B answers "네." (0.4 s) right after: two sentences, not one, and the short reply
-    # is not merged back into A's sentence even though it is shorter than min_dur
+def test_sentences_come_from_the_words_alone():
+    # A talks without a pause and B answers "네." right after: segment does not know about speakers (C33) - the
+    # reply stays in the sentence and `speakers` splits it there by voice
     w = words(("그럼", 0, 0.5), ("내일", 0.55, 1.0), ("봐요", 1.05, 1.6), ("네.", 1.65, 2.05), ("다음은", 3.5, 4.1), ("예제입니다.", 4.2, 5.2))
-    turns = [{"start": 0, "end": 1.62, "speaker": "A"}, {"start": 1.62, "end": 2.1, "speaker": "B"},
-             {"start": 3.4, "end": 5.3, "speaker": "A"}]
-    assert texts(group(w, CFG, turns)) == ["그럼 내일 봐요", "네.", "다음은 예제입니다."]
-    assert texts(group(w, CFG)) == ["그럼 내일 봐요 네.", "다음은 예제입니다."]  # without turns: as before
+    assert texts(group(w, CFG)) == ["그럼 내일 봐요 네.", "다음은 예제입니다."]
 
 
 def test_every_word_kept_once_in_order():

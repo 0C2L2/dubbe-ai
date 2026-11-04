@@ -1,6 +1,6 @@
 import numpy as np
 
-from dubbe.tags import not_performed, shape_audio, speed, text_for_tts
+from dubbe.tags import dubbe_tags, not_performed, shape_audio, speed, text_for_tts
 
 
 def test_question_tag_makes_a_question():
@@ -30,6 +30,13 @@ def test_engine_tokens_go_in_front():
     assert text_for_tts("That is funny.", ["laugh", "slow"], "chatterbox") == "[laugh] That is funny."
     assert text_for_tts("Quiet now", ["whisper", "sigh", "question"], "chatterbox") == "[sigh] Quiet now?"
     assert text_for_tts("That is funny.", ["laugh"], "kokoro") == "That is funny."
+    # CosyVoice acts the emotion from an instruction in front; DUBBE then leaves its pitch/speed/level alone
+    assert text_for_tts("No.", ["sad", "laugh"], "cosyvoice") == "Please speak sadly, in a low and slow voice.<|endofprompt|>[laughter] No."
+    assert dubbe_tags(["sad", "slow", "question"], "cosyvoice") == ["slow"] and dubbe_tags(["sad"], "kokoro") == ["sad"]
+    # a voice that asks by itself gets no tape glide on top (it sounded like another voice, C50); Kokoro still does
+    assert dubbe_tags(["question"], "ming") == [] and dubbe_tags(["question"], "kokoro") == ["question"]
+    assert text_for_tts("No.", ["angry"], "ming") == "愤怒<|endofprompt|>No." and dubbe_tags(["angry", "soft"], "ming") == ["soft"]
+    assert not_performed(["sympathetic", "sad"], "kokoro") == ["sympathetic"] and not_performed(["sympathetic"], "ming") == []
 
 
 def test_expression_tags_change_the_sound():
@@ -52,6 +59,28 @@ def test_expression_tags_change_the_sound():
     assert np.abs(shape_audio(a * 1.9, sr, ["angry", "loud"])).max() <= .99  # never clipped
     assert w.dtype == q.dtype == np.float32
     assert len(shape_audio(np.zeros(0, "float32"), sr, ["whisper", "excited", "question"])) == 0  # "??": nothing to say
+
+
+def test_uzbek_is_cyrillic_only_for_the_mms_voice():
+    from dubbe.uzbek import to_cyrillic
+    assert to_cyrillic("Toshkent shahrida yomg‘ir yogʻdi. Ertaga choy ichamiz.") == "тошкент шаҳрида ёмғир ёғди. эртага чой ичамиз."
+    assert text_for_tts("Qo'ng'iroq.", [], "mms", "uz") == "қўнғироқ."
+    assert text_for_tts("Qo'ng'iroq.", ["sad"], "navoiy", "uz").endswith("<|endofprompt|>Qo'ng'iroq.")  # Navoiy reads Latin
+    assert dubbe_tags(["sad", "whisper", "disgusted"], "navoiy") == ["disgusted"]  # it acts the rest itself
+    assert not_performed(["disgusted"], "navoiy") == ["disgusted"]
+
+
+def test_uzbek_and_kazakh_numbers_are_spoken_as_words():
+    from dubbe.kazakh import read_numbers as kk
+    from dubbe.uzbek import read_numbers as uz
+    # Navoiy said "fayz sinf", "to'rt yuz tenziyroq" for "5-sinf", "210 000"; heard back right as words (C46)
+    assert uz("2026-yilda 47,9 % o'sdi.") == "ikki ming yigirma oltinchi yilda qirq yetti butun o'ndan to'qqiz foiz o'sdi."
+    assert uz("1,000 kishi, 210 000 nafar, 100 yil, 120 ta") == "ming kishi, ikki yuz o'n ming nafar, yuz yil, yuz yigirma ta"
+    assert uz("5-sinf, 5-da, 5-chi, 1990-2000") == "beshinchi sinf, beshda, beshinchi, ming to'qqiz yuz to'qson - ikki ming"
+    assert kk("Оның 120-сы, 4,5%, 1000.") == "Оның жүз жиырмасы, төрт бүтін бес пайыз, бір мың."
+    assert kk("5-сыныпта, 6-шы, 20-сынып, 2026-жылы") == "бесінші сыныпта, алтыншы, жиырмасыншы сынып, екі мың жиырма алтыншы жылы"
+    assert text_for_tts("5-sinf.", [], "navoiy", "uz") == "beshinchi sinf." and text_for_tts("5-sinf.", [], "navoiy", "en") == "5-sinf."
+    assert text_for_tts("1000.", [], "piper", "kk") == "бір мың."
 
 
 def test_korean_numbers_are_spoken_as_words():

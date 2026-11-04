@@ -81,7 +81,11 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals.update(PLANS=db.PLANS, NAMES=NAMES, STAGE=STAGE, MSG=MSG, TAGS=tags, ERRORS=ratings.ERRORS,
                              STAGES=worker.STAGE_NAMES, t=_t, TOPICS=TOPICS)
-templates.env.filters["date"] = lambda ts: datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "—"
+# cache-busting: /static/style.css?v=<last change> so browsers fetch the new file after every change. Read at each page
+# render, not once at start: a CSS edit without a server restart kept the old number and browsers kept the old file
+templates.env.globals["ASSET_V"] = type("AssetV", (), {"__str__": lambda _: str(int(max(
+    (HERE / "static" / f).stat().st_mtime for f in ("style.css", "app.js"))))})()
+templates.env.filters["date"] =lambda ts: datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "—"
 
 
 @app.middleware("http")
@@ -162,9 +166,9 @@ def voices(langs=("en", "ko")) -> list[dict]:
             vid = sample_name(v, lang, info)
             us_uk = {"a": "American", "b": "British"}.get(v[0], "")
             out.append({"id": vid, "key": v, "lang": lang, "f0": info["f0"], "register": info["register"],
-                        "name": v.split("_")[1].title() if lang == "en" or info.get("prompt") else NAMES[lang],
-                        "accent": us_uk if lang == "en" else f"{NAMES[lang]}, from the {us_uk} preset" if info.get("prompt")
-                        else "MMS" if "mms" in v else "Chatterbox",
+                        "name": info.get("name") or (v.split("_")[1].title() if lang == "en" or info.get("prompt") else NAMES[lang]),
+                        "accent": info.get("accent") or (us_uk if lang == "en" else f"{NAMES[lang]}, from the {us_uk} preset"
+                                                         if info.get("prompt") else "MMS" if "mms" in v else "Chatterbox"),
                         "sample": (db.ROOT / "samples" / f"{vid}.wav").exists(),
                         "default": v == _LANGS[lang]["tts"].get("voice")})
     return out
@@ -468,9 +472,49 @@ def projects_page(request: Request):
     return page(request, "dashboard.html", user=u, projects=projects, used=round(used_minutes(u["id"]), 1))
 
 
+PART_MAX = 8 * 1024 ** 2  # app.js sends bigger files in 8 MB pieces, kept in db.ROOT / "upload-parts"
+
+
+@app.post("/app/upload/{token}")
+async def upload_part(request: Request, token: str, at: int = 0):
+    """One piece of a file the browser sends in pieces: the public dev tunnel refuses requests over 10-20 MB (413).
+    Pieces arrive in order (`at` = bytes already sent); the form then names the token instead of carrying the file."""
+    u = auth.require_user(request)
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        raise HTTPException(404)
+    parts = db.ROOT / "upload-parts"
+    parts.mkdir(parents=True, exist_ok=True)
+    if at == 0:  # ponytail: abandoned uploads are cleared when someone starts a new one, not on a schedule
+        for old in parts.iterdir():
+            if old.stat().st_mtime < db.now() - 86400:
+                old.unlink(missing_ok=True)
+    f, body = parts / f"{u['id']}-{token}", await request.body()
+    size = f.stat().st_size if f.exists() else 0
+    if at != size:
+        return PlainTextResponse("Upload interrupted - please try again.", 409)
+    if len(body) > PART_MAX or size + len(body) > MAX_UPLOAD:
+        f.unlink(missing_ok=True)
+        return PlainTextResponse("File too large (2 GB at most).", 413)
+    with f.open("ab") as out:
+        out.write(body)
+    return {"size": size + len(body)}
+
+
+def chunked(u, token: str, file: UploadFile):
+    """The file the browser sent in pieces (form field `upload`), in place of the empty stand-in it put in the form."""
+    f = db.ROOT / "upload-parts" / f"{u['id']}-{token}"
+    if re.fullmatch(r"[0-9a-f]{32}", token or "") and f.exists():
+        return type("Parts", (), {"filename": file.filename, "path": f})()
+    return file
+
+
 def save_upload(file: UploadFile, dest: Path) -> bool:
     """Stream an upload to disk; False (and nothing left behind) when it is bigger than MAX_UPLOAD."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(file, "path"):  # sent in pieces (chunked): already on disk, moved into place
+        ok = file.path.stat().st_size <= MAX_UPLOAD
+        shutil.move(file.path, dest) if ok else file.path.unlink()
+        return ok
     size = 0
     with dest.open("wb") as out:
         while chunk := file.file.read(1 << 20):
@@ -510,8 +554,9 @@ def new_form(request: Request):
 
 @app.post("/app/new")
 def new_dub(request: Request, file: UploadFile = File(...), src: str = Form(...), tgt: str = Form(...),
-            keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form("")):
+            keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
+    file = chunked(u, upload, file)
     form = {"src": src, "tgt": tgt, "voice": voice}
     mine = clones.usable(u) if clones.enabled() else []
 
@@ -643,6 +688,8 @@ def voice_options(p, sp: str = "S1") -> list[tuple[str, str]]:
     owner = db.one("select * from users where id=?", p["owner_id"])
     own = [(f"video:{sp}", "Their own voice (cloned from the video, with consent)")] if clones.speaker_file(p["id"], sp).exists() else []
     presets = [(v, v) for v in _LANGS[p["tgt"]]["tts"].get("voices", {})]
+    if "clone" not in _LANGS[p["tgt"]]["tts"]:  # no voice that speaks from a recording in this language (Kazakh: Piper)
+        return presets
     return own + presets + [(f"clone:{c['id']}", f"{c['name']} — " + ("your voice" if c["owner_id"] == owner["id"] else
                             f"by {c['owner_name'] or 'a user'}")) for c in (clones.usable(owner) if clones.enabled() else [])]
 
@@ -661,7 +708,9 @@ def start_over(request: Request, pid: int, stage: str):
 @app.post("/app/p/{pid}/detect-speakers")
 def detect_speakers(request: Request, pid: int):
     """Find the speakers again: projects dubbed before detection existed, or a detection the reviewer wants redone."""
-    return start_over(request, pid, "diarize")  # turns first, then sentences split by speaker (edits carry over)
+    # from the voice separation, not the turns: the turns are found on vocals.wav, and a track from before Demucs was
+    # seeded (C40) kept its result - KOR dub 12 merged the two children again and again; rebuilt, 6 of 6 like the tool
+    return start_over(request, pid, "separate")  # then turns, then sentences split by speaker (edits carry over)
 
 
 @app.post("/app/p/{pid}/rerun")
@@ -691,6 +740,8 @@ def set_speaker(request: Request, pid: int, sp: str, name: str = Form(""), voice
         spk[sp].update(name=name.strip()[:40] or spk[sp].get("name") or sp, **({"voice": voice, "override": True} if voice else {}))
     data["speakers_edited"] = True  # a re-run never redoes the detection over the reviewer's corrections
     write_json(worker.work(p) / "segments.json", data)
+    if request.headers.get("x-fetch") and not merge:  # name/voice saved in place: other rows keep their unsaved changes
+        return Response(status_code=204)
     return go(f"/app/p/{pid}?m=speakers#speakers")
 
 
@@ -716,7 +767,20 @@ def clone_speaker(request: Request, pid: int, sp: str, consent: str = Form("")):
 @app.post("/app/p/{pid}/redub")
 def redub(request: Request, pid: int):
     own_project(request, pid)
-    return go(f"/app/jobs/{queue(pid, 'tts')}")  # new text, tags and voice take effect from speech synthesis on
+    return go(f"/app/jobs/{queue(pid, 'tts')}")  # only sentences whose text, tags or voice changed are spoken again (C49)
+
+
+@app.post("/app/p/{pid}/s/{sid}/retake")
+def retake(request: Request, pid: int, sid: int):
+    """Same text, a new take: the sentence is spoken again, every other sentence keeps its clip."""
+    u, p = own_project(request, pid)
+    data = segments(p)
+    s = next((x for x in data["segments"] if x["id"] == sid), None)
+    if not s:
+        raise HTTPException(404)
+    s["take"] = s.get("take", 0) + 1
+    write_json(worker.work(p) / "segments.json", data)
+    return go(f"/app/jobs/{queue(pid, 'tts')}")
 
 
 # files the report and the editor link to; nothing else in the project folder is served
@@ -816,7 +880,8 @@ TOOLS = {"tts": "Text to Speech", "stt": "Speech to Text", "speakers": "Speaker 
 SPK_COLORS = ["#f76b15", "#6e56cf", "#30a46c", "#3b82f6", "#e5484d", "#e2a336", "#12a594", "#d6409f"]
 MEDIA_TYPES = VIDEO_TYPES | {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 MAX_CHARS = {"tts": 2000, "translate": 5000}
-templates.env.globals.update(TOOLS=TOOLS, MAX_CHARS=MAX_CHARS, SPK_COLORS=SPK_COLORS)
+templates.env.globals.update(TOOLS=TOOLS, MAX_CHARS=MAX_CHARS, SPK_COLORS=SPK_COLORS, CLONE_MIN=clones.MIN_SECONDS,
+                             NOCLONE=" ".join(k for k in LANGS if "clone" not in _LANGS[k]["tts"]))  # voice pickers hide clones
 
 
 def new_task(u, kind: str, title: str, params: dict, status: str = "waiting") -> int:
@@ -873,8 +938,9 @@ def translate_create(request: Request, text: str = Form(""), src: str = Form("ko
     return go(f"/app/tasks/{new_task(u, 'translate', text, {'text': text.strip(), 'src': src, 'tgt': tgt})}")
 
 
-def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, rights: str, form: dict):
+def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, rights: str, form: dict, upload: str = ""):
     """Speech to text and voice isolator: upload, check type, length and plan, then queue."""
+    file = chunked(u, upload, file)
     ext = Path(file.filename or "").suffix.lower()
     error = ("Please confirm your email first." if not u["verified_at"] else
              "Please confirm you own this file or may use it." if not rights else
@@ -899,18 +965,19 @@ def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, r
 
 @app.post("/app/stt")
 def stt_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), to: str = Form(""),
-               rights: str = Form(""), speakers: str = Form("")):
+               rights: str = Form(""), speakers: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
     return media_task(request, u, "stt", file, {"src": src, "to": to if to in LANGS and to != src else "", "speakers": bool(speakers)},
-                      rights, {"src": src, "to": to, "speakers": speakers})
+                      rights, {"src": src, "to": to, "speakers": speakers}, upload)
 
 
 @app.post("/app/speakers")
-def speakers_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), rights: str = Form("")):
+def speakers_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), rights: str = Form(""),
+                    upload: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
-    return media_task(request, u, "speakers", file, {"src": src}, rights, {"src": src})
+    return media_task(request, u, "speakers", file, {"src": src}, rights, {"src": src}, upload)
 
 
 def own_speaker(request: Request, tid: int, sp: str):
@@ -920,6 +987,22 @@ def own_speaker(request: Request, tid: int, sp: str):
     if sp not in (data.get("speakers") or {}):
         raise HTTPException(404)
     return u, t, data
+
+
+@app.post("/app/tasks/{tid}/speakers-edit")
+async def task_speakers_edit(request: Request, tid: int):
+    """Save a person's fix of who said what: words moved between sentences, sentences split, joined or given to
+    another speaker. The whole transcript comes back as speakers and word indices; nothing may be lost or doubled."""
+    u, t = own_task(request, tid)
+    if t["kind"] != "speakers" or t["status"] != "done":
+        raise HTTPException(404)
+    body = await request.json()
+    try:
+        result = tools.edit_speakers(tools.folder(tid), body.get("sentences") or [])
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    db.run("update tasks set result=? where id=?", json.dumps(result, ensure_ascii=False), tid)
+    return {"ok": True}
 
 
 @app.post("/app/tasks/{tid}/speakers/{sp}")
@@ -936,11 +1019,11 @@ def task_speaker_name(request: Request, tid: int, sp: str, name: str = Form(""))
 
 @app.post("/app/captions")
 def captions_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), to: str = Form(""),
-                    rights: str = Form("")):
+                    rights: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
     return media_task(request, u, "captions", file, {"src": src, "to": to if to in LANGS and to != src else ""}, rights,
-                      {"src": src, "to": to})
+                      {"src": src, "to": to}, upload)
 
 
 @app.post("/app/tasks/{tid}/burn")
@@ -985,9 +1068,9 @@ def task_speaker_clone(request: Request, tid: int, sp: str, name: str = Form("")
 
 
 @app.post("/app/isolate")
-def isolate_create(request: Request, file: UploadFile = File(...), rights: str = Form("")):
+def isolate_create(request: Request, file: UploadFile = File(...), rights: str = Form(""), upload: str = Form("")):
     u = auth.require_user(request)
-    return media_task(request, u, "isolate", file, {}, rights, {})
+    return media_task(request, u, "isolate", file, {}, rights, {}, upload)
 
 
 @app.get("/app/tasks/{tid}")
@@ -995,8 +1078,23 @@ def task_page(request: Request, tid: int):
     u, t = own_task(request, tid)
     ahead = db.one("select count(*) n from tasks where status='waiting' and id<?", tid)["n"] + \
         db.one("select count(*) n from jobs where status in ('waiting','running')")["n"]
-    return page(request, "task.html", user=u, t=t, p=json.loads(t["params"]), ahead=ahead,
-                result=json.loads(t["result"]) if t["result"] else None, cloning=clones.enabled())
+    m = tools.media(tid)
+    result = json.loads(t["result"]) if t["result"] else None
+    if t["kind"] == "speakers" and result and result.get("sentences") and "words" not in result["sentences"][0] \
+            and (tools.folder(tid) / "segments.json").exists():
+        result = tools.speaker_files(tools.folder(tid))  # a result from before the word editor: add the words
+    return page(request, "task.html", user=u, t=t, p=json.loads(t["params"]), ahead=ahead, result=result, cloning=clones.enabled(),
+                media_video=(m.suffix.lower() in VIDEO_TYPES) if m else None)
+
+
+@app.get("/app/tasks/{tid}/media")
+def task_media(request: Request, tid: int):
+    """The task's own upload, for the result page's player (owner or admin only; seeking uses range requests)."""
+    own_task(request, tid)
+    m = tools.media(tid)
+    if not m:
+        raise HTTPException(404)
+    return FileResponse(m)
 
 
 @app.get("/app/tasks/{tid}/file/{name}")

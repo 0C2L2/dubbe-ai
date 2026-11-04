@@ -6,25 +6,35 @@ import soundfile as sf
 from . import db, ffmpeg, read_json, video_duration, write_json
 
 
-def place(segs: list[dict], total: float, max_stretch: float, max_slow: float = 1.0) -> list[dict]:
+def place(segs: list[dict], total: float, max_stretch: float, max_slow: float = 1.0, min_stretch: float = 1.0,
+          late: float = 0.0) -> list[dict]:
     """Decide speed-up, video slow-down and start time per segment (known hard part #3).
     A segment that needs `need` x more time than its slot splits it evenly: the picture slows by
     sqrt(need) (up to max_slow) and the speech speeds up by the rest (up to max_stretch).
+    A dub shorter than the original speech is slowed towards its length (down to min_stretch): the voice no longer
+    ends seconds before the speaker stops (KOR news: an 8.9 s interview answer dubbed in 5.6 s).
     Times are on the output timeline (`out_start`), which is longer wherever the video slows.
     Each segment aims for its own start, so a late segment can only delay the next one until a
-    pause absorbs it: delay never accumulates over the clip."""
+    pause absorbs it: delay never accumulates over the clip. A dub may end up to `late` s after the next sentence's
+    start before it is sped up (that one then waits): KOR news, 3 of 6 sped-up lines needed less than 1 s more."""
     prev_end, shift = 0.0, 0.0  # shift = output time added by slowed video so far
     for i, s in enumerate(segs):
         next_start = segs[i + 1]["start"] if i + 1 < len(segs) else total
         slot = max(next_start - s["start"], 0.01)
-        need = max(s["tts_dur"] / slot, 1.0)
+        out_start = s["start"] + shift
+        # the last one ends with the video; back-to-back lines share the allowance, so no dub is ever more than `late` s
+        # behind (KOR news #17-#20 borrowing 1 s each: the last two started 2 s late)
+        extra = max(0.0, late - max(0.0, prev_end - out_start)) if i + 1 < len(segs) else 0.0
+        need = max(s["tts_dur"] / (slot + extra), 1.0)
         slow = min(need ** 0.5, max_slow)
         stretch = min(need / slow, max_stretch)
+        spoken = s.get("end", s["start"]) - s["start"]  # how long the speaker talks
+        if need == 1.0 and spoken > s["tts_dur"]:
+            stretch = max(s["tts_dur"] / spoken, min_stretch)
         dur = s["tts_dur"] / stretch
-        out_start = s["start"] + shift
         placed = max(out_start, prev_end)
         s.update(stretch=round(stretch, 3), slow=round(slow, 3), out_start=round(out_start, 3),
-                 placed_start=round(placed, 3), overflow=round(max(0.0, placed + dur - (out_start + slot * slow)), 3))
+                 placed_start=round(placed, 3), overflow=round(max(0.0, placed + dur - (out_start + slot * slow + extra)), 3))
         prev_end = placed + dur
         shift += slot * (slow - 1)
     return segs
@@ -70,7 +80,7 @@ def relative(clips: list[np.ndarray], sr: int) -> tuple[np.ndarray, np.ndarray]:
 def run(video: Path, work: Path, cfg: dict) -> None:
     data = read_json(work / "segments.json")
     total = video_duration(video)  # not the audio length: the source audio can end before the picture
-    segs = place(data["segments"], total, cfg["max_stretch"], cfg["max_video_slow"])
+    segs = place(data["segments"], total, cfg["max_stretch"], cfg["max_video_slow"], cfg["min_stretch"], cfg["max_late"])
     total = out_duration(segs, total)
     src = work / "vocals.wav" if (work / "vocals.wav").exists() else work / "audio.wav"
     x, xsr = sf.read(src, dtype="float32")
@@ -85,7 +95,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
         st = float(np.clip(cfg["delivery_pitch"] * o_st[i], -cfg["delivery_max_st"], cfg["delivery_max_st"]))
         st = st if abs(st) >= .3 else 0.0
         filters = ([f"rubberband=pitch={2 ** (st / 12):.4f}:formant=preserved"] if st else []) + \
-                  ([f"atempo={s['stretch']}"] if s["stretch"] > 1.0 else [])  # atempo keeps pitch
+                  ([f"atempo={s['stretch']}"] if s["stretch"] != 1.0 else [])  # atempo keeps pitch
         wav = work / "tts" / f"{s['id']}.wav"
         if filters:
             fitted = work / "tts" / f"{s['id']}.fit.wav"

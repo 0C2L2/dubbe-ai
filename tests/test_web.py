@@ -178,6 +178,17 @@ def test_upload_queues_a_job(client, tmp_path):
     p = db.one("select * from projects order by id desc limit 1")
     assert p["voice"] == "af_bella" and worker.command(p, None)[-2:] == ["--voice", "af_bella"]
 
+    # a video sent in pieces (the public dev tunnel refuses requests over 10-20 MB): the form carries an empty stand-in
+    tok, data = "ab" * 16, clip.read_bytes()
+    half = len(data) // 2
+    assert client.post(f"/app/upload/{tok}?at=0", content=data[:half]).json() == {"size": half}
+    assert client.post(f"/app/upload/{tok}?at=0", content=data[half:]).status_code == 409  # out of order: refused
+    client.post(f"/app/upload/{tok}?at={half}", content=data[half:])
+    r = client.post("/app/new", data={**form, "upload": tok}, files={"file": ("pieces.mp4", b"", "video/mp4")})
+    p = db.one("select * from projects order by id desc limit 1")
+    assert r.status_code == 303 and p["title"] == "pieces" and abs(p["minutes"] - 2 / 60) < 0.01  # the whole video arrived
+    assert not any((db.ROOT / "upload-parts").iterdir())  # moved into the project, nothing left behind
+
 
 def test_media_routes_serve_only_known_items(client, tmp_path):
     (tmp_path / "samples").mkdir()
@@ -302,7 +313,9 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     assert "2 detected" in page_ and "Speaker 2" in page_
     client.post(f"/app/p/{pid}/speakers/S2", data={"name": "Jesse"})
     assert client.post(f"/app/p/{pid}/speakers/S1", data={"voice": "nobody"}).status_code == 400
-    client.post(f"/app/p/{pid}/speakers/S1", data={"name": "Walter", "voice": "af_bella"})
+    # saved in place by the page (no reload), so the other rows keep what the reviewer changed there
+    r = client.post(f"/app/p/{pid}/speakers/S1", data={"name": "Walter", "voice": "af_bella"}, headers={"X-Fetch": "1"})
+    assert r.status_code == 204
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert data["speakers"]["S2"]["name"] == "Jesse" and data["speakers"]["S1"]["voice"] == "af_bella" and data["speakers_edited"]
     assert "Walter: Hello." in client.get(f"/app/p/{pid}/download/tgt.txt").text  # transcript by speaker
@@ -327,10 +340,18 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     client.post(f"/app/p/{pid}/s/2", data={"text": "Yes, I know.", "speaker": "new"})  # two voices detected as one: split
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert data["segments"][1]["speaker"] == "S2" and data["speakers"]["S2"]["voice"] != data["speakers"]["S1"]["voice"]
+    # one sentence spoken again with the same text: a new take for it alone, then a re-dub (C49)
+    assert "Try again" in client.get(f"/app/p/{pid}").text
+    assert client.post(f"/app/p/{pid}/s/2/retake").status_code == 303
+    data = json.loads((w / "segments.json").read_text(encoding="utf8"))
+    assert data["segments"][1]["take"] == 1 and "take" not in data["segments"][0]
+    assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "tts"
+    assert client.post(f"/app/p/{pid}/s/99/retake").status_code == 404
+    db.run("update jobs set status='done' where project_id=?", pid)
     r = client.post(f"/app/p/{pid}/detect-speakers")  # start over: detection runs again, the old clone may be someone else now
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
     assert r.status_code == 303 and "speakers_edited" not in data and not f.exists()
-    assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "diarize"
+    assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "separate"
     db.run("update jobs set status='done' where project_id=?", pid)
     client.post(f"/app/p/{pid}/rerun")  # newer recognition / translation models: from the transcript on
     assert db.one("select from_stage from jobs where project_id=? order by id desc limit 1", pid)["from_stage"] == "asr"
@@ -377,6 +398,44 @@ def test_speaker_detection_tool_names_speakers_and_clones_one_privately_with_con
     _, other = user("o@x.org")
     client.cookies.set(auth.COOKIE, other)
     assert client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1"}).status_code == 404
+
+
+def test_speaker_fix_moves_words_between_sentences_and_keeps_every_word(client):
+    import json
+    from dubbe.web import tools
+    uid, s = user("fix@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    tid = db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
+                 uid, "speakers", "Scene", json.dumps({"src": "en"}), "done", db.now())
+    out = tools.folder(tid)
+    out.mkdir(parents=True)
+    words = [{"w": w, "start": a, "end": a + .4} for w, a in [("Hello", 0), ("there.", .5), ("Yes,", 1), ("I", 1.5), ("know.", 2)]]
+    (out / "words.json").write_text(json.dumps({"words": words}), encoding="utf8")
+    segs = [{"id": 1, "start": 0.0, "end": 1.4, "speaker": "S1", "src_text": "Hello there. Yes,"},  # "Yes," bled into S1
+            {"id": 2, "start": 1.5, "end": 2.4, "speaker": "S2", "src_text": "I know."}]
+    (out / "segments.json").write_text(json.dumps({"src": "en", "segments": segs, "duration": 3.0, "speakers": {
+        "S1": {"name": "Walter"}, "S2": {"name": "Jesse"}}}), encoding="utf8")
+    db.run("update tasks set result=? where id=?", json.dumps(tools.speaker_files(out)), tid)
+    assert "Fix speakers" in client.get(f"/app/tasks/{tid}").text
+    assert json.loads(db.one("select result from tasks where id=?", tid)["result"])["sentences"][0]["words"][2][:2] == [2, "Yes,"]
+
+    fix = lambda parts: client.post(f"/app/tasks/{tid}/speakers-edit", json={"sentences": parts})  # noqa: E731
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "S2", "words": [2, 3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert [(x["speaker"], x["src_text"], x["start"]) for x in data["segments"]] == [("S1", "Hello there.", 0), ("S2", "Yes, I know.", 1)]
+    assert data["speakers_edited"] and "Jesse: Yes, I know." in (out / "transcript.txt").read_text(encoding="utf8")
+
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "S2", "words": [2, 4]}]).status_code == 400   # a word lost
+    assert fix([{"speaker": "S1", "words": [0, 1, 2]}, {"speaker": "S2", "words": [2, 3, 4]}]).status_code == 400  # doubled
+    assert fix([{"speaker": "S7", "words": [0, 1, 2, 3, 4]}]).status_code == 400                               # unknown
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "S2", "words": [2]}, {"speaker": "new", "words": [3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert data["segments"][2]["speaker"] == "S3" and data["speakers"]["S3"]["name"] == "Speaker 3"  # a new person
+    assert fix([{"speaker": "S1", "words": [0, 1, 2, 3, 4]}]).status_code == 200                               # all merged
+    assert list(json.loads((out / "segments.json").read_text(encoding="utf8"))["speakers"]) == ["S1"]
+    _, other = user("o2@x.org")
+    client.cookies.set(auth.COOKIE, other)
+    assert fix([{"speaker": "S1", "words": [0, 1, 2, 3, 4]}]).status_code == 404
 
 
 def test_subtitles_tool_names_speakers_burns_on_request_and_dub_captions(client):

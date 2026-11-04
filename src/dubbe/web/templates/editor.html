@@ -2,7 +2,7 @@
 {% block title %}{{ p.title }} — review — DUBBE{% endblock %}
 {% block main %}
 <span class="eyebrow">{{ NAMES[p.src] }} → {{ NAMES[p.tgt] }} · {{ total_segs }} sentences</span>
-<h1>{{ p.title }}</h1>
+<h1 class="app-h1 task-title">{{ p.title | replace("_", " ") }}</h1>
 
 {% if job and job.status in ("waiting", "running") %}
 <p class="notice">A re-dub is {{ job.status }} — the video below is the previous version. <a href="/app/jobs/{{ job.id }}">Progress</a></p>
@@ -30,21 +30,21 @@
   <div class="row-head"><h2>Speakers <span class="muted small">· {{ speakers | length }} detected</span></h2>
     <span class="small">Transcript by speaker: <a href="/app/p/{{ p.id }}/download/src.txt">{{ NAMES[p.src] }}</a> ·
       <a href="/app/p/{{ p.id }}/download/tgt.txt">{{ NAMES[p.tgt] }}</a></span></div>
-  <p class="muted small" style="margin-top:0">Detected from each sentence's voice; wrong ones can be moved below each sentence, a person
-    split in two can be merged. Give each a name and a voice, then press Re-dub. <a href="/app/market">More voices →</a></p>
+  <p class="muted small" style="margin-top:0">Name each speaker and pick a voice — changes save by themselves. Then press
+    Re-dub to hear them all at once. A wrong speaker is fixed below its sentence. <a href="/app/market">More voices →</a></p>
   <form method="post" action="/app/p/{{ p.id }}/detect-speakers" class="spk-detect">
     <button class="secondary">Detect speakers again</button>
     <span class="muted small">{{ "Only one voice found. Dubbed before speaker detection existed? " if speakers | length < 2 }}Re-runs
       the dub; names, voices and clones from the video start over.</span></form>
   {% for sp, info in speakers.items() %}{% set c = colors[loop.index0 % colors | length] %}
   <div class="spk" style="--c:{{ c }}">
-    <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}" class="spk-main">
+    <form method="post" action="/app/p/{{ p.id }}/speakers/{{ sp }}" class="spk-main ajax" data-autosave>
       <span class="spk-dot" aria-hidden="true"></span>
       <input name="name" value="{{ info.name or sp }}" maxlength="40" aria-label="Name of {{ sp }}">
       <span class="muted small spk-n">{{ counts[sp] }} sentence{{ "s" if counts[sp] != 1 }}{{ " · " ~ info.register if info.register }}</span>
       <select name="voice" aria-label="Voice of {{ info.name or sp }}">{% for key, label in voice_opts[sp] %}
         <option value="{{ key }}" {{ 'selected' if key == info.voice }}>{{ label }}</option>{% endfor %}</select>
-      <button class="secondary">Save</button>
+      <span class="spk-act"><button class="secondary">Save</button><small class="saved" aria-live="polite"></small></span>
     </form>
     <div class="spk-more">
       {% if speakers | length > 1 %}
@@ -81,7 +81,10 @@
     {% if r %}<span class="chip ok">rated {{ r.score }}</span>{% endif %}
     {{ s.tgt_text }}</summary>
   <p class="src">{{ s.src_text }}</p>
-  <audio controls preload="none" src="/app/p/{{ p.id }}/file/tts/{{ s.id }}.wav"></audio>
+  <div class="take-row"><audio controls preload="none" src="/app/p/{{ p.id }}/file/tts/{{ s.id }}.wav"></audio>
+    <form method="post" action="/app/p/{{ p.id }}/s/{{ s.id }}/retake" class="inline"
+      title="Speak this sentence again with the same text; the rest of the dub stays as it is">
+      <button class="secondary outline">Try again</button></form></div>
   {% if s.tags_not_performed %}<p class="muted">Not performed by this voice: {{ s.tags_not_performed | join(", ") }}</p>{% endif %}
   <div class="grid">
     <form method="post" action="/app/p/{{ p.id }}/s/{{ s.id }}" class="ajax" data-hint=" — press Re-dub to hear it">

@@ -26,9 +26,11 @@ archive/
 .pytest_cache/
 .venv-chatterbox/
 .venv-cosyvoice/
-.venv-diarize/
+.venv-nemo/
 _temp/
 .cosyvoice/
+.ming/
+.venv-ming/
 
 # OS junk
 .DS_Store
