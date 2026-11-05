@@ -599,3 +599,41 @@ def test_live_dubbing_beta_checks_the_link_runs_one_at_a_time_and_serves_only_it
     _, other = user("o3@x.org")
     client.cookies.set(auth.COOKIE, other)
     assert client.get(f"/app/tasks/{t['id']}/live/pieces.json").status_code == 404
+
+
+def test_a_pasted_link_is_checked_first_then_downloaded_by_the_worker(client, monkeypatch):
+    """A video on YouTube (a course, say) in place of an upload: length and plan are checked before any download."""
+    from dubbe.web import links, tools
+    monkeypatch.setattr(web, "public_url", lambda u: u.startswith("https://"))
+    found = {"https://youtu.be/lesson1": {"title": "My course, lesson 1", "minutes": 2.0, "live": False},
+             "https://youtu.be/long": {"title": "All lessons", "minutes": 95.0, "live": False},
+             "https://youtu.be/now": {"title": "Now", "minutes": 0.0, "live": True}}
+    monkeypatch.setattr(links, "look", lambda u: found[u])
+    _, s = user("a@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    form = {"src": "ko", "tgt": "en", "rights": "1"}
+    assert client.post("/app/new", data=form).status_code == 400  # neither a file nor a link
+    assert "public web page" in client.post("/app/new", data={**form, "link": "http://192.168.0.2/v.mp4"}).text
+    assert "Live Dubbing" in client.post("/app/new", data={**form, "link": "https://youtu.be/now"}).text
+    assert "up to 10 min" in client.post("/app/new", data={**form, "link": "https://youtu.be/long"}).text  # free plan
+    r = client.post("/app/new", data={**form, "link": "https://youtu.be/lesson1"})
+    assert r.headers["location"] == "/app/jobs/1"
+    p = db.one("select * from projects")
+    assert p["title"] == "My course, lesson 1" and p["minutes"] == 2.0
+    assert links.waiting(worker.folder(p["id"])) and worker.video(p["id"]) is None  # the worker downloads it
+
+    r = client.post("/app/stt", data={"src": "en", "rights": "1", "link": "https://youtu.be/lesson1"})
+    tid = int(r.headers["location"].rsplit("/", 1)[1])
+    t = db.one("select * from tasks where id=?", tid)
+    assert t["status"] == "waiting" and t["minutes"] == 2.0 and links.waiting(tools.folder(tid))
+    got = []
+
+    def fetch(folder, stem, video=True):
+        got.append((stem, video))
+        (folder / links.SOURCE).unlink()
+        (folder / f"{stem}.m4a").write_bytes(b"x")
+    monkeypatch.setattr(links, "fetch", fetch)
+    monkeypatch.setattr(tools, "speech_to_text", lambda p, out, media: {"heard": media.name})
+    tools.main(tid)
+    assert got == [("input", False)]  # Speech to Text: the sound only
+    assert "input.m4a" in db.one("select result from tasks where id=?", tid)["result"]

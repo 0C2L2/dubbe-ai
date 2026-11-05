@@ -14,7 +14,7 @@ import yaml
 
 from .. import config, ffmpeg, read_json, tags, write_json
 from ..report import CAPTION_COLORS, ass, flags, speaker_colors, subtitles, transcript
-from . import db
+from . import db, links
 
 LANGS = yaml.safe_load((Path(__file__).parent.parent / "languages.yaml").read_text(encoding="utf8"))
 TAG = re.compile(r"\[([a-z]+)\]")
@@ -365,6 +365,11 @@ def main(tid: int) -> None:
     t = db.one("select * from tasks where id=?", tid)
     out = folder(tid)
     p = json.loads(t["params"])
+    if t["kind"] in ("stt", "speakers", "captions", "isolate") and links.waiting(out):  # a pasted link: download it first
+        try:
+            links.fetch(out, "input", video=t["kind"] in ("speakers", "captions"))  # these two show the video
+        except Exception as e:
+            raise SystemExit(f"The file could not be downloaded from the link: {str(e).removeprefix('ERROR: ')[:300]}")
     if t["kind"] == "tts":
         result = text_to_speech(p, out, db.one("select * from users where id=?", t["owner_id"]))
     elif t["kind"] == "translate":

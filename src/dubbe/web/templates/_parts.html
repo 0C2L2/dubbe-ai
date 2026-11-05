@@ -85,6 +85,8 @@
   <input type="file" name="file" required accept="{{ accept }}" data-left="{{ left }}" aria-label="{{ title }}">
 </label>
 <p class="dur" id="dur" aria-live="polite"></p>
+<label class="link-in">Or paste a link: your video on YouTube, or any page or file with it
+  <input type="url" name="link" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" data-link></label>
 {% endmacro %}
 
 {# ---------- one row per tool result (home, history, tool pages) ---------- #}

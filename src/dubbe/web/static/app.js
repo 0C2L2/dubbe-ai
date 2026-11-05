@@ -33,8 +33,14 @@ document.querySelectorAll('[data-drop]').forEach(zone => {
   const first = [title.textContent, info.textContent];
   ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, () => zone.classList.add('over')));
   ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, () => zone.classList.remove('over')));
+  const link = zone.closest('form')?.querySelector('[data-link]');
+  link?.addEventListener('input', () => {  // a link instead of a file: one or the other is sent
+    input.required = !link.value.trim();
+    if (link.value.trim() && input.files.length) { input.value = ''; input.dispatchEvent(new Event('change')); }
+  });
   input.addEventListener('change', () => {
     const f = input.files[0];
+    if (f && link) { link.value = ''; input.required = true; }
     zone.classList.toggle('has-file', !!f);
     [title.textContent, info.textContent] = f ? [f.name, `${(f.size / 1048576).toFixed(1)} MB · click or drop to change`] : first;
     zone.querySelector('.pick').textContent = f ? 'Change file' : 'Choose file';

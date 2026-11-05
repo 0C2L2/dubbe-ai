@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .. import read_json
 from ..cli import STAGES
-from . import clones, db
+from . import clones, db, links
 
 STAGE_NAMES = list(STAGES)
 STATE = {"job": None, "proc": None, "beat": 0.0}  # shown on the admin page
@@ -62,6 +62,14 @@ def run_job(job) -> None:
     voices["S1"] = voices.get("S1") or p["voice"]  # first dub: the voice chosen at upload is the main speaker's
     owner = db.one("select * from users where id=?", p["owner_id"])
     tail, prompts = deque(maxlen=12), []
+    if links.waiting(folder(p["id"])):  # a pasted link: the video comes first
+        db.run("update jobs set stage='download' where id=?", job["id"])
+        try:
+            links.fetch(folder(p["id"]), "video")
+        except Exception as e:
+            db.run("update jobs set status='failed', error=?, finished_at=? where id=?",
+                   f"The video could not be downloaded from the link: {str(e).removeprefix('ERROR: ')[:300]}", db.now(), job["id"])
+            return
     try:
         for sp, key in voices.items():  # each speaker's clone recording, for this job only
             prompts.append(work(p) / f"voice_prompt_{sp}.wav")

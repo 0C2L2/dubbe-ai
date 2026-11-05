@@ -28,7 +28,7 @@ from .. import ffmpeg, ratings, read_json, segment, tags, video_duration, write_
 from .. import live as livedub
 from ..tts import sample_name
 from ..report import STAGE, _t, ass, placed, subtitles, timeline_html, transcript
-from . import auth, clones, db, tools, worker
+from . import auth, clones, db, links, tools, worker
 
 HERE = Path(__file__).parent
 _LANGS = yaml.safe_load((HERE.parent / "languages.yaml").read_text(encoding="utf8"))
@@ -555,10 +555,11 @@ def new_form(request: Request):
 
 
 @app.post("/app/new")
-def new_dub(request: Request, file: UploadFile = File(...), src: str = Form(...), tgt: str = Form(...),
-            keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form(""), upload: str = Form("")):
+def new_dub(request: Request, file: UploadFile | None = File(None), src: str = Form(...), tgt: str = Form(...),
+            keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form(""), upload: str = Form(""),
+            link: str = Form("")):
     u = auth.require_user(request)
-    file = chunked(u, upload, file)
+    file = chunked(u, upload, file) if file is not None else None
     form = {"src": src, "tgt": tgt, "voice": voice}
     mine = clones.usable(u) if clones.enabled() else []
 
@@ -568,7 +569,8 @@ def new_dub(request: Request, file: UploadFile = File(...), src: str = Form(...)
             db.run("delete from projects where id=?", pid)
         return page(request, "new.html", 400, user=u, langs=LANGS, form=form, error=msg, voices=voices(LANGS), clones=mine)
 
-    ext = Path(file.filename or "").suffix.lower()
+    ext = Path(file.filename or "").suffix.lower() if file else ""
+    link = "" if ext else link.strip()  # a chosen file wins over a pasted link
     if not u["verified_at"]:
         return fail("Please confirm your email first (see the link we sent you).")
     if src not in LANGS or tgt not in LANGS or src == tgt:
@@ -577,8 +579,17 @@ def new_dub(request: Request, file: UploadFile = File(...), src: str = Form(...)
         return fail("Choose a voice from the list.")
     if not rights:
         return fail("Please confirm you own this video or have a licence that allows changing it.")
+    if link:
+        error, info = from_link(link)
+        if error or (error := limit_error(u, info["minutes"])):
+            return fail(error)
+        pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
+                     "values(?,?,?,?,?,?,?,?,?)", u["id"], info["title"], src, tgt, int(bool(keep_bg)),
+                     min(max(slow, 1.0), 1.3), round(info["minutes"], 2), db.now(), voice)
+        links.save(worker.folder(pid), link)  # the worker downloads it before the dub starts
+        return go(f"/app/jobs/{db.run('insert into jobs(project_id, created_at) values(?,?)', pid, db.now())}")
     if ext not in VIDEO_TYPES:
-        return fail("Upload an MP4 or MOV video.")
+        return fail("Upload an MP4 or MOV video, or paste a link to it.")
     pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
                  "values(?,?,?,?,?,?,0,?,?)", u["id"], Path(file.filename).stem[:80] or "Video", src, tgt,
                  int(bool(keep_bg)), min(max(slow, 1.0), 1.3), db.now(), voice)
@@ -618,7 +629,8 @@ def retry(request: Request, jid: int):
     if not job:
         raise HTTPException(404)
     own_project(request, job["project_id"])
-    return go(f"/app/jobs/{queue(job['project_id'], job['stage'] or job['from_stage'])}")
+    stage = job["stage"] if job["stage"] in worker.STAGE_NAMES else None  # "download": the link again, from the start
+    return go(f"/app/jobs/{queue(job['project_id'], stage or job['from_stage'])}")
 
 
 def segments(p) -> dict:
@@ -949,15 +961,38 @@ def translate_create(request: Request, text: str = Form(""), src: str = Form("ko
     return go(f"/app/tasks/{new_task(u, 'translate', text, {'text': text.strip(), 'src': src, 'tgt': tgt})}")
 
 
-def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, rights: str, form: dict, upload: str = ""):
-    """Speech to text and voice isolator: upload, check type, length and plan, then queue."""
-    file = chunked(u, upload, file)
-    ext = Path(file.filename or "").suffix.lower()
+def from_link(link: str) -> tuple[str | None, dict]:
+    """(why the link cannot be used, or None; its title and length): a public http(s) page, one video, not live."""
+    if not public_url(link):
+        return "Paste a link to a public web page (http or https).", {}
+    try:
+        info = links.look(link)
+    except ValueError as e:
+        return f"This link could not be read: {e}", {}
+    return ("This is a live stream: use Live Dubbing for it." if info["live"] else None), info
+
+
+def media_task(request: Request, u, kind: str, file: UploadFile | None, params: dict, rights: str, form: dict,
+               upload: str = "", link: str = ""):
+    """Speech to text, speaker detection, subtitles, voice isolator: an upload or a link, check type, length and plan,
+    then queue (a link is downloaded by the worker, links.fetch)."""
+    file = chunked(u, upload, file) if file is not None else None
+    ext = Path(file.filename or "").suffix.lower() if file else ""
+    link = "" if ext else link.strip()  # a chosen file wins over a pasted link
     error = ("Please confirm your email first." if not u["verified_at"] else
              "Please confirm you own this file or may use it." if not rights else
-             "Upload an MP4, MOV, MP3, WAV, M4A, OGG or FLAC file." if ext not in MEDIA_TYPES else None)
+             "Upload an MP4, MOV, MP3, WAV, M4A, OGG or FLAC file, or paste a link to it." if not link and ext not in MEDIA_TYPES
+             else None)
+    if not error and link:
+        error, info = from_link(link)
+        error = error or limit_error(u, info["minutes"])
     if error:
         return tool_page(request, u, kind, 400, error=error, form=form)
+    if link:
+        tid = new_task(u, kind, info["title"], params, status="uploading")
+        links.save(tools.folder(tid), link)
+        db.run("update tasks set minutes=?, status='waiting' where id=?", round(info["minutes"], 2), tid)
+        return go(f"/app/tasks/{tid}")
     tid = new_task(u, kind, Path(file.filename).stem, params, status="uploading")  # the worker skips it until checked
     dest = tools.folder(tid) / f"input{ext}"
     try:
@@ -975,20 +1010,20 @@ def media_task(request: Request, u, kind: str, file: UploadFile, params: dict, r
 
 
 @app.post("/app/stt")
-def stt_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), to: str = Form(""),
-               rights: str = Form(""), speakers: str = Form(""), upload: str = Form("")):
+def stt_create(request: Request, file: UploadFile | None = File(None), src: str = Form("ko"), to: str = Form(""),
+               rights: str = Form(""), speakers: str = Form(""), upload: str = Form(""), link: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
     return media_task(request, u, "stt", file, {"src": src, "to": to if to in LANGS and to != src else "", "speakers": bool(speakers)},
-                      rights, {"src": src, "to": to, "speakers": speakers}, upload)
+                      rights, {"src": src, "to": to, "speakers": speakers}, upload, link)
 
 
 @app.post("/app/speakers")
-def speakers_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), rights: str = Form(""),
-                    upload: str = Form("")):
+def speakers_create(request: Request, file: UploadFile | None = File(None), src: str = Form("ko"), rights: str = Form(""),
+                    upload: str = Form(""), link: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
-    return media_task(request, u, "speakers", file, {"src": src}, rights, {"src": src}, upload)
+    return media_task(request, u, "speakers", file, {"src": src}, rights, {"src": src}, upload, link)
 
 
 def own_speaker(request: Request, tid: int, sp: str):
@@ -1062,12 +1097,12 @@ async def task_caption_text(request: Request, tid: int):
 
 
 @app.post("/app/captions")
-def captions_create(request: Request, file: UploadFile = File(...), src: str = Form("ko"), to: str = Form(""),
-                    rights: str = Form(""), upload: str = Form("")):
+def captions_create(request: Request, file: UploadFile | None = File(None), src: str = Form("ko"), to: str = Form(""),
+                    rights: str = Form(""), upload: str = Form(""), link: str = Form("")):
     u = auth.require_user(request)
     src = src if src in LANGS else "ko"
     return media_task(request, u, "captions", file, {"src": src, "to": to if to in LANGS and to != src else ""}, rights,
-                      {"src": src, "to": to}, upload)
+                      {"src": src, "to": to}, upload, link)
 
 
 @app.post("/app/tasks/{tid}/burn")
@@ -1179,9 +1214,10 @@ def live_file(request: Request, tid: int, name: str):
 
 
 @app.post("/app/isolate")
-def isolate_create(request: Request, file: UploadFile = File(...), rights: str = Form(""), upload: str = Form("")):
+def isolate_create(request: Request, file: UploadFile | None = File(None), rights: str = Form(""), upload: str = Form(""),
+                   link: str = Form("")):
     u = auth.require_user(request)
-    return media_task(request, u, "isolate", file, {}, rights, {}, upload)
+    return media_task(request, u, "isolate", file, {}, rights, {}, upload, link)
 
 
 @app.get("/app/tasks/{tid}")
