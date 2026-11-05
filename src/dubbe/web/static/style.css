@@ -35,7 +35,7 @@ pre { padding: 12px 14px; overflow-x: auto; }
 
 /* ---------- side art (wide screens): the original voice flows in on the left, the dub out on the right (app.js) ---------- */
 .side-art canvas { display: none; position: fixed; top: 64px; height: calc(100vh - 64px); width: calc((100vw - var(--wrap)) / 2 - 28px);
-  pointer-events: none; }
+  pointer-events: none; opacity: .5; }  /* quiet: the page is what to look at */
 .side-art [data-wave="in"] { left: 0; }
 .side-art [data-wave="out"] { right: 16px; }  /* clear of the scrollbar */
 @media (min-width: 1440px) { .side-art canvas { display: block; } }

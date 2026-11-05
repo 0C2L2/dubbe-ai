@@ -823,7 +823,8 @@ document.querySelectorAll('canvas[data-wave]').forEach(c => {
     ctx.globalAlpha = 1; ctx.fillStyle = '#a59f97'; ctx.font = mono; ctx.textAlign = 'center';
     ctx.fillText(out ? 'DUB OUT ↓' : 'VOICE IN ↓', w / 2, out ? h - 14 : 26);
   };
-  const tick = () => { if (!document.hidden && c.clientWidth) { t += 0.7; draw(); } requestAnimationFrame(tick); };
+  // slow: it is background, the page is what to read
+  const tick = () => { if (!document.hidden && c.clientWidth) { t += 0.25; draw(); } requestAnimationFrame(tick); };
   addEventListener('resize', () => { size(); draw(); });
   size(); draw();
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(tick);
