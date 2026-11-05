@@ -115,7 +115,8 @@ def _prompted(texts: list[str], tts: dict):
     prompts = tts.get("prompts") or [tts["prompt"]] * len(texts)  # one recording per sentence: several speakers, one load
     with tempfile.TemporaryDirectory() as tmp:
         items = [{"text": t.rpartition(INSTRUCT_END)[2], "instruct": t.rpartition(INSTRUCT_END)[0] or (NAVOIY_CALM if navoiy else ""),
-                  "prompt_wav": p, "out": str(Path(tmp) / f"{i}.wav")} for i, (t, p) in enumerate(zip(texts, prompts))]
+                  "prompt_wav": p, "prompt_text": prompt_text(p, tts.get("lang") or "en"), "out": str(Path(tmp) / f"{i}.wav")}
+                 for i, (t, p) in enumerate(zip(texts, prompts))]
         worker = Path(__file__).with_name("cosyvoice_worker.py" if navoiy else f"{tts['engine']}_worker.py")
         p = subprocess.run([str(env_py(tts["engine"])), "-I", "-X", "utf8", str(worker)],
                            input=json.dumps({"repo": str(repo), "model": model, "items": items, **({"llm": NAVOIY_LLM} if navoiy else {})}),
@@ -212,13 +213,28 @@ def sample_name(voice: str, lang: str, info: dict) -> str:
 
 def preset_prompt(voice: str) -> Path:
     """A reference recording of an English preset (Kokoro reading PROMPT_TEXT), so Chatterbox can speak another language
-    in that voice - a synthetic voice, nobody's real one (test-results C24). Made once, then cached."""
+    in that voice - a synthetic voice, nobody's real one (test-results C24). Made once, then cached; with what it says
+    next to it (prompt_text)."""
     f = PROMPTS / f"{voice}.wav"
     if not f.exists():
         audio, sr = next(_kokoro([PROMPT_TEXT], {"voice": voice}))
         f.parent.mkdir(parents=True, exist_ok=True)
         sf.write(f, trim(audio), sr)
+    if not f.with_suffix(".txt").exists() or f.with_suffix(".txt").read_text(encoding="utf8") != "en\n" + PROMPT_TEXT:
+        f.with_suffix(".txt").write_text("en\n" + PROMPT_TEXT, encoding="utf8")  # PROMPT_TEXT never changed since the first
     return f
+
+
+def prompt_text(wav, lang: str) -> str | None:
+    """What a reference recording says, if it is in `lang`: kept next to it as <name>.txt, "<language>
+<text>" (presets;
+    clones: what was heard or said). Ming uses the recording's own sound only with its transcript, otherwise just a
+    speaker fingerprint: 20 English sentences, voice like the reference 0.592 -> 0.835, sentences like each other 0.799
+    -> 0.885. An English recording for Korean: voice 0.521 -> 0.797 but Whisper 3 of 8 off instead of 2, so only the
+    same language (C62)."""
+    f = Path(wav).with_suffix(".txt")
+    said, _, text = (f.read_text(encoding="utf8") if f.exists() else "").partition("\n")
+    return text.strip() or None if said == lang else None
 
 
 def tts_cfg(data: dict, cfg: dict, prompt: Path | None = None, speaker: str = "S1") -> dict:
@@ -360,7 +376,8 @@ def synth(data: dict, cfg: dict, work: Path, items: list[tuple[dict, str]]):
             yield s, audio, sr, tts, sp
 
 
-CLIP_VERSION = 2  # raise when finish() changes how a clip sounds (2: one level, no glide on self-asked questions, C50)
+CLIP_VERSION = 3  # raise when a clip sounds different (2: one level, no glide on self-asked questions, C50;
+                  # 3: Ming hears the reference recording itself, C62)
 
 
 def fingerprint(s: dict, tts: dict) -> str:

@@ -183,6 +183,9 @@ def write_reference(u, key: str | None, dest: Path) -> bool:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)  # a first dub: the pipeline has not made its work folder yet
     dest.write_bytes(load(voice_id(key), "reference"))
+    row = db.one("select heard, lang from voices where id=?", voice_id(key))
+    if row and row["heard"]:  # what the recording says, checked against the sentences shown (check): Ming then hears the voice itself (C62)
+        dest.with_suffix(".txt").write_text(f"{row['lang']}\n{row['heard']}", encoding="utf8")
     return True
 
 
@@ -220,11 +223,16 @@ def speaker_clip(work: Path, segs: list[dict], sp: str) -> tuple[bytes | None, f
 def make_speaker_clone(pid: int, work: Path, segs: list[dict], sp: str) -> float:
     """The reference recording of one speaker of this video, after the uploader confirmed consent, encrypted next to
     the project. Returns the seconds of speech; nothing is stored below MIN_SECONDS."""
-    wav, total, _ = speaker_clip(work, segs, sp)
+    wav, total, said = speaker_clip(work, segs, sp)
     if wav:
         speaker_file(pid, sp).parent.mkdir(parents=True, exist_ok=True)
         speaker_file(pid, sp).write_bytes(_fernet().encrypt(wav))
+        text_file(pid, sp).write_bytes(_fernet().encrypt(said.encode("utf8")))  # what they say in it (C62)
     return total
+
+
+def text_file(pid: int, sp: str) -> Path:
+    return speaker_file(pid, sp).with_suffix(".txt.enc")
 
 
 def write_speaker_reference(pid: int, key: str, dest: Path) -> bool:
@@ -234,6 +242,10 @@ def write_speaker_reference(pid: int, key: str, dest: Path) -> bool:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(_fernet().decrypt(f.read_bytes()))
+    t = text_file(pid, key.split(":", 1)[1])
+    p = db.one("select src from projects where id=?", pid)
+    if t.exists() and p:  # clones made before C62 have no text: Ming then uses only a fingerprint of the voice
+        dest.with_suffix(".txt").write_text(p["src"] + "\n" + _fernet().decrypt(t.read_bytes()).decode("utf8"), encoding="utf8")
     return True
 
 

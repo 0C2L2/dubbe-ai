@@ -82,6 +82,7 @@ def run_job(job) -> None:
     finally:
         for f in prompts:
             f.unlink(missing_ok=True)
+            f.with_suffix(".txt").unlink(missing_ok=True)
     if ok and seg_file.exists() and (job["from_stage"] or "tts") in STAGE_NAMES[:STAGE_NAMES.index("tts") + 1]:
         for used, chars in clone_chars(read_json(seg_file)).items():
             clones.record_use(used, p["owner_id"], chars, "dub")

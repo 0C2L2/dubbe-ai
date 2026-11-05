@@ -76,6 +76,7 @@ def text_to_speech(p: dict, out: Path, owner=None) -> dict:
             info.append({"text": x, "tags": k, "unknown": unknown, "not_performed": tags.not_performed(k, tts["engine"])})
     finally:
         prompt.unlink(missing_ok=True)
+        prompt.with_suffix(".txt").unlink(missing_ok=True)
     sf.write(out / "speech.wav", np.concatenate(parts[:-1]), sr)
     clone = tts["voice"].startswith("clone:")
     ffmpeg("-i", str(out / "speech.wav"), "-b:a", "160k", "-metadata", "comment=AI-generated speech (DUBBE" +

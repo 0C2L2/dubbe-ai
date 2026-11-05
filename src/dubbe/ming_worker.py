@@ -1,7 +1,8 @@
 """Runs Ming-3.0-tts-0.5B (MIT) in .venv-ming: it pins torch 2.6 / transformers 4.46.
-stdin: {"repo": path to the Ming code, "model": hf id, "items": [{text, instruct, prompt_wav, out}]}.
+stdin: {"repo": path to the Ming code, "model": hf id, "items": [{text, instruct, prompt_wav, prompt_text, out}]}.
 Each item is spoken in the voice of prompt_wav with the emotion `instruct` (Ming's own value: 高兴, 悲伤, 愤怒 ...);
-without it 中性 (neutral). Ming's EMOTION task needs no transcript of the reference, so clones work the same way."""
+without it 中性 (neutral). With prompt_text (what the reference says) Ming also hears the reference's own sound; without
+it only a speaker fingerprint of it: voice like the reference 0.835 vs 0.592 on 20 sentences (C62)."""
 import json
 import sys
 
@@ -55,4 +56,5 @@ for it in job["items"]:
         sf.write(it["out"], [0.0], 44100)
         continue
     model.synthesize(task="EMOTION", text=it["text"], controls={"emotion": it.get("instruct") or "中性"},
-                     prompt_wav_path=it["prompt_wav"], use_spk_emb=True, output_path=it["out"])
+                     prompt_wav_path=it["prompt_wav"], prompt_text=it.get("prompt_text"), use_spk_emb=True,
+                     output_path=it["out"])
