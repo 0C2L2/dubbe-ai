@@ -33,6 +33,13 @@ pre { padding: 12px 14px; overflow-x: auto; }
 .grain, .plan-top.grain { background: var(--noise), radial-gradient(120% 120% at 0% 0%, var(--orange) 0%, transparent 55%),
   radial-gradient(120% 120% at 100% 100%, var(--violet) 0%, transparent 60%), linear-gradient(135deg, var(--orange), var(--red) 55%, var(--violet)); }
 
+/* ---------- side art (wide screens): the original voice flows in on the left, the dub out on the right (app.js) ---------- */
+.side-art canvas { display: none; position: fixed; top: 64px; height: calc(100vh - 64px); width: calc((100vw - var(--wrap)) / 2 - 28px);
+  pointer-events: none; }
+.side-art [data-wave="in"] { left: 0; }
+.side-art [data-wave="out"] { right: 16px; }  /* clear of the scrollbar */
+@media (min-width: 1440px) { .side-art canvas { display: block; } }
+
 /* ---------- header ---------- */
 .site-head { position: sticky; top: 0; z-index: 20; background: rgba(253, 252, 252, .86); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
 .site-head nav { display: flex; align-items: center; gap: 32px; min-height: 64px; flex-wrap: wrap; }

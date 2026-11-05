@@ -751,3 +751,41 @@ document.querySelectorAll('[data-live]').forEach(root => {
   v.controls = true;
   poll();
 });
+
+// Side art (public pages, wide screens only): the original voice flows in down the left margin, Dubbe's dub flows out
+// down the right - the same speech, cleaner on the way out. Still under prefers-reduced-motion; paused in hidden tabs.
+document.querySelectorAll('canvas[data-wave]').forEach(c => {
+  const ctx = c.getContext('2d'), out = c.dataset.wave === 'out';
+  const cols = out ? ['#e5484d', '#6e56cf'] : ['#f76b15', '#e5484d'];
+  let w = 0, h = 0, t = 0;
+  const size = () => {
+    const r = devicePixelRatio || 1;
+    w = c.clientWidth; h = c.clientHeight; c.width = w * r; c.height = h * r; ctx.setTransform(r, 0, 0, r, 0, 0);
+  };
+  const level = s => {  // speech: syllables inside phrases, with fine detail in the original
+    const syl = Math.max(0, Math.sin(s * 0.11)) ** 0.7, phrase = 0.3 + 0.7 * Math.max(0, Math.sin(s * 0.019 + 1));
+    return syl * phrase * (out ? 1 : 0.7 + 0.3 * Math.sin(s * 1.3) * Math.sin(s * 0.47));
+  };
+  const draw = () => {
+    ctx.clearRect(0, 0, w, h);
+    if (w < 60) return;
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, cols[0]); g.addColorStop(1, cols[1]);
+    ctx.fillStyle = g;
+    const max = Math.min(w * 0.62, 180);
+    for (let y = 48; y < h - 8; y += 7) {
+      let v = level((y - t) / 1.6 + (out ? 40 : 0));
+      if (out) v = Math.round(v * 6) / 6;  // processed: the same speech, in clean steps
+      const bw = Math.max(2, v * max);
+      ctx.globalAlpha = 0.42 * Math.min(1, (y - 40) / 160, (h - y) / 160);
+      ctx.beginPath(); ctx.roundRect((w - bw) / 2, y, bw, 3, 1.5); ctx.fill();
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = '#a59f97'; ctx.font = '500 10px "Geist Mono", ui-monospace, monospace';
+    ctx.textAlign = 'center'; ctx.fillText(out ? 'DUBBED VOICE' : 'ORIGINAL VOICE', w / 2, 26);
+  };
+  const tick = () => { if (!document.hidden && c.clientWidth) { t += 0.7; draw(); } requestAnimationFrame(tick); };
+  addEventListener('resize', () => { size(); draw(); });
+  size(); draw();
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(tick);
+});
+
