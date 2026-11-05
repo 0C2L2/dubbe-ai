@@ -8,7 +8,7 @@
 <div class="app">
   <aside class="side" aria-label="App">
     {% set plan = PLANS[user.plan] %}{% set nm = user.name or user.email.split("@")[0] %}
-    <a href="/app" class="brand"><span class="brand-mark grain"></span>DUBBE</a>
+    <a href="/app" class="brand"><img class="brand-mark" src="/static/logo.svg" alt="">Dubbe <span class="brand-ai">AI</span></a>
     <details class="acct" data-acct>
       <summary aria-label="Account menu"><span class="avatar" aria-hidden="true">{{ (nm.split() | map("first") | join)[:2] | upper }}</span>
         <span class="acct-who"><b>{{ nm }}</b><small>{{ "Admin" if admin else plan.name ~ " plan" }}</small></span><span class="acct-chev" aria-hidden="true">▾</span></summary>

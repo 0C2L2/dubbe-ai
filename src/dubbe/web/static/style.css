@@ -37,7 +37,8 @@ pre { padding: 12px 14px; overflow-x: auto; }
 .site-head { position: sticky; top: 0; z-index: 20; background: rgba(253, 252, 252, .86); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
 .site-head nav { display: flex; align-items: center; gap: 32px; min-height: 64px; flex-wrap: wrap; }
 .brand { display: inline-flex; align-items: center; gap: 9px; font: 600 1.2rem/1 var(--display); letter-spacing: -0.03em; text-decoration: none; }
-.brand-mark { width: 20px; height: 20px; border-radius: 50%; }
+.brand-mark { width: 20px; height: 20px; display: block; }  /* the D with a voice waveform (static/logo.svg) */
+.brand-ai { font-weight: 400; color: var(--muted); margin-left: -4px; }
 .nav-links { display: flex; gap: 24px; list-style: none; margin: 0; padding: 0; }
 .nav-links li { margin: 0; }
 .nav-links a { text-decoration: none; font-size: .95rem; white-space: nowrap; }

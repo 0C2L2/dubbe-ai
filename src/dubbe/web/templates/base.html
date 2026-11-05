@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <title>{% block title %}DUBBE — dub your lecture, see what to check{% endblock %}</title>
 <meta name="description" content="{% block desc %}AI video dubbing in {{ NAMES | length }} languages (Korean ↔ English tested most) that marks the sentences a person should check.{% endblock %}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,7 +18,7 @@
 <header class="site-head">
   <div class="container">
     <nav aria-label="Main">
-      <a href="{{ '/app' if user else '/' }}" class="brand"><span class="brand-mark grain"></span>DUBBE</a>
+      <a href="{{ '/app' if user else '/' }}" class="brand"><img class="brand-mark" src="/static/logo.svg" alt="">Dubbe <span class="brand-ai">AI</span></a>
       {% if user %}
       <ul class="nav-links">
         <li><a href="/app">Projects</a></li>
@@ -61,7 +62,7 @@
 <footer class="site-foot">
   <div class="container">
     <div class="foot-grid">
-      <div><a href="/" class="brand"><span class="brand-mark grain"></span>DUBBE</a>
+      <div><a href="/" class="brand"><img class="brand-mark" src="/static/logo.svg" alt="">Dubbe <span class="brand-ai">AI</span></a>
         <p class="muted" style="margin-top:14px">Dub your lecture, and see which sentences to check.</p></div>
       <div><strong>Product</strong><ul>
         <li><a href="/features">How it works</a></li>

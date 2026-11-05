@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Dubbe AI</title>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f76b15"/><stop offset=".55" stop-color="#e5484d"/><stop offset="1" stop-color="#6e56cf"/></linearGradient></defs>
+  <path d="M10 6h20a26 26 0 0 1 0 52H10z" fill="url(#g)"/>
+  <rect x="18" y="25" width="5" height="14" rx="2.5" fill="#fff"/>
+  <rect x="27" y="18" width="5" height="28" rx="2.5" fill="#fff"/>
+  <rect x="36" y="23" width="5" height="18" rx="2.5" fill="#fff"/>
+</svg>
