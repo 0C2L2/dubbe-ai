@@ -374,6 +374,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
         s["tags_not_performed"] = not_performed(s.get("tags") or [], tts["engine"])
         s["tts_key"] = fingerprint(s, tts)
     print(f"         spoke {len(todo)} of {len(segs)} sentences (the others are unchanged)")
+    data["spoken"] = [s["id"] for s in todo]  # this run's sentences: a library clone's use counts only these (web/worker.py)
     used = {sp: {"engine": t["engine"], "voice": t["voice"]} for sp, t in voices.items()}
     for sp, u in used.items():
         data.setdefault("speakers", {}).setdefault(sp, {})["used"] = u

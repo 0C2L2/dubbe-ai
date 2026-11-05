@@ -42,6 +42,19 @@ def command(p, from_stage: str | None) -> list[str]:
     return cmd
 
 
+def clone_chars(data: dict) -> dict[str, int]:
+    """Library clone -> characters it spoke in this run: only the sentences the voice stage spoke again (`spoken`), so a
+    re-dub of one sentence counts that sentence, not the speaker's whole text. A clone that spoke nothing is not counted."""
+    spoken = set(data.get("spoken") or [])
+    out: dict[str, int] = {}
+    for sp, info in (data.get("speakers") or {}).items():
+        used = (info.get("used") or {}).get("voice")
+        chars = sum(len(s.get("tgt_text") or "") for s in data["segments"] if s.get("speaker", "S1") == sp and s["id"] in spoken)
+        if clones.voice_id(used) and chars:
+            out[used] = out.get(used, 0) + chars
+    return out
+
+
 def run_job(job) -> None:
     p = db.one("select * from projects where id=?", job["project_id"])
     seg_file = work(p) / "segments.json"
@@ -70,12 +83,8 @@ def run_job(job) -> None:
         for f in prompts:
             f.unlink(missing_ok=True)
     if ok and seg_file.exists() and (job["from_stage"] or "tts") in STAGE_NAMES[:STAGE_NAMES.index("tts") + 1]:
-        data = read_json(seg_file)
-        for sp, info in (data.get("speakers") or {}).items():  # uses of library clones, per speaker
-            used = (info.get("used") or {}).get("voice")
-            if clones.voice_id(used):
-                clones.record_use(used, p["owner_id"], sum(len(s["tgt_text"] or "") for s in data["segments"]
-                                                           if s.get("speaker", "S1") == sp), "dub")
+        for used, chars in clone_chars(read_json(seg_file)).items():
+            clones.record_use(used, p["owner_id"], chars, "dub")
     db.run("update jobs set status=?, error=?, finished_at=? where id=?",
            "done" if ok else "failed", None if ok else "\n".join(tail), db.now(), job["id"])
 

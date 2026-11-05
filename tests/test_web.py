@@ -543,3 +543,14 @@ def test_subtitles_review_fixes_speakers_colours_and_text(client):
     tools.from_project(d, pid)
     spk = json.loads((d / "segments.json").read_text(encoding="utf8"))["speakers"]
     assert spk["S1"]["name"] == "Narrator" and spk["S2"]["name"] == "Bea"  # named here: kept; renamed in the dub: followed
+
+
+def test_a_redub_counts_a_library_clone_only_for_what_it_spoke_again():
+    """Re-dubbing one sentence counted the speaker's whole text as a use of their library clone again."""
+    data = {"spoken": [2], "segments": [{"id": 1, "speaker": "S1", "tgt_text": "A long first sentence."},
+                                        {"id": 2, "speaker": "S1", "tgt_text": "Fixed."},
+                                        {"id": 3, "speaker": "S2", "tgt_text": "Not spoken again."}],
+            "speakers": {"S1": {"used": {"voice": "clone:7"}}, "S2": {"used": {"voice": "clone:8"}}, "S3": {"used": {"voice": "af_heart"}}}}
+    assert worker.clone_chars(data) == {"clone:7": 6}  # only "Fixed."; clone 8 spoke nothing new; a preset is no clone
+    data["spoken"] = [1, 2, 3]  # a full dub
+    assert worker.clone_chars(data) == {"clone:7": 28, "clone:8": 17}

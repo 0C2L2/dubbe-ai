@@ -199,6 +199,7 @@ def test_redub_speaks_only_changed_sentences(monkeypatch, tmp_path):
     (tmp_path / "segments.json").write_text(json.dumps(data))
     data = redub()
     assert [(len(t), seeds) for t, seeds in spoken] == [(2, [0, 1])]  # the fixed one and the retake, with its own seed
+    assert data["spoken"] == [2, 3]  # what this run spoke: a library clone's use counts only these
     spoken.clear()
     data["speakers"]["S1"]["voice"] = "af_bella"  # a new voice for the speaker: all their sentences again
     (tmp_path / "segments.json").write_text(json.dumps(data))
