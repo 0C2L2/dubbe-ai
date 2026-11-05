@@ -4,8 +4,8 @@ ffmpeg reads the stream once. The picture and the original sound go out unchange
 not re-encoded); the same sound also comes here, where it is cut into pieces of about PIECE seconds at a pause and each
 piece is dubbed with the models kept loaded: Demucs (background) -> Whisper -> NLLB -> Kokoro -> fit and mix. Each piece
 is written as p<n>.wav with its start time in pieces.json; the page plays the video muted and the pieces on the video's
-clock, so the dub can never drift from the picture. Measured on this laptop: 2.3-2.8x faster than real time; a delay of
-about 27 s is needed with 10-s pieces (C52).
+clock, so the dub can never drift from the picture. Measured on this laptop: about 5x faster than real time with Whisper
+in int8 (C57); a piece is at most MOST s long, so a delay of 20 s covers it and its dubbing.
 
 Beta limits: one fast voice for everyone (TARGETS), no review (mistakes reach the viewer), at most MAX_MINUTES per session,
 one session at a time (it holds the GPU).
@@ -27,8 +27,8 @@ from scipy.signal import resample_poly
 
 from . import config, device
 
-PIECE, MOST = 10.0, 20.0  # a piece ends at the first pause after PIECE s, at most MOST s (C52)
-DELAY = 30                # seconds the viewer watches behind the stream: 27 s were needed with 10-s pieces (C52)
+PIECE, MOST = 7.0, 14.0   # a piece ends at the first pause after PIECE s, at most MOST s (C57: 10/20 needed 21-31 s)
+DELAY = 20                # seconds the viewer watches behind the stream: 7-s pieces needed 19.4-19.9 s, before int8 (C57)
 LATE, MAX_STRETCH = 1.0, 1.3
 MAX_MINUTES = 30
 SR, OUT_SR = 44100, 32000  # the stream's sound; the dub pieces (stereo, 16 bit: ~1 Mbit/s)
@@ -150,7 +150,9 @@ class Dubber:
         asr = self.cfg["src"].get("asr_model", "large-v3-turbo")
         asr = "large-v3-turbo" if asr == "large-v3" else asr  # large-v3 does not fit next to NLLB on 8 GB (C52)
         self.demucs = get_model("htdemucs")
-        self.whisper = WhisperModel(whisper_model(asr), device=dev, compute_type="float16" if dev == "cuda" else "int8")
+        # int8: in float16 the models filled the 8 GB and Demucs ran 9x slower (live English 0.65x real time, 0.19x in int8;
+        # the transcript changes by 0.1-0.6 % of letters, C57)
+        self.whisper = WhisperModel(whisper_model(asr), device=dev, compute_type="int8_float16" if dev == "cuda" else "int8")
         self.tok = AutoTokenizer.from_pretrained(TOKENIZER, src_lang=self.cfg["src"]["nllb"])
         self.nllb = ctranslate2.Translator(snapshot_download(MODEL), device=dev,
                                            compute_type="int8_float16" if dev == "cuda" else "int8")

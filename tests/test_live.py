@@ -5,12 +5,15 @@ from dubbe import live
 
 
 def test_a_piece_ends_at_a_pause_never_inside_a_word():
+    from functools import partial
+    cut = partial(live.cut, piece=10, most=20)
     speech = [(0, 4), (4.5, 9.6), (10.4, 13), (13.2, 19)]
-    assert live.cut(speech, 19.5) == 10.0               # the first pause after 10 s: its middle
-    assert live.cut([(0, 9), (9.2, 12)], 12.4) == 12.15  # nobody spoke on: just after the last word
-    assert live.cut([(0, 9), (9.2, 12)], 12.1) is None   # maybe a breath: wait for more
-    assert live.cut([(0, 25)], 21) == 20                 # nobody pauses: cut at 20 s
-    assert live.cut([], 10.5) == 10.5                    # music or silence only
+    assert cut(speech, 19.5) == 10.0               # the first pause after 10 s: its middle
+    assert cut([(0, 9), (9.2, 12)], 12.4) == 12.15  # nobody spoke on: just after the last word
+    assert cut([(0, 9), (9.2, 12)], 12.1) is None   # maybe a breath: wait for more
+    assert cut([(0, 25)], 21) == 20                      # nobody pauses: cut at 20 s
+    assert cut([], 10.5) == 10.5                         # music or silence only
+    assert live.cut([(0, 25)], 15) == 14 and live.DELAY == 20  # live: at most 14 s a piece, so 20 s behind covers it (C57)
 
 
 def test_ffmpeg_reads_only_the_web_and_keeps_the_picture_as_it_is():

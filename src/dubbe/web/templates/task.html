@@ -18,7 +18,7 @@
       <span class="muted small" data-live-info aria-live="polite">Starting…</span>
     </div>
     <div class="live-lines" data-live-lines aria-live="polite"></div>
-    <p class="muted small">Beta: the dub plays about 30 s behind the stream, in one voice, and nobody has checked it.</p>
+    <p class="muted small">Beta: the dub plays about 20 s behind the stream, in one voice, and nobody has checked it.</p>
   </div>
 {% elif t.status in ("waiting", "uploading") %}
   <div class="card working"><span class="spinner"></span><div><b>Waiting in the queue</b>{% if ahead %} — {{ ahead }} job{{ "s" if ahead > 1 }} ahead{% endif %}.
