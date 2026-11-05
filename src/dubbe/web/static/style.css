@@ -806,14 +806,13 @@ label.pick-pill { display: inline-flex; margin: 0; position: relative; cursor: p
 .speakers { margin: 18px 0; }
 .cap-video { width: 100%; max-height: 480px; background: #000; border-radius: 12px; margin: 0 0 14px; }
 .cap-video::cue { background: rgba(0, 0, 0, .75); }
-.cap-video::cue(.s1) { color: #fff; } .cap-video::cue(.s2) { color: #ff0; } .cap-video::cue(.s3) { color: #0ff; }
-.cap-video::cue(.s4) { color: #0f0; } .cap-video::cue(.s5) { color: #f8f; } .cap-video::cue(.s6) { color: #fb4; }
-.cap-video::cue(.s7) { color: #8bf; } .cap-video::cue(.s8) { color: #f88; }
-.cap-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 16px; }
-.cap-spk { display: flex; gap: 8px; align-items: center; margin: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; }
-.cap-legend .cap-spk input { margin: 0; width: 10em; flex: 0 1 auto; } .cap-spk button { margin: 0; }
-.cap-spk .small { white-space: nowrap; }
-.cap-swatch { width: 18px; height: 18px; border-radius: 50%; background: var(--c); border: 2px solid #1a1a1a; flex: none; }
+/* Subtitles review: each speaker's caption colour (picked on the page) */
+.cap-color { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; cursor: pointer; }
+.cap-color input[type=color] { width: 28px; height: 28px; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 50%; overflow: hidden; }
+.cap-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; border: 1px solid #1a1a1a; vertical-align: 1px; }
+.tx-tgt { margin: 2px 0 0; } .tx-cap { margin: 2px 0 0; color: var(--muted); }
+.spk-player video::cue { background: rgba(0, 0, 0, .75); }
+.cap-edit { margin-top: 24px; } .cap-edit textarea { margin: 0; min-height: 0; }
 .cap-line { margin: 4px 0 0; padding: 6px 0 6px 12px; border-left: 4px solid var(--c); box-shadow: inset 3px 0 0 #0002; }
 .burn-form { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; } .burn-form select, .burn-form button { margin: 0; width: auto; }
 .spk-time { position: relative; height: 34px; border-radius: 10px; background: var(--bg-2); overflow: hidden; margin: 8px 0 18px; }

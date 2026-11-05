@@ -155,9 +155,13 @@ def edit_speakers(out: Path, parts: list[dict]) -> dict:
     nothing can be lost or duplicated. The sentences are rebuilt from the words, the result is marked as a person's
     (`speakers_edited`: a re-run never overwrites it) and the files and clips are written again."""
     data, words = read_json(out / "segments.json"), read_json(out / "words.json")["words"]
-    before = [i for idx in sentence_words(data["segments"], words) for i in idx]
+    old_words = sentence_words(data["segments"], words)
+    before = [i for idx in old_words for i in idx]
     if not parts or [i for p in parts for i in p.get("words", [])] != before or any(not p.get("words") for p in parts):
         raise ValueError("every word must stay, exactly once and in order")
+    # a sentence whose words did not change keeps its translation and a person's text fix (Subtitles); a changed one is
+    # rebuilt from its words and translated again
+    same = {tuple(ix): s for s, ix in zip(data["segments"], old_words)}
     spk = data["speakers"]
     new_id = f"S{max((int(k[1:]) for k in spk if k[1:].isdigit()), default=0) + 1}"
     src = data.get("src") or "en"
@@ -169,10 +173,17 @@ def edit_speakers(out: Path, parts: list[dict]) -> dict:
             raise ValueError(f"unknown speaker {sp}")
         ws = [words[i] for i in p["words"]]
         sc = [w["score"] for w in ws if "score" in w]
-        segs.append({"id": n, "start": ws[0]["start"], "end": ws[-1]["end"], "speaker": sp, "src_text": join.join(w["w"] for w in ws),
-                     "asr_conf": round(sum(sc) / len(sc), 3) if sc else None})
+        seg = {"id": n, "start": ws[0]["start"], "end": ws[-1]["end"], "speaker": sp, "src_text": join.join(w["w"] for w in ws),
+               "asr_conf": round(sum(sc) / len(sc), 3) if sc else None}
+        old = same.get(tuple(p["words"]), {})
+        seg |= {k: old[k] for k in ("tgt_text", "edited", "alts", "mt_conf", "text_edited") if k in old}
+        if old.get("text_edited"):
+            seg["src_text"] = old["src_text"]
+        segs.append(seg)
     if any(s["speaker"] == new_id for s in segs):
-        spk[new_id] = {"name": f"Speaker {new_id[1:]}"}
+        taken = {v.get("color") for v in spk.values()}
+        spk[new_id] = {"name": f"Speaker {new_id[1:]}",  # a colour of its own when the others have theirs (Subtitles)
+                       **({"color": next((c for c in CAPTION_COLORS if c not in taken), CAPTION_COLORS[0])} if taken - {None} else {})}
     used = {s["speaker"] for s in segs}
     data["speakers"] = {k: {**v, "maybe_same": [x for x in v.get("maybe_same", []) if x in used and x != k]}
                         for k, v in spk.items() if k in used}
@@ -180,7 +191,26 @@ def edit_speakers(out: Path, parts: list[dict]) -> dict:
     if (out / "vocals44.wav").exists():
         speaker_clips(out, data)
     write_json(out / "segments.json", data)
-    return speaker_files(out)
+
+
+def edit_caption_text(out: Path, lines: dict[int, tuple[str, str | None]], to: str) -> bool:
+    """A person's fix of the caption text: {sentence id: (source text, translation)}. A fixed source line whose
+    translation was left as it was is translated again; a fixed translation is the person's and stays. Returns True
+    when something must be translated again."""
+    data = read_json(out / "segments.json")
+    for s in data["segments"]:
+        if s["id"] not in lines:
+            continue
+        src, tgt = lines[s["id"]]
+        tgt_changed = to and tgt is not None and tgt.strip() and tgt.strip() != (s.get("tgt_text") or "")
+        if src.strip() and src.strip() != s["src_text"]:
+            s.update(src_text=src.strip(), text_edited=True)
+            if to and not tgt_changed:
+                s.update(tgt_text=None, edited=False)  # the translation said the old line
+        if tgt_changed:
+            s.update(tgt_text=tgt.strip(), edited=True)
+    write_json(out / "segments.json", data)
+    return bool(to) and any(not s.get("tgt_text") for s in data["segments"])
 
 
 def speaker_files(out: Path) -> dict:
@@ -211,20 +241,29 @@ def captions(p: dict, out: Path, tid: int) -> dict:
     and captions coloured by speaker. A dub's captions come from its project instead (p["project"]: its sentences, timed
     to the dubbed video). Burning them into the video is a second step, after the speakers are named (p["burn"])."""
     from .. import asr, diarize, extract, segment, separate, speakers, translate
-    if not (out / "segments.json").exists():
-        if p.get("project"):
-            shutil.copy(project_work(p["project"]) / "segments.json", out / "segments.json")
-        else:
-            to = p.get("to") or ""
-            cfg = config.load(p["src"], to or ("en" if p["src"] == "ko" else "ko"))
-            cfg["keep_background"] = True
-            for stage in (extract, separate, diarize, asr, segment, speakers) + ((translate,) if to else ()):
-                stage.run(media(tid), out, cfg)
-            for f in ("audio.wav", "original.wav", "background.wav", "vocals.wav"):
-                (out / f).unlink(missing_ok=True)
+    to = p.get("to") or ""
+    if p.get("project"):
+        from_project(out, p["project"])  # every run: the dub's sentences as they are now
+    elif not (out / "segments.json").exists():
+        cfg = config.load(p["src"], to or ("en" if p["src"] == "ko" else "ko"))
+        cfg.update(keep_background=True, keep_voice_hq=True)  # the full-quality voice: a clip of each speaker, cloning
+        for stage in (extract, separate, diarize, asr, segment, speakers) + ((translate,) if to else ()):
+            stage.run(media(tid), out, cfg)
         data = read_json(out / "segments.json")
-        data["speakers"] = data.get("speakers") or {"S1": {"name": "Speaker 1"}}
+        data["duration"] = sf.info(out / "audio.wav").duration
+        spk = data["speakers"] = data.get("speakers") or {"S1": {"name": "Speaker 1"}}
+        if len(spk) > 1:  # each speaker's colour is kept from now on: a merge or a new person does not shift the others
+            for i, sp in enumerate(sorted(spk, key=lambda k: (len(k), k))):
+                spk[sp].setdefault("color", CAPTION_COLORS[i % len(CAPTION_COLORS)])
+        speaker_clips(out, data)
         write_json(out / "segments.json", data)
+        for f in ("audio.wav", "original.wav", "background.wav", "vocals.wav"):
+            (out / f).unlink(missing_ok=True)
+    data = read_json(out / "segments.json")
+    if to and any(not s.get("tgt_text") for s in data["segments"]):  # sentences a person's fix rebuilt or reworded
+        cfg = config.load(p["src"], to)
+        cfg["only_missing"] = True
+        translate.run(None, out, cfg)
     if p.get("burn"):
         caption_files(out, p, tid)  # the .ass with the current speaker names
         video = (project_work(p["project"]) / "dubbed.mp4" if p.get("project") else media(tid)).resolve()  # ffmpeg runs in out
@@ -235,6 +274,18 @@ def captions(p: dict, out: Path, tid: int) -> dict:
                         "-metadata", "comment=Captions made with AI speech recognition (DUBBE)", f"captioned.{p['burn']}.mp4"],
                        cwd=out, check=True)
     return caption_files(out, p, tid)
+
+
+def from_project(out: Path, pid: int) -> None:
+    """A dub's captions: its sentences and speakers as they are now, so a fix in the dub's editor reaches them. A name or
+    colour chosen on the Subtitles page (`custom`) stays."""
+    data = read_json(project_work(pid) / "segments.json")
+    old = (read_json(out / "segments.json").get("speakers") or {}) if (out / "segments.json").exists() else {}
+    data["speakers"] = data.get("speakers") or {"S1": {"name": "Speaker 1"}}
+    for sp, v in data["speakers"].items():
+        if (old.get(sp) or {}).get("custom"):
+            v.update({k: old[sp][k] for k in ("name", "color", "custom") if k in old[sp]})
+    write_json(out / "segments.json", data)
 
 
 def project_work(pid: int) -> Path:
@@ -260,17 +311,26 @@ def caption_files(out: Path, p: dict, tid: int) -> dict:
                   f"{lang}.vtt": subtitles(segs, field, vtt=True, speakers=spk), f"{lang}.ass": ass(segs, field, spk, lang)}
     for name, text in files.items():
         (out / name).write_text(text, encoding="utf8")
-    colors = speaker_colors(segs) or {sp: CAPTION_COLORS[0] for sp in spk}
+    colors = speaker_colors(segs, spk) or {sp: CAPTION_COLORS[0] for sp in spk}
     talk = {sp: sum(s["end"] - s["start"] for s in segs if s.get("speaker", "S1") == sp) for sp in spk}
     upload = None if p.get("project") else media(tid)
     video = upload.name if upload and has_picture(upload) else None
     burned = sorted(f.name for f in out.glob("captioned.*.mp4"))
-    return {"langs": [lang for lang, _ in langs], "video": video, "burned": burned,
+    # the words of each sentence, for the same "Fix speakers" review as Speaker Detection (an upload's own transcript only)
+    words = read_json(out / "words.json")["words"] if not p.get("project") and (out / "words.json").exists() else []
+    idx = sentence_words(segs, words) if words else [[] for _ in segs]
+    clips = [f"{sp}.mp3" for sp in spk if (out / f"{sp}.mp3").exists()]
+    return {"langs": [lang for lang, _ in langs], "video": video, "burned": burned, "edited": bool(data.get("speakers_edited")),
+            "duration": data.get("duration") or max((s["end"] for s in segs), default=0) or 1,
             "speakers": [{"id": sp, "name": v.get("name") or sp, "color": colors.get(sp, CAPTION_COLORS[0]),
-                          "seconds": round(talk.get(sp, 0), 1)} for sp, v in spk.items()],
-            "sentences": [{"start": s["start"], "speaker": s.get("speaker", "S1"), "src": s["src_text"], "tgt": s.get("tgt_text")}
-                          for s in segs],
-            "files": list(files) + burned + ([video] if video else [])}
+                          "seconds": round(talk.get(sp, 0), 1), "sentences": sum(s.get("speaker", "S1") == sp for s in segs),
+                          "share": round(100 * talk.get(sp, 0) / (sum(talk.values()) or 1)), "maybe_same": v.get("maybe_same", [])}
+                         for sp, v in spk.items()],
+            "sentences": [{"id": s["id"], "start": s["start"], "end": s["end"], "speaker": s.get("speaker", "S1"),
+                           "src": s["src_text"], "text": s["src_text"], "tgt": s.get("tgt_text"), "flag": bool(s.get("speaker_flag")),
+                           "text_edited": bool(s.get("text_edited")),
+                           "words": [[i, words[i]["w"], words[i]["start"]] for i in ix]} for s, ix in zip(segs, idx)],
+            "files": list(files) + burned + ([video] if video else []) + clips}
 
 
 def translate_text(p: dict, out: Path) -> dict:

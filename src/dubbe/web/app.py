@@ -62,7 +62,8 @@ MSG = {  # ?m=... notices; fixed texts, so a link cannot put its own words on ou
     "consent-needed": "Tick the consent box first: a speaker is only cloned with their permission.",
     "too-little-speech": "This speaker says too little to clone (8 seconds of speech are needed).",
     "speaker-cloned": "Speaker cloned from the video. The copy stays in this project only. Press Re-dub to hear it.",
-    "speaker-renamed": "Name saved. The transcript and subtitles use it now."}
+    "speaker-renamed": "Saved. The transcript and subtitles use it now.",
+    "captions-saved": "Caption text saved. Lines whose translation no longer fits are translated again."}
 
 
 @asynccontextmanager
@@ -994,27 +995,60 @@ async def task_speakers_edit(request: Request, tid: int):
     """Save a person's fix of who said what: words moved between sentences, sentences split, joined or given to
     another speaker. The whole transcript comes back as speakers and word indices; nothing may be lost or doubled."""
     u, t = own_task(request, tid)
-    if t["kind"] != "speakers" or t["status"] != "done":
-        raise HTTPException(404)
+    p = json.loads(t["params"])
+    if t["kind"] not in ("speakers", "captions") or t["status"] != "done" or p.get("project"):
+        raise HTTPException(404)  # a dub's captions are fixed in the dub's own editor
     body = await request.json()
     try:
-        result = tools.edit_speakers(tools.folder(tid), body.get("sentences") or [])
-    except (ValueError, KeyError, IndexError, TypeError) as e:
+        tools.edit_speakers(tools.folder(tid), body.get("sentences") or [])
+    except (ValueError, KeyError, IndexError, TypeError, FileNotFoundError) as e:
         raise HTTPException(400, str(e))
-    db.run("update tasks set result=? where id=?", json.dumps(result, ensure_ascii=False), tid)
+    task_files_again(t)
     return {"ok": True}
 
 
+def task_files_again(t) -> None:
+    """After a person's fix: the files and result written again - or, when sentences of a Subtitles task need a new
+    translation, the task runs once more (it only translates those, then writes the files)."""
+    out, p = tools.folder(t["id"]), json.loads(t["params"])
+    if t["kind"] == "speakers":
+        result = tools.speaker_files(out)
+    elif p.get("to") and any(not s.get("tgt_text") for s in read_json(out / "segments.json")["segments"]):
+        db.run("update tasks set status='waiting' where id=?", t["id"])
+        return
+    else:
+        result = tools.caption_files(out, p, t["id"])
+    db.run("update tasks set result=? where id=?", json.dumps(result, ensure_ascii=False), t["id"])
+
+
 @app.post("/app/tasks/{tid}/speakers/{sp}")
-def task_speaker_name(request: Request, tid: int, sp: str, name: str = Form("")):
-    """Name a speaker: the transcript and subtitles are written again with the name."""
+def task_speaker_name(request: Request, tid: int, sp: str, name: str = Form(""), color: str = Form("")):
+    """Name a speaker (and on Subtitles, pick their caption colour): the transcript and subtitles are written again."""
     u, t, data = own_speaker(request, tid, sp)
-    data["speakers"][sp]["name"] = name.strip()[:40] or data["speakers"][sp]["name"]
+    v = data["speakers"][sp]
+    v["name"] = name.strip()[:40] or v["name"]
+    if t["kind"] == "captions":
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            v["color"] = color.upper()
+        v["custom"] = True  # a dub's captions keep this name and colour when they read the dub again
     write_json(tools.folder(tid) / "segments.json", data)
-    out = tools.folder(tid)
-    result = tools.speaker_files(out) if t["kind"] == "speakers" else tools.caption_files(out, json.loads(t["params"]), tid)
-    db.run("update tasks set result=? where id=?", json.dumps(result, ensure_ascii=False), tid)
+    task_files_again(t)
     return go(f"/app/tasks/{tid}?m=speaker-renamed#{sp}")
+
+
+@app.post("/app/tasks/{tid}/captions-text")
+async def task_caption_text(request: Request, tid: int):
+    """A person's fix of the caption text: every line's source text (src-<id>) and translation (tgt-<id>) come back."""
+    u, t = own_task(request, tid)
+    p = json.loads(t["params"])
+    if t["kind"] != "captions" or t["status"] != "done" or p.get("project"):
+        raise HTTPException(404)  # a dub's text is fixed in the dub's own editor
+    form = await request.form()
+    lines = {int(k[4:]): (str(v)[:1000], str(form[f"tgt-{k[4:]}"])[:1000] if f"tgt-{k[4:]}" in form else None)
+             for k, v in form.items() if k.startswith("src-") and k[4:].isdigit()}
+    tools.edit_caption_text(tools.folder(tid), lines, p.get("to") or "")
+    task_files_again(t)
+    return go(f"/app/tasks/{tid}?m=captions-saved#captions")
 
 
 @app.post("/app/captions")
@@ -1083,6 +1117,10 @@ def task_page(request: Request, tid: int):
     if t["kind"] == "speakers" and result and result.get("sentences") and "words" not in result["sentences"][0] \
             and (tools.folder(tid) / "segments.json").exists():
         result = tools.speaker_files(tools.folder(tid))  # a result from before the word editor: add the words
+    if t["kind"] == "captions" and t["status"] == "done" and result and "duration" not in result \
+            and (tools.folder(tid) / "segments.json").exists():
+        result = tools.caption_files(tools.folder(tid), json.loads(t["params"]), tid)  # from before the speaker review
+        db.run("update tasks set result=? where id=?", json.dumps(result, ensure_ascii=False), tid)
     return page(request, "task.html", user=u, t=t, p=json.loads(t["params"]), ahead=ahead, result=result, cloning=clones.enabled(),
                 media_video=(m.suffix.lower() in VIDEO_TYPES) if m else None)
 

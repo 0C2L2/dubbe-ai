@@ -477,3 +477,69 @@ def test_subtitles_tool_names_speakers_burns_on_request_and_dub_captions(client)
     assert r.headers["location"] == f"/app/tasks/{task['id']}" and json.loads(task["params"]) == {"project": pid, "src": "en", "to": "ko", "burn": "ko"}
     assert '<font color="#FFFF00">응.</font>' in client.get(f"/app/p/{pid}/download/tgt.color.srt").text
     assert "Style: S2,Malgun Gothic" in client.get(f"/app/p/{pid}/download/tgt.ass").text
+
+
+def test_subtitles_review_fixes_speakers_colours_and_text(client):
+    """Subtitles has the Speaker Detection review: pick a colour, fix who said what (a sentence whose words did not change
+    keeps its translation, a changed one is translated again), fix the text. A dub's captions follow the dub."""
+    import json
+    from dubbe.web import tools
+    uid, s = user("cap2@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    tid = db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
+                 uid, "captions", "Scene", json.dumps({"src": "en", "to": "ko"}), "done", db.now())
+    out = tools.folder(tid)
+    out.mkdir(parents=True)
+    words = [{"w": w, "start": a, "end": a + .4} for w, a in [("Hello", 0), ("there.", .5), ("Yes,", 1), ("I", 1.5), ("know.", 2)]]
+    (out / "words.json").write_text(json.dumps({"words": words}), encoding="utf8")
+    segs = [{"id": 1, "start": 0.0, "end": 1.4, "speaker": "S1", "src_text": "Hello there. Yes,", "tgt_text": "A"},
+            {"id": 2, "start": 1.5, "end": 2.4, "speaker": "S2", "src_text": "I know.", "tgt_text": "B"}]
+    (out / "segments.json").write_text(json.dumps({"segments": segs, "duration": 3.0, "speakers": {
+        "S1": {"name": "Walter", "color": "#FFFFFF"}, "S2": {"name": "Jesse", "color": "#FFFF00"}}}), encoding="utf8")
+    p = {"src": "en", "to": "ko"}
+    db.run("update tasks set result=? where id=?", json.dumps(tools.caption_files(out, p, tid)), tid)
+    page_ = client.get(f"/app/tasks/{tid}").text
+    assert "Fix speakers" in page_ and 'type="color"' in page_ and "Edit caption text" in page_
+
+    client.post(f"/app/tasks/{tid}/speakers/S2", data={"name": "Jesse", "color": "#ff0000"})  # a colour of the user's
+    assert "::cue(.s2) { color: #FF0000; }" in (out / "en.vtt").read_text(encoding="utf8")
+    client.post(f"/app/tasks/{tid}/speakers/S2", data={"name": "Jesse", "color": "red;}"})  # not a colour: ignored
+    assert json.loads((out / "segments.json").read_text(encoding="utf8"))["speakers"]["S2"]["color"] == "#FF0000"
+
+    fix = lambda parts: client.post(f"/app/tasks/{tid}/speakers-edit", json={"sentences": parts})  # noqa: E731
+    assert fix([{"speaker": "S1", "words": [0, 1, 2]}, {"speaker": "S1", "words": [3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert [(x["speaker"], x["tgt_text"]) for x in data["segments"]] == [("S1", "A"), ("S1", "B")]  # same words: translations kept
+    assert db.one("select status from tasks where id=?", tid)["status"] == "done"  # nothing to translate again
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "new", "words": [2, 3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert not any(x.get("tgt_text") for x in data["segments"])  # both lines changed: translated again
+    assert data["speakers"]["S2"]["color"] == "#FFFF00"  # the new person gets a colour nobody has
+    assert db.one("select status from tasks where id=?", tid)["status"] == "waiting"  # the task runs once more
+
+    for x in data["segments"]:
+        x["tgt_text"] = "T"
+    (out / "segments.json").write_text(json.dumps(data), encoding="utf8")
+    db.run("update tasks set status='done' where id=?", tid)
+    r = client.post(f"/app/tasks/{tid}/captions-text", data={"src-1": "Hello there!", "tgt-1": "T", "src-2": "Yes, I know.", "tgt-2": "Mine."})
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert r.status_code == 303 and data["segments"][0]["src_text"] == "Hello there!" and data["segments"][0]["tgt_text"] is None
+    assert data["segments"][1]["tgt_text"] == "Mine." and data["segments"][1]["edited"]  # a person's translation stays theirs
+
+    # a dub's captions: fixed in the dub's editor (not here), and they read the dub again on every run
+    pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at) values(?,?,?,?,?,?,?,?)",
+                 uid, "Dub", "en", "ko", 1, 1.0, 0.1, db.now())
+    w = worker.work(db.one("select * from projects where id=?", pid))
+    w.mkdir(parents=True)
+    (w / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"name": "A"}, "S2": {"name": "B"}}}), encoding="utf8")
+    dub = db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
+                 uid, "captions", "Dub", json.dumps({"project": pid, "src": "en", "to": "ko"}), "done", db.now())
+    assert fix and client.post(f"/app/tasks/{dub}/speakers-edit", json={"sentences": []}).status_code == 404
+    d = tools.folder(dub)
+    d.mkdir(parents=True)
+    (d / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"name": "Narrator", "custom": True},
+                                                                              "S2": {"name": "old B"}}}), encoding="utf8")
+    (w / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"name": "A"}, "S2": {"name": "Bea"}}}), encoding="utf8")
+    tools.from_project(d, pid)
+    spk = json.loads((d / "segments.json").read_text(encoding="utf8"))["speakers"]
+    assert spk["S1"]["name"] == "Narrator" and spk["S2"]["name"] == "Bea"  # named here: kept; renamed in the dub: followed
