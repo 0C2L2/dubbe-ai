@@ -5,7 +5,7 @@ not re-encoded); the same sound also comes here, where it is cut into pieces of 
 piece is dubbed with the models kept loaded: Demucs (background) -> Whisper -> NLLB -> Kokoro -> fit and mix. Each piece
 is written as p<n>.wav with its start time in pieces.json; the page plays the video muted and the pieces on the video's
 clock, so the dub can never drift from the picture. Measured on this laptop: about 5x faster than real time with Whisper
-in int8 (C57); a piece is at most MOST s long, so a delay of 20 s covers it and its dubbing.
+in int8 (C57); a piece is at most MOST s long, so a delay of 30 s covers it and its dubbing (C59).
 
 Beta limits: one fast voice for everyone (TARGETS), no review (mistakes reach the viewer), at most MAX_MINUTES per session,
 one session at a time (it holds the GPU).
@@ -28,8 +28,9 @@ from scipy.signal import resample_poly
 
 from . import config, device
 
-PIECE, MOST = 7.0, 14.0   # a piece ends at the first pause after PIECE s, at most MOST s (C57: 10/20 needed 21-31 s)
-DELAY = 20                # seconds the viewer watches behind the stream: 7-s pieces needed 19.4-19.9 s, before int8 (C57)
+PIECE, MOST = 10.0, 20.0  # a piece ends at the first pause after PIECE s, at most MOST s (7/14 heard worse, C57/C59)
+DELAY = 30                # seconds the viewer watches behind the stream: 20.4-23.3 s needed on the test clips, 27.5 s on
+                          # a YouTube live with few pauses (an 18-s piece + 9 s of work, C59)
 LATE, MAX_STRETCH = 1.0, 1.3
 MAX_MINUTES = 30
 SR, OUT_SR = 44100, 32000  # the stream's sound; the dub pieces (stereo, 16 bit: ~1 Mbit/s)
@@ -39,7 +40,7 @@ BLOCK = SR * 4 // 4        # bytes per read: 0.25 s of 16-bit stereo
 def cut(speech: list[tuple[float, float]], length: float, piece: float = PIECE, most: float = MOST) -> float | None:
     """Where a piece ends, in seconds of the audio heard so far (`length`, speech spans from the VAD): the middle of the
     first pause after `piece` seconds (a word is never cut), or just after the last speech once the speaker has stopped;
-    with no pause before `most`, the last pause after piece/2 s (C58: a YouTube live hit 14 s in 6 of 10 pieces),
+    with no pause before `most`, the last pause after piece/2 s (C58: a YouTube live hit the 14-s cap in 6 of 10 pieces),
     else `most` seconds. None: wait for more audio."""
     ends = [(e + s1) / 2 for (_, e), (s1, _) in zip(speech, speech[1:])]
     if speech and length - speech[-1][1] >= .3:

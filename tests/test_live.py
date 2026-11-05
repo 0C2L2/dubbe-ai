@@ -13,10 +13,10 @@ def test_a_piece_ends_at_a_pause_never_inside_a_word():
     assert cut([(0, 9), (9.2, 12)], 12.1) is None   # maybe a breath: wait for more
     assert cut([(0, 25)], 21) == 20                      # nobody pauses: cut at 20 s
     assert cut([], 10.5) == 10.5                         # music or silence only
-    assert live.cut([(0, 25)], 15) == 14 and live.DELAY == 20  # live: at most 14 s a piece, so 20 s behind covers it (C57)
-    assert live.cut([(0, 5), (5.4, 30)], 14.2) == 5.2      # no pause after 7 s before 14: the last one before (C58)
-    assert live.cut([(0, 2), (2.4, 30)], 14.2) == 14       # ... but not a piece shorter than 3.5 s
-    assert live.cut([(0, 5), (5.4, 15), (15.4, 30)], 15.6) == 5.2  # the pause after 7 s comes too late (15.2 s)
+    assert live.cut([(0, 25)], 21) == 20 and live.DELAY == 30  # live: at most 20 s a piece, so 30 s behind covers it (C59)
+    assert live.cut([(0, 5), (5.4, 30)], 20.2) == 5.2      # no pause after 10 s before 20: the last one before (C58)
+    assert live.cut([(0, 2), (2.4, 30)], 20.2) == 20       # ... but not a piece shorter than 5 s
+    assert live.cut([(0, 5), (5.4, 22), (22.4, 30)], 22.6) == 5.2  # the pause after 10 s comes too late (22.2 s)
 
 
 def test_ffmpeg_reads_only_the_web_and_keeps_the_picture_as_it_is():
