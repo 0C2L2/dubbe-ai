@@ -25,6 +25,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import ffmpeg, ratings, read_json, segment, tags, video_duration, write_json
+from .. import live as livedub
 from ..tts import sample_name
 from ..report import STAGE, _t, ass, placed, subtitles, timeline_html, transcript
 from . import auth, clones, db, tools, worker
@@ -885,6 +886,15 @@ templates.env.globals.update(TOOLS=TOOLS, MAX_CHARS=MAX_CHARS, SPK_COLORS=SPK_CO
                              NOCLONE=" ".join(k for k in LANGS if "clone" not in _LANGS[k]["tts"]))  # voice pickers hide clones
 
 
+def _live_voices() -> dict[str, list[tuple[str, str]]]:
+    """Live Dubbing: each language it can dub into -> its fast voices (key, label), the default first (dubbe/live.py)."""
+    named = {(v["lang"], v["key"]): f"{v['name']} · {v['accent']}" for v in voices(["en", "kk"])}
+    return {t: [(v, named.get((t, v), "One voice (MMS)")) for v in livedub.voices(t)] for t in livedub.TARGETS}
+
+
+templates.env.globals.update(LIVE_VOICES=_live_voices())
+
+
 def new_task(u, kind: str, title: str, params: dict, status: str = "waiting") -> int:
     return db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
                   u["id"], kind, title.strip()[:80] or TOOLS[kind], json.dumps(params, ensure_ascii=False), status, db.now())
@@ -1117,23 +1127,26 @@ def public_url(url: str) -> bool:
 
 
 @app.post("/app/live")
-def live_create(request: Request, url: str = Form(""), src: str = Form("ko"), voice: str = Form("af_heart"),
+def live_create(request: Request, url: str = Form(""), src: str = Form("ko"), tgt: str = Form("en"), voice: str = Form(""),
                 rights: str = Form("")):
-    """Live Dubbing (beta): a stream dubbed into English and shown about 30 s behind it (dubbe/live.py, C52)."""
+    """Live Dubbing (beta): a stream dubbed into English, Kazakh, Korean or Uzbek and shown about 30 s behind it
+    (dubbe/live.py; measured in C52, C54)."""
     from urllib.parse import urlsplit
     u = auth.require_user(request)
-    src = src if src in LANGS and src != "en" else "ko"
-    voice = voice if voice in _LANGS["en"]["tts"].get("voices", {}) else "af_heart"
+    tgt = tgt if tgt in livedub.TARGETS else "en"
+    src = src if src in LANGS else "ko"
+    voice = voice if voice in livedub.voices(tgt) else livedub.TARGETS[tgt][1]
     error = ("Please confirm your email first." if not u["verified_at"] else
+             "Choose two different languages." if src == tgt else
              "Please confirm the stream is yours or that you may use it." if not rights else
              "Paste a public link that starts with https://." if not public_url(url) else
              "One live session at a time in the beta. Try again when the current one has ended."
              if db.one("select 1 from tasks where kind='live' and status in ('waiting','running') and deleted_at is null") else
              limit_error(u, 1))
     if error:
-        return tool_page(request, u, "live", 400, error=error, form={"url": url, "src": src, "voice": voice})
+        return tool_page(request, u, "live", 400, error=error, form={"url": url, "src": src, "tgt": tgt, "voice": voice})
     title = f"Live: {urlsplit(url.strip()).hostname}"
-    return go(f"/app/tasks/{new_task(u, 'live', title, {'url': url.strip(), 'src': src, 'voice': voice})}")
+    return go(f"/app/tasks/{new_task(u, 'live', title, {'url': url.strip(), 'src': src, 'tgt': tgt, 'voice': voice})}")
 
 
 @app.post("/app/tasks/{tid}/stop")

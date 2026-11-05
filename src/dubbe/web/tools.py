@@ -378,7 +378,7 @@ def main(tid: int) -> None:
             db.run("update tasks set params=? where id=?", json.dumps({**p, "burn": ""}, ensure_ascii=False), tid)
     elif t["kind"] == "live":  # Live Dubbing (beta): runs until the stream ends, MAX_MINUTES pass or Stop is pressed
         from .. import live
-        result = live.run(out, p["url"], p["src"], p.get("voice") or "af_heart")
+        result = live.run(out, p["url"], p["src"], p.get("voice") or "", tgt=p.get("tgt") or "en")
         db.run("update tasks set minutes=? where id=?", round(result["seconds"] / 60, 2), tid)  # counts what was dubbed
     else:
         result = isolate_voice(p, out, media(tid))

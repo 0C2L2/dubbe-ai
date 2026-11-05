@@ -573,8 +573,15 @@ def test_live_dubbing_beta_checks_the_link_runs_one_at_a_time_and_serves_only_it
     monkeypatch.setattr(socket, "getaddrinfo", public)
     r = client.post("/app/live", data=form)
     t = db.one("select * from tasks where kind='live'")
-    assert r.status_code == 303 and json.loads(t["params"]) == {"url": "https://example.org/stream", "src": "ko", "voice": "af_heart"}
+    assert r.status_code == 303 and json.loads(t["params"]) == {"url": "https://example.org/stream", "src": "ko", "tgt": "en", "voice": "af_heart"}
     assert client.post("/app/live", data=form).status_code == 400  # one session at a time
+    db.run("update tasks set status='done' where id=?", t["id"])
+    assert client.post("/app/live", data={**form, "src": "kk", "tgt": "kk"}).status_code == 400  # two different languages
+    client.post("/app/live", data={**form, "src": "en", "tgt": "kk", "voice": "af_heart"})  # an English voice for Kazakh: its own
+    kk = db.one("select * from tasks where kind='live' order by id desc limit 1")
+    assert json.loads(kk["params"])["tgt"] == "kk" and json.loads(kk["params"])["voice"] == "issai-0"
+    db.run("delete from tasks where id=?", kk["id"])
+    db.run("update tasks set status='waiting' where id=?", t["id"])
     client.post(f"/app/tasks/{t['id']}/stop")
     assert db.one("select status from tasks where id=?", t["id"])["status"] == "done"  # stopped before it started
 

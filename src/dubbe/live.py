@@ -1,4 +1,4 @@
-"""Live dubbing (beta): a live stream dubbed into English and watched DELAY seconds behind it (test-results C52).
+"""Live dubbing (beta): a live stream dubbed into English, Kazakh, Korean or Uzbek, watched DELAY seconds behind it (C52-C54).
 
 ffmpeg reads the stream once. The picture and the original sound go out unchanged as a growing HLS stream (video.m3u8,
 not re-encoded); the same sound also comes here, where it is cut into pieces of about PIECE seconds at a pause and each
@@ -7,7 +7,7 @@ is written as p<n>.wav with its start time in pieces.json; the page plays the vi
 clock, so the dub can never drift from the picture. Measured on this laptop: 2.3-2.8x faster than real time; a delay of
 about 27 s is needed with 10-s pieces (C52).
 
-Beta limits: one English voice for everyone, no review (mistakes reach the viewer), at most MAX_MINUTES per session,
+Beta limits: one fast voice for everyone (TARGETS), no review (mistakes reach the viewer), at most MAX_MINUTES per session,
 one session at a time (it holds the GPU).
 
 usage (test, a file played as if live): python -m dubbe.live <out dir> <spoken language> <file> [voice]
@@ -92,20 +92,34 @@ class Reader(threading.Thread):
         return data
 
 
+# the fast voice of each language live mode can dub into (the good offline voices are ~3x slower than real time, C49):
+# engine, default voice. Kazakh speaks with its offline voice; Korean and Uzbek with the MMS fallbacks (flat, CC BY-NC)
+TARGETS = {"en": ("kokoro", "af_heart"), "kk": ("piper", "issai-0"), "ko": ("mms", "facebook/mms-tts-kor"),
+           "uz": ("mms", "facebook/mms-tts-uzb-script_cyrillic")}
+
+
+def voices(tgt: str) -> list[str]:
+    """The voices a live dub into `tgt` can use (the first is the default)."""
+    engine, default = TARGETS[tgt]
+    if engine == "mms":
+        return [default]  # one MMS voice per language
+    return [default] + [v for v in (config.load("en" if tgt != "en" else "ko", tgt)["tgt"]["tts"].get("voices") or {})
+                        if v != default and (engine != "kokoro" or v[:1] in "ab")]
+
+
 class Dubber:
     """The models, loaded once for the whole stream (29 s on this laptop)."""
 
-    def __init__(self, src: str, voice: str = "af_heart"):
+    def __init__(self, src: str, voice: str = "", tgt: str = "en"):
         import ctranslate2
         from demucs.pretrained import get_model
         from faster_whisper import WhisperModel
         from huggingface_hub import snapshot_download
-        from kokoro import KPipeline
         from transformers import AutoTokenizer
 
         from .asr import whisper_model
         from .translate import MODEL, TOKENIZER
-        self.cfg = config.load(src, "en")
+        self.cfg, self.tgt = config.load(src, tgt), tgt
         dev = self.dev = device()
         asr = self.cfg["src"].get("asr_model", "large-v3-turbo")
         asr = "large-v3-turbo" if asr == "large-v3" else asr  # large-v3 does not fit next to NLLB on 8 GB (C52)
@@ -114,7 +128,40 @@ class Dubber:
         self.tok = AutoTokenizer.from_pretrained(TOKENIZER, src_lang=self.cfg["src"]["nllb"])
         self.nllb = ctranslate2.Translator(snapshot_download(MODEL), device=dev,
                                            compute_type="int8_float16" if dev == "cuda" else "int8")
-        self.kokoro, self.voice = KPipeline(lang_code=voice[0]), voice
+        self.engine = TARGETS[tgt][0]
+        self.voice = voice if voice in voices(tgt) else TARGETS[tgt][1]
+        self.say = self._voice()
+
+    def _voice(self):
+        """say(text) -> (audio, sample rate) with the target's fast voice, loaded once."""
+        if self.engine == "kokoro":
+            from kokoro import KPipeline
+            pipe = KPipeline(lang_code=self.voice[0])
+            return lambda text: (np.concatenate([np.asarray(a) for _, _, a in pipe(text, voice=self.voice, speed=1.0)]), 24000)
+        if self.engine == "piper":  # CPU (MIT; Kazakh voice kk_KZ-issai-high, CC BY 4.0)
+            from huggingface_hub import hf_hub_download
+            from piper import PiperVoice, SynthesisConfig
+            model = self.cfg["tgt"]["tts"]["model"]
+            hf_hub_download("rhasspy/piper-voices", model + ".onnx.json")
+            pv = PiperVoice.load(hf_hub_download("rhasspy/piper-voices", model + ".onnx"))
+            syn = SynthesisConfig(speaker_id=int(self.voice.rsplit("-", 1)[1]))
+            return lambda text: (np.concatenate([c.audio_float_array for c in pv.synthesize(text, syn_config=syn)] or
+                                                [np.zeros(1, "float32")]), pv.config.sample_rate)
+        import torch  # MMS (VITS), one model per language
+        from transformers import AutoTokenizer, VitsModel
+
+        from .tts import romanizer
+        tok, model = AutoTokenizer.from_pretrained(self.voice), VitsModel.from_pretrained(self.voice).to(self.dev)
+        roman = romanizer(tok)
+
+        def say(text):
+            ids = tok(roman(text), return_tensors="pt").to(self.dev)
+            if ids["input_ids"].shape[1] == 0:
+                return np.zeros(1, "float32"), model.config.sampling_rate
+            torch.manual_seed(0)
+            with torch.no_grad():
+                return model(**ids).waveform[0].cpu().numpy(), model.config.sampling_rate
+        return say
 
     def background(self, x: np.ndarray) -> np.ndarray:
         import torch
@@ -133,6 +180,9 @@ class Dubber:
     def piece(self, x: np.ndarray, carry: np.ndarray) -> tuple[np.ndarray, list[dict], np.ndarray]:
         """One piece of the stream (44.1 kHz stereo) -> its dubbed sound (same length), what was said and its
         translation (times in the piece), and the end of a sentence that runs into the next piece."""
+        from math import gcd
+
+        from .tags import text_for_tts
         from .tts import level, trim
         n = len(x)
         out = self.background(x) if n > SR // 10 else np.zeros_like(x)
@@ -149,12 +199,14 @@ class Dubber:
         for k, ((t0, _), text) in enumerate(zip(said, en)):
             if not text:
                 continue
-            c = level(trim(np.concatenate([np.asarray(a) for _, _, a in self.kokoro(text, voice=self.voice, speed=1.0)])), 24000)
+            c, vsr = self.say(text_for_tts(text, [], self.engine, self.tgt))  # numbers as words; Cyrillic for MMS Uzbek
+            c = level(trim(np.asarray(c, "float32")), vsr)
             slot = (said[k + 1][0] if k + 1 < len(said) else n / SR + LATE) - t0
-            rate = min(MAX_STRETCH, len(c) / 24000 / max(slot, .1))
+            rate = min(MAX_STRETCH, len(c) / vsr / max(slot, .1))
             if rate > 1.01:
-                c = faster(c, rate, 24000)
-            c = resample_poly(c, 147, 80).astype("float32")[:, None]  # 24 kHz -> 44.1 kHz
+                c = faster(c, rate, vsr)
+            g = gcd(SR, vsr)
+            c = resample_poly(c, SR // g, vsr // g).astype("float32")[:, None]  # the voice's rate -> 44.1 kHz
             p0 = int(t0 * SR)
             inside = max(0, min(len(c), n - p0))
             out[p0:p0 + inside] += c[:inside]
@@ -191,8 +243,8 @@ def speech(buf: np.ndarray) -> list[tuple[float, float]]:
     return [(s["start"] / 16000, s["end"] / 16000) for s in get_speech_timestamps(x16, VadOptions(min_silence_duration_ms=300))]
 
 
-def run(out: Path, url: str, src: str, voice: str = "af_heart", local: bool = False) -> dict:
-    """Dub the stream at `url` until it ends, MAX_MINUTES pass, or out/live/stop appears (the Stop button)."""
+def run(out: Path, url: str, src: str, voice: str = "", local: bool = False, tgt: str = "en") -> dict:
+    """Dub the stream at `url` into `tgt` until it ends, MAX_MINUTES pass, or out/live/stop appears (the Stop button)."""
     live = out / "live"
     live.mkdir(parents=True, exist_ok=True)
     man = {"state": "starting", "delay": DELAY, "pieces": []}
@@ -200,7 +252,7 @@ def run(out: Path, url: str, src: str, voice: str = "af_heart", local: bool = Fa
     proc, pos, n = None, 0.0, 0
     try:
         media, is_live, headers = (url, False, {}) if local else resolve(url)
-        dub = Dubber(src, voice)
+        dub = Dubber(src, voice, tgt)
         with open(live / "ffmpeg.log", "wb") as log:
             proc = subprocess.Popen(ffmpeg_cmd(media, is_live, headers, live, local), stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=log)
@@ -251,6 +303,6 @@ def run(out: Path, url: str, src: str, voice: str = "af_heart", local: bool = Fa
     return {"seconds": round(pos, 1), "pieces": n}
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # python -m dubbe.live <out dir> <spoken language> <dub language> <file> [voice]
     a = sys.argv[1:]
-    print(json.dumps(run(Path(a[0]), a[2], a[1], a[3] if len(a) > 3 else "af_heart", local=True)))
+    print(json.dumps(run(Path(a[0]), a[3], a[1], a[4] if len(a) > 4 else "", local=True, tgt=a[2])))

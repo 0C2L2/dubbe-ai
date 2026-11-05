@@ -43,6 +43,17 @@ def _kokoro(texts: list[str], tts: dict):
         yield np.concatenate([np.asarray(a) for _, _, a in pipe(text, voice=tts["voice"], speed=1.0)]), 24000
 
 
+def romanizer(tok):
+    """For an MMS voice that reads romanized text (Korean): one uroman for all sentences. The tokenizer would load a new
+    one for every sentence - 4 s each, 0.6 s to speak it (live Korean ran 1.3x slower than real time, C54). Same tokens."""
+    if not getattr(tok, "is_uroman", False):
+        return lambda text: text
+    import uroman
+    u = uroman.Uroman()
+    tok.is_uroman = False
+    return u.romanize_string
+
+
 def _mms(texts: list[str], tts: dict):
     # Meta MMS-TTS (VITS), one model per language, CC BY-NC 4.0; non-Latin scripts need `uroman`
     import torch
@@ -51,9 +62,10 @@ def _mms(texts: list[str], tts: dict):
     dev = device()
     tok = AutoTokenizer.from_pretrained(tts["voice"])
     model = VitsModel.from_pretrained(tts["voice"]).to(dev)
+    roman = romanizer(tok)
     for i, text in enumerate(texts):
         torch.manual_seed((tts.get("seeds") or [0] * len(texts))[i])  # VITS samples noise: same take, same clip; a retake differs
-        ids = tok(text, return_tensors="pt").to(dev)
+        ids = tok(roman(text), return_tensors="pt").to(dev)
         if ids["input_ids"].shape[1] == 0:  # nothing pronounceable
             yield np.zeros(1, dtype="float32"), model.config.sampling_rate
             continue
