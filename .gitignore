@@ -1,6 +1,7 @@
 # course material and source drafts (kept locally, not published)
 *.pdf
 *.docx
+*.pptx
 *.png
 
 # media never goes in the repo
