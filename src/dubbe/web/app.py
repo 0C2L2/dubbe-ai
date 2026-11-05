@@ -877,7 +877,7 @@ def settings(request: Request, action: str = Form(...), name: str = Form(""), cu
 # ---------------------------------------------------------------- tools: text to speech, speech to text, translate, voice isolator
 
 TOOLS = {"tts": "Text to Speech", "stt": "Speech to Text", "speakers": "Speaker Detection", "captions": "Subtitles",
-         "translate": "Translate", "isolate": "Voice Isolator"}
+         "translate": "Translate", "isolate": "Voice Isolator", "live": "Live Dubbing"}
 SPK_COLORS = ["#f76b15", "#6e56cf", "#30a46c", "#3b82f6", "#e5484d", "#e2a336", "#12a594", "#d6409f"]
 MEDIA_TYPES = VIDEO_TYPES | {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 MAX_CHARS = {"tts": 2000, "translate": 5000}
@@ -1099,6 +1099,70 @@ def task_speaker_clone(request: Request, tid: int, sp: str, name: str = Form("")
     clones.save(vid, "recording", wav)
     db.run("update voices set status='waiting' where id=?", vid)  # the worker checks it like a recorded clone
     return go(f"/app/studio/{vid}")
+
+
+def public_url(url: str) -> bool:
+    """A link the server may open for Live Dubbing: http(s) to public addresses only - never a file on this machine or
+    an address on the local network."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlsplit
+    u = urlsplit(url.strip())
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    try:
+        return all(ipaddress.ip_address(i[4][0]).is_global for i in socket.getaddrinfo(u.hostname, None))
+    except (OSError, ValueError):
+        return False
+
+
+@app.post("/app/live")
+def live_create(request: Request, url: str = Form(""), src: str = Form("ko"), voice: str = Form("af_heart"),
+                rights: str = Form("")):
+    """Live Dubbing (beta): a stream dubbed into English and shown about 30 s behind it (dubbe/live.py, C52)."""
+    from urllib.parse import urlsplit
+    u = auth.require_user(request)
+    src = src if src in LANGS and src != "en" else "ko"
+    voice = voice if voice in _LANGS["en"]["tts"].get("voices", {}) else "af_heart"
+    error = ("Please confirm your email first." if not u["verified_at"] else
+             "Please confirm the stream is yours or that you may use it." if not rights else
+             "Paste a public link that starts with https://." if not public_url(url) else
+             "One live session at a time in the beta. Try again when the current one has ended."
+             if db.one("select 1 from tasks where kind='live' and status in ('waiting','running') and deleted_at is null") else
+             limit_error(u, 1))
+    if error:
+        return tool_page(request, u, "live", 400, error=error, form={"url": url, "src": src, "voice": voice})
+    title = f"Live: {urlsplit(url.strip()).hostname}"
+    return go(f"/app/tasks/{new_task(u, 'live', title, {'url': url.strip(), 'src': src, 'voice': voice})}")
+
+
+@app.post("/app/tasks/{tid}/stop")
+def live_stop(request: Request, tid: int):
+    """End a live session: the dub so far stays and can be watched again."""
+    u, t = own_task(request, tid)
+    if t["kind"] != "live":
+        raise HTTPException(404)
+    if t["status"] == "waiting":
+        db.run("update tasks set status='done', finished_at=? where id=?", db.now(), tid)
+    elif t["status"] == "running":
+        (tools.folder(tid) / "live").mkdir(parents=True, exist_ok=True)
+        (tools.folder(tid) / "live" / "stop").touch()  # dubbe/live.py ends ffmpeg and the session
+    return go(f"/app/tasks/{tid}")
+
+
+LIVE_FILES = re.compile(r"^(video\.m3u8|v\d{5}\.ts|p\d{5}\.wav|pieces\.json)$")
+LIVE_TYPES = {".m3u8": "application/vnd.apple.mpegurl", ".ts": "video/mp2t", ".wav": "audio/wav", ".json": "application/json"}
+
+
+@app.get("/app/tasks/{tid}/live/{name}")
+def live_file(request: Request, tid: int, name: str):
+    """A live session's delayed stream (the picture and the original sound), its dub pieces and their list."""
+    u, t = own_task(request, tid)
+    f = tools.folder(tid) / "live" / name
+    if t["kind"] != "live" or not LIVE_FILES.match(name) or not f.exists():
+        raise HTTPException(404)
+    growing = f.suffix in (".m3u8", ".json")  # rewritten while the stream runs
+    return FileResponse(f, media_type=LIVE_TYPES[f.suffix], headers={"Cache-Control": "no-store"} if growing else None)
 
 
 @app.post("/app/isolate")

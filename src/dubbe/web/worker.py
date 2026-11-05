@@ -159,6 +159,7 @@ def cleanup() -> None:
 
 def loop(stop: threading.Event) -> None:
     db.run("update jobs set status='waiting' where status='running'")  # cut off by a restart: the CLI resumes it
+    db.run("update tasks set status='done', finished_at=? where status='running' and kind='live'", db.now())  # the stream moved on
     db.run("update tasks set status='waiting' where status='running'")
     db.run("update voices set status='waiting' where status='checking'")
     cleaned = 0.0

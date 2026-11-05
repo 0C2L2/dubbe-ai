@@ -1,0 +1,33 @@
+{% extends "app_base.html" %}
+{% from "_parts.html" import icon, task_item %}
+{% block title %}Live Dubbing (beta) — DUBBE{% endblock %}
+{% block main %}
+<span class="eyebrow">Create · Beta</span><h1 class="app-h1">Live Dubbing</h1>
+<form method="post" action="/app/live" class="tool">
+  <div class="tool-main">
+    <label>Link to your live stream or video
+      <input name="url" type="url" required placeholder="https://www.youtube.com/watch?v=…" value="{{ form.url or '' }}" autocomplete="off"></label>
+    <div class="feature-list">
+      <div>{{ icon("live") }}<span><b>About 30 s behind the stream</b> the picture and the English dub stay together, the delay is the same for both</span></div>
+      <div>{{ icon("speak") }}<span><b>One fast voice</b> for everyone, so the dub keeps up with the stream</span></div>
+      <div>{{ icon("film") }}<span><b>Watch it again</b> after the stream ends, up to 30 minutes per session</span></div>
+    </div>
+    <p class="notice">Beta: nobody reviews a live dub, so mistakes reach the viewer. For a dub you can check and fix, use
+      <a href="/app/new">Dubbing</a>.</p>
+  </div>
+  <aside class="tool-side">
+    <label>Spoken language
+      <select name="src">{% for l in langs if l != "en" %}<option value="{{ l }}" {{ 'selected' if (form.src or 'ko') == l }}>{{ NAMES.get(l, l) }}</option>{% endfor %}</select></label>
+    <label>Dubbed into <select disabled><option>English</option></select></label>
+    <label>Voice
+      <select name="voice">{% for v in voices if v.lang == "en" %}<option value="{{ v.key }}" {{ 'selected' if (form.voice or 'af_heart') == v.key }}>{{ v.name }} · {{ v.accent }}</option>{% endfor %}</select></label>
+    <label><input type="checkbox" name="rights" required> This is my own stream, or I may use it.</label>
+    <button class="block">Start live dub</button>
+    <p class="muted small" style="margin-top:14px">One live session at a time. It counts the minutes it dubbed.</p>
+  </aside>
+</form>
+<section class="app-sec">
+  <div class="row-head"><h2>Recent</h2><a href="/app/history?kind=live">All live dubs →</a></div>
+  {% for x in recent %}{{ task_item(x) }}{% else %}<p class="muted">Nothing yet — your live dubs appear here.</p>{% endfor %}
+</section>
+{% endblock %}

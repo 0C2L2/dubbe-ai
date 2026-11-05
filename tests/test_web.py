@@ -554,3 +554,41 @@ def test_a_redub_counts_a_library_clone_only_for_what_it_spoke_again():
     assert worker.clone_chars(data) == {"clone:7": 6}  # only "Fixed."; clone 8 spoke nothing new; a preset is no clone
     data["spoken"] = [1, 2, 3]  # a full dub
     assert worker.clone_chars(data) == {"clone:7": 28, "clone:8": 17}
+
+
+def test_live_dubbing_beta_checks_the_link_runs_one_at_a_time_and_serves_only_its_files(client, monkeypatch):
+    import json
+    import socket
+    from dubbe.web import tools
+    uid, s = user("live@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    assert "Live Dubbing" in client.get("/app/live").text
+    form = {"url": "https://example.org/stream", "src": "ko", "voice": "af_heart", "rights": "1"}
+    public = lambda host, *a: [(0, 0, 0, "", ("93.184.216.34", 0))]  # noqa: E731 - no DNS in tests
+    monkeypatch.setattr(socket, "getaddrinfo", public)
+    assert client.post("/app/live", data={**form, "rights": ""}).status_code == 400
+    for bad in ("file:///C:/Windows/win.ini", "ftp://example.org/x", "http://127.0.0.1:8000/", "http://192.168.0.10/live"):
+        monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a: [(0, 0, 0, "", (host, 0))])
+        assert client.post("/app/live", data={**form, "url": bad}).status_code == 400, bad  # never the server's files or network
+    monkeypatch.setattr(socket, "getaddrinfo", public)
+    r = client.post("/app/live", data=form)
+    t = db.one("select * from tasks where kind='live'")
+    assert r.status_code == 303 and json.loads(t["params"]) == {"url": "https://example.org/stream", "src": "ko", "voice": "af_heart"}
+    assert client.post("/app/live", data=form).status_code == 400  # one session at a time
+    client.post(f"/app/tasks/{t['id']}/stop")
+    assert db.one("select status from tasks where id=?", t["id"])["status"] == "done"  # stopped before it started
+
+    db.run("update tasks set status='running' where id=?", t["id"])
+    out = tools.folder(t["id"]) / "live"
+    out.mkdir(parents=True)
+    (out / "pieces.json").write_text('{"state": "live", "delay": 30, "pieces": []}', encoding="utf8")
+    (out / "ffmpeg.log").write_text("secret", encoding="utf8")
+    page_ = client.get(f"/app/tasks/{t['id']}").text
+    assert "data-live" in page_ and 'http-equiv="refresh"' not in page_  # the player is not reloaded every 3 s
+    assert client.get(f"/app/tasks/{t['id']}/live/pieces.json").json()["state"] == "live"
+    assert client.get(f"/app/tasks/{t['id']}/live/ffmpeg.log").status_code == 404  # only the stream and the dub
+    client.post(f"/app/tasks/{t['id']}/stop")
+    assert (out / "stop").exists()  # the running session is asked to end
+    _, other = user("o3@x.org")
+    client.cookies.set(auth.COOKIE, other)
+    assert client.get(f"/app/tasks/{t['id']}/live/pieces.json").status_code == 404

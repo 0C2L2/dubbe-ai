@@ -959,3 +959,9 @@ label.pick-pill { display: inline-flex; margin: 0; position: relative; cursor: p
   color: #fff; background: var(--c); }
 .spk-pick { margin: 6px 0 10px; } .spk-pick select { margin: 4px 0 0; }
 @media (max-width: 800px) { .spk-main { grid-template-columns: 14px 1fr; } .spk-main select, .spk-main .spk-n, .spk-act { grid-column: 2; } }
+
+/* Live Dubbing (beta) */
+.live-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+.live-bar button, .live-bar form { margin: 0; } .live-bar [hidden] { display: none; }
+.live-lines { min-height: 7em; border-left: 3px solid var(--line); padding-left: 12px; }
+.live-lines p { margin: 0 0 8px; }

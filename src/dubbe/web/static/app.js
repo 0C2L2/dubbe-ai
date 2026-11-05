@@ -647,3 +647,101 @@ document.querySelectorAll('[data-spk-editor]').forEach(root => {
     save();
   }));
 });
+
+// Live Dubbing (beta, dubbe/live.py): the stream's picture plays muted from its start, about DELAY seconds behind the
+// stream; each dub piece (pieces.json: start t, length d, file f) plays on the picture's clock, so the two stay together.
+// The picture waits when the dub has not reached it yet.
+document.querySelectorAll('[data-live]').forEach(root => {
+  const base = root.dataset.base, v = root.querySelector('[data-live-video]'), btn = root.querySelector('[data-live-play]');
+  const info = root.querySelector('[data-live-info]'), lines = root.querySelector('[data-live-lines]');
+  const pieces = [], loading = new Set();
+  let ctx = null, state = 'starting', delay = 30, until = 0, hls = null, waiting = false, error = '';
+  const decoder = new OfflineAudioContext(2, 1, 32000);  // decodes the pieces before Play (an AudioBuffer plays in any context)
+  const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const stopAll = () => pieces.forEach(p => { if (p.src) { try { p.src.stop(); } catch (e) {} p.src = null; } });
+
+  function attach() {  // the picture: hls.js (Chrome, Firefox) or the browser's own HLS (Safari)
+    if (hls || v.src) return;
+    if (window.Hls && Hls.isSupported()) {
+      hls = new Hls({ startPosition: 0, liveDurationInfinity: false });
+      hls.loadSource(base + 'video.m3u8');
+      hls.attachMedia(v);
+    } else v.src = base + 'video.m3u8';
+  }
+
+  async function poll() {
+    try {
+      const m = await (await fetch(base + 'pieces.json', { cache: 'no-store' })).json();
+      state = m.state; delay = m.delay || delay; error = m.error || '';
+      if (m.pieces.length) attach();
+      for (const p of m.pieces) {
+        if (loading.has(p.f)) continue;
+        loading.add(p.f);
+        const buf = await (await fetch(base + p.f)).arrayBuffer();
+        const audio = await decoder.decodeAudioData(buf);
+        pieces.push({ t: p.t, d: p.d, audio, lines: p.lines, src: null, at: 0 });
+        until = Math.max(until, p.t + p.d);
+      }
+    } catch (e) { /* the list is being rewritten: next time */ }
+    show();
+    if (state === 'starting' || state === 'live') setTimeout(poll, 2000);
+  }
+
+  function show() {
+    const ready = state === 'ended' || state === 'failed' ? until > 0 : until >= delay;
+    btn.disabled = !ready;
+    info.textContent = state === 'failed' ? 'The live dub stopped: ' + error
+      : state === 'starting' ? 'Loading the models and opening the stream (about 30 s)…'
+      : waiting ? `Waiting for the dub (ready up to ${clock(until)})…`
+      : state === 'ended' ? `Ended · ${clock(until)} dubbed` + (ctx ? '' : ' · play it from the start')
+      : ctx ? `Playing ${clock(v.currentTime)} · the dub is ready up to ${clock(until)}`
+      : until >= delay ? 'Ready: press Play' : `Building up the delay: ${Math.round(until)} of ${delay} s dubbed`;
+  }
+
+  // every 250 ms: play the pieces at the picture's time; re-sync if they drift; wait when the dub is behind
+  function tick() {
+    if (!ctx) return;
+    const now = v.currentTime, open = state === 'starting' || state === 'live';
+    if (!v.paused && open && now > until - 1) { v.pause(); waiting = true; stopAll(); }
+    else if (waiting && (until > now + 5 || !open)) { waiting = false; v.play(); }
+    if (!v.paused && !v.seeking) {
+      for (const p of pieces) {
+        if (p.src) {  // drift: the audio clock against the picture's
+          const expect = p.at + (now - p.t);
+          if (Math.abs(ctx.currentTime - expect) > .15 && now < p.t + p.d) { p.src.stop(); p.src = null; }
+          else continue;
+        }
+        if (p.t + p.d <= now || p.t > now + 1) continue;
+        const s = ctx.createBufferSource();
+        s.buffer = p.audio;
+        s.connect(ctx.destination);
+        const off = now - p.t;
+        s.start(ctx.currentTime + Math.max(0, -off), Math.max(0, off));
+        p.src = s; p.at = ctx.currentTime - off;
+        s.onended = () => { if (p.src === s) p.src = null; };
+      }
+    }
+    const said = pieces.flatMap(p => p.lines).filter(l => l.t <= now).slice(-4);
+    lines.innerHTML = '';
+    for (const l of said) {
+      const row = document.createElement('p');
+      row.innerHTML = `<span class="muted small"></span> <b></b><br><span class="muted"></span>`;
+      row.children[0].textContent = clock(l.t); row.children[1].textContent = l.tgt; row.children[3].textContent = l.src;
+      lines.append(row);
+    }
+    show();
+  }
+
+  btn.addEventListener('click', async () => {
+    ctx = ctx || new AudioContext();
+    await ctx.resume();
+    attach();
+    v.currentTime = 0;
+    await v.play().catch(() => {});
+    btn.hidden = true;
+    setInterval(tick, 250);
+  });
+  ['pause', 'seeking', 'waiting'].forEach(e => v.addEventListener(e, stopAll));
+  v.controls = true;
+  poll();
+});

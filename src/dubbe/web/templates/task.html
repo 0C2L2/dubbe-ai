@@ -1,12 +1,26 @@
 {% extends "app_base.html" %}
 {% from "_parts.html" import icon %}
 {% block title %}{{ TOOLS[t.kind] }} — {{ t.title }} — DUBBE{% endblock %}
-{% block head %}{% if t.status in ("waiting", "running", "uploading") %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block head %}{% if t.status in ("waiting", "uploading") or (t.status == "running" and t.kind != "live") %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block main %}
 <span class="eyebrow"><a href="/app/{{ t.kind }}">{{ TOOLS[t.kind] }}</a> · {{ t.created_at | date }}{% if t.minutes %} · {{ "%.1f" | format(t.minutes) }} min{% endif %}</span>
 <h1 class="app-h1 task-title">{{ t.title }}</h1>
 
-{% if t.status in ("waiting", "uploading") %}
+{% if t.kind == "live" and t.status in ("running", "done") %}
+  {# Live Dubbing (beta): the stream's picture, muted, and the dub pieces played on the picture's clock (app.js) #}
+  <script src="/static/vendor/hls.min.js"></script>
+  <div class="live" data-live data-base="/app/tasks/{{ t.id }}/live/">
+    <video playsinline muted class="cap-video" data-live-video></video>
+    <div class="live-bar">
+      <button type="button" data-live-play disabled>Play with the dub</button>
+      {% if t.status == "running" %}<form method="post" action="/app/tasks/{{ t.id }}/stop" class="inline"
+        data-confirm="End this live session? The dub so far stays."><button class="secondary">Stop</button></form>{% endif %}
+      <span class="muted small" data-live-info aria-live="polite">Starting…</span>
+    </div>
+    <div class="live-lines" data-live-lines aria-live="polite"></div>
+    <p class="muted small">Beta: the dub plays about 30 s behind the stream, in one voice, and nobody has checked it.</p>
+  </div>
+{% elif t.status in ("waiting", "uploading") %}
   <div class="card working"><span class="spinner"></span><div><b>Waiting in the queue</b>{% if ahead %} — {{ ahead }} job{{ "s" if ahead > 1 }} ahead{% endif %}.
     <p class="muted small" style="margin:4px 0 0">One GPU runs one job at a time. This page updates by itself.</p></div></div>
 {% elif t.status == "running" %}
