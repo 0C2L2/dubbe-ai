@@ -30,6 +30,15 @@ def test_a_youtube_live_comes_as_a_picture_stream_and_a_sound_stream():
     assert cmd[cmd.index("-filter_complex") + 1].startswith("[1:a:0]") and "0:v:0?" in cmd  # sound from the second, picture from the first
 
 
+def test_with_a_720p_and_a_480p_picture_each_viewer_gets_what_their_network_carries():
+    cmd = live.ffmpeg_cmd([("https://v/720.m3u8", {}), ("https://v/480.m3u8", {}), ("https://v/a.m3u8", {})], True, Path("o"))
+    assert cmd[cmd.index("-filter_complex") + 1].startswith("[2:a:0]") and "asplit=3[h0][h1][ap]" in cmd[cmd.index("-filter_complex") + 1]
+    assert cmd[cmd.index("-var_stream_map") + 1] == "v:0,a:0 v:1,a:1"
+    assert cmd.count("copy") == 1  # both pictures passed through, none re-encoded
+    m = live.master([(4370, 1280, 720), (1569, 854, 480)])  # YouTube's bitrates, so a slow network drops to 480p
+    assert "BANDWIDTH=4434000,RESOLUTION=1280x720\nvideo_0.m3u8" in m and "BANDWIDTH=1633000,RESOLUTION=854x480\nvideo_1.m3u8" in m
+
+
 def test_each_language_live_mode_dubs_into_has_its_fast_voices():
     assert live.voices("en")[0] == "af_heart" and "bm_george" in live.voices("en") and "built-in" not in live.voices("en")
     assert live.voices("kk") == [f"issai-{i}" for i in range(6)]          # Piper, the Kazakh offline voice

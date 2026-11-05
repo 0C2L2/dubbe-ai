@@ -1163,7 +1163,7 @@ def live_stop(request: Request, tid: int):
     return go(f"/app/tasks/{tid}")
 
 
-LIVE_FILES = re.compile(r"^(video\.m3u8|v\d{5}\.ts|p\d{5}\.wav|pieces\.json)$")
+LIVE_FILES = re.compile(r"^(video(_\d)?\.m3u8|v(\d_)?\d{5}\.ts|p\d{5}\.wav|pieces\.json)$")  # _<n>: a quality level
 LIVE_TYPES = {".m3u8": "application/vnd.apple.mpegurl", ".ts": "video/mp2t", ".wav": "audio/wav", ".json": "application/json"}
 
 

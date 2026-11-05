@@ -48,38 +48,55 @@ def cut(speech: list[tuple[float, float]], length: float, piece: float = PIECE, 
     return min(at, most) if at is not None else most if length >= most else None
 
 
-def resolve(url: str) -> tuple[list[tuple[str, dict]], bool]:
+def resolve(url: str) -> tuple[list[tuple[str, dict]], bool, list[tuple]]:
     """The media behind a link (yt-dlp: YouTube and most sites, or a direct .m3u8 / .mp4): one stream with picture and
     sound, or - as YouTube serves live streams - a picture stream and a sound stream (they start within milliseconds of
-    each other: 3.5 ms on a YouTube live, C55), each with the HTTP headers the site wants; and whether it is live.
-    At most 480p: the picture is passed through as it is."""
+    each other: 3.5 ms on a YouTube live, C55), each with the HTTP headers the site wants; whether it is live; and each picture's (kbit/s, width, height).
+    Where the site has them separately: a 720p and a 480p picture, both passed through as they are, so each viewer's
+    player can drop to 480p when their network cannot carry 720p; otherwise one picture of at most 480p."""
     from yt_dlp import YoutubeDL
-    with YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True,
-                    "format": "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b"}) as y:
+    with YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True, "allow_multiple_video_streams": True,
+                    "format": "bv*[height<=720]+bv*[height<=480]+ba/bv*[height<=480]+ba/b[height<=480]/bv*+ba/b"}) as y:
         info = y.extract_info(url, download=False)
-    parts = info.get("requested_formats") or [info]
+    parts = list({f.get("format_id"): f for f in info.get("requested_formats") or [info]}.values())  # a 480p-only stream: once
     media = [(f.get("url") or "", f.get("http_headers") or info.get("http_headers") or {}) for f in parts]
     if not all(m.startswith(("http://", "https://")) for m, _ in media):
         raise ValueError("no stream with picture and sound at this link")
-    return media, bool(info.get("is_live"))
+    pics = [(f.get("tbr") or 0, f.get("width"), f.get("height")) for f in parts if f.get("vcodec") not in (None, "none")]
+    return media, bool(info.get("is_live")), pics
+
+
+def master(pics: list[tuple]) -> str:
+    """The HLS master playlist over the quality levels, with the site's bitrates: ffmpeg knows a copied picture's bitrate
+    only when the stream ends (it wrote 70 kbit/s, the sound alone, for both levels), and hls.js picks a level by it."""
+    return "#EXTM3U\n#EXT-X-VERSION:3\n" + "".join(f"#EXT-X-STREAM-INF:BANDWIDTH={round((kbps + 64) * 1000)},RESOLUTION={w}x{h}"
+                                                  f"\nvideo_{i}.m3u8\n" for i, (kbps, w, h) in reversed(list(enumerate(pics))))
+    # 480p listed first: hls.js starts on it (a slow network stalled 10 s on a first 720p piece) and moves up if it can
 
 
 def ffmpeg_cmd(media: list[tuple[str, dict]], is_live: bool, live: Path, local: bool = False) -> list[str]:
-    """One ffmpeg for the stream (one input, or a picture input and a sound input): the picture copied and the sound
-    (started at 0, so both clocks agree) into a growing HLS stream, and the same sound as raw 16-bit stereo on stdout
-    for the dubbing."""
+    """One ffmpeg for the stream (one input, or picture inputs, best first, and a sound input): the picture copied and the
+    sound (started at 0, so both clocks agree) into a growing HLS stream - with two pictures one quality level each under
+    the master video.m3u8 (master(), written by run), hls.js picks per viewer - and the same sound as raw 16-bit stereo on stdout for the dubbing."""
     inputs = []
     for url, headers in media:
         head = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
         inputs += ["-protocol_whitelist", ("file," if local else "") + "http,https,tls,tcp,crypto",
                    *(["-headers", head] if head else []), *([] if is_live else ["-re"]), "-t", str(MAX_MINUTES * 60), "-i", url]
     a = len(media) - 1  # the sound: the last input
+    pics = range(max(a, 1))  # the picture inputs (one input: picture and sound in it)
+    hls = ["-c:v", "copy", "-c:a", "aac", "-b:a", "64k",
+           "-f", "hls", "-hls_time", "2", "-hls_list_size", "0", "-hls_playlist_type", "event"]
+    if len(pics) == 1:
+        out = ["-map", "0:v:0?", "-map", "[h0]", *hls, "-hls_segment_filename", str(live / "v%05d.ts"), str(live / "video.m3u8")]
+    else:
+        out = [*[x for i in pics for x in ("-map", f"{i}:v:0", "-map", f"[h{i}]")], *hls,
+               "-var_stream_map", " ".join(f"v:{i},a:{i}" for i in pics),
+               "-hls_segment_filename", str(live / "v%v_%05d.ts"), str(live / "video_%v.m3u8")]
     return ["ffmpeg", "-loglevel", "error", *inputs,
-            "-filter_complex", f"[{a}:a:0]aresample={SR}:async=1:first_pts=0,asplit=2[ah][ap]",
-            "-map", "0:v:0?", "-map", "[ah]", "-c:v", "copy", "-c:a", "aac", "-b:a", "64k",
-            "-f", "hls", "-hls_time", "2", "-hls_list_size", "0", "-hls_playlist_type", "event",
-            "-hls_segment_filename", str(live / "v%05d.ts"), str(live / "video.m3u8"),
-            "-map", "[ap]", "-ac", "2", "-f", "s16le", "pipe:1"]
+            "-filter_complex", f"[{a}:a:0]aresample={SR}:async=1:first_pts=0,asplit={len(pics) + 1}"
+                               + "".join(f"[h{i}]" for i in pics) + "[ap]",
+            *out, "-map", "[ap]", "-ac", "2", "-f", "s16le", "pipe:1"]
 
 
 class Reader(threading.Thread):
@@ -260,7 +277,9 @@ def run(out: Path, url: str, src: str, voice: str = "", local: bool = False, tgt
     save(live, man)
     proc, pos, n = None, 0.0, 0
     try:
-        media, is_live = ([(url, {})], False) if local else resolve(url)
+        media, is_live, pics = ([(url, {})], False, []) if local else resolve(url)
+        if len(pics) > 1:
+            (live / "video.m3u8").write_text(master(pics), encoding="utf-8")
         dub = Dubber(src, voice, tgt)
         with open(live / "ffmpeg.log", "wb") as log:
             proc = subprocess.Popen(ffmpeg_cmd(media, is_live, live, local), stdin=subprocess.PIPE,
