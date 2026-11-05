@@ -101,6 +101,17 @@
   <button>Save caption text</button></form></details>
   {% endif %}
 
+  {% elif t.kind == "track" %}
+  <div class="card">
+    <p style="margin-top:0"><b>YouTube already has this video in {{ NAMES.get(result.lang, result.lang) }}</b> (its own audio track),
+      so here it is: free, and ready now. Nobody at DUBBE made or checked it.</p>
+    <video controls src="/app/tasks/{{ t.id }}/file/{{ result.files[0] }}" style="width:100%"></video>
+    <p class="actions"><a role="button" class="secondary" href="/app/tasks/{{ t.id }}/file/{{ result.files[0] }}?dl=1">Download</a></p>
+    <form method="post" action="/app/tasks/{{ t.id }}/dub" style="margin:0">
+      <button>Not good enough? Dub it with DUBBE</button>
+      <span class="muted small">From the original sound, with the voices you chose and the review editor; it counts {{ "%.1f" | format(t.minutes or 0) }} min only then.</span></form>
+  </div>
+
   {% elif t.kind == "speakers" %}
   <p class="actions">{% for f in result.files if not f.endswith(".mp3") %}<a role="button" class="{{ '' if loop.first else 'secondary' }}" href="/app/tasks/{{ t.id }}/file/{{ f }}?dl=1">{{ f }}</a>{% endfor %}</p>
   {% include "_speaker_review.html" %}

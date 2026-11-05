@@ -92,7 +92,7 @@
 {# ---------- one row per tool result (home, history, tool pages) ---------- #}
 {% macro task_item(x) %}{% set t, r = x.t, x.r %}
 <div class="titem">
-  <span class="titem-ico k-{{ t.kind }}">{{ icon({"tts": "speak", "stt": "text", "speakers": "users", "captions": "cc", "translate": "globe", "isolate": "layers"}[t.kind]) }}</span>
+  <span class="titem-ico k-{{ t.kind }}">{{ icon({"tts": "speak", "stt": "text", "speakers": "users", "captions": "cc", "translate": "globe", "isolate": "layers", "live": "live", "track": "film"}[t.kind]) }}</span>
   <div class="titem-main"><a href="/app/tasks/{{ t.id }}"><b>{{ t.title }}</b></a>
     <small class="muted">{{ TOOLS[t.kind] }} · {{ t.created_at | date }}{% if t.minutes %} · {{ "%.1f" | format(t.minutes) }} min{% endif %}</small></div>
   {% if t.status == "done" and t.kind == "tts" %}<button class="secondary play-btn" data-play="/app/tasks/{{ t.id }}/file/speech.mp3"><span class="play"></span>Play</button>

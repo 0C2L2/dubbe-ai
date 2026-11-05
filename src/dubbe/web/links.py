@@ -29,7 +29,17 @@ def look(url: str) -> dict:
     live = bool(info.get("is_live")) or info.get("live_status") in ("is_live", "is_upcoming")
     if not live and not info.get("duration"):
         raise ValueError("The length of this video could not be read.")
-    return {"title": (info.get("title") or "Video")[:80], "minutes": (info.get("duration") or 0) / 60, "live": live}
+    original, tracks = None, set()
+    for f in info.get("formats") or []:  # YouTube: one audio track per language, the creator's or its own auto-dub
+        lang = (f.get("language") or "").split("-")[0].lower()
+        if not lang or f.get("vcodec") != "none":
+            continue
+        if (f.get("language_preference") or 0) >= 10 or "original" in (f.get("format_note") or ""):
+            original = lang
+        else:
+            tracks.add(lang)
+    return {"title": (info.get("title") or "Video")[:80], "minutes": (info.get("duration") or 0) / 60, "live": live,
+            "original": original, "tracks": sorted(tracks - {original})}
 
 
 def save(folder: Path, url: str) -> None:
@@ -42,10 +52,14 @@ def waiting(folder: Path) -> bool:
     return (folder / SOURCE).exists()
 
 
-def fetch(folder: Path, stem: str, video: bool = True) -> Path:
-    """Download the link in folder/source.url to folder/<stem>.<ext> (video up to 1080p, or the sound only)."""
+def fetch(folder: Path, stem: str, video: bool = True, lang: str = "") -> Path:
+    """Download the link in folder/source.url to folder/<stem>.<ext>: video up to 1080p with its original sound (yt-dlp
+    puts the original track first), the sound only, or with the site's own audio track in `lang` (look: tracks)."""
     url = (folder / SOURCE).read_text(encoding="utf8").strip()
-    with _ydl(format=VIDEO if video else AUDIO, outtmpl=str(folder / f"{stem}.%(ext)s"), max_filesize=MAX_BYTES,
+    form = VIDEO if video else AUDIO
+    if lang.isalpha():
+        form = f"bv*[height<=1080][vcodec^=avc1]+ba[language^={lang}][ext=m4a]/bv*[height<=1080]+ba[language^={lang}]"
+    with _ydl(format=form, outtmpl=str(folder / f"{stem}.%(ext)s"), max_filesize=MAX_BYTES,
               overwrites=True, **({"merge_output_format": "mp4"} if video else {})) as y:
         y.download([url])
     got = next((f for f in folder.glob(f"{stem}.*") if f.is_file() and f.suffix not in (".part", ".ytdl")), None)

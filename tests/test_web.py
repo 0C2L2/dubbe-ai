@@ -605,9 +605,9 @@ def test_a_pasted_link_is_checked_first_then_downloaded_by_the_worker(client, mo
     """A video on YouTube (a course, say) in place of an upload: length and plan are checked before any download."""
     from dubbe.web import links, tools
     monkeypatch.setattr(web, "public_url", lambda u: u.startswith("https://"))
-    found = {"https://youtu.be/lesson1": {"title": "My course, lesson 1", "minutes": 2.0, "live": False},
-             "https://youtu.be/long": {"title": "All lessons", "minutes": 95.0, "live": False},
-             "https://youtu.be/now": {"title": "Now", "minutes": 0.0, "live": True}}
+    found = {"https://youtu.be/lesson1": {"title": "My course, lesson 1", "minutes": 2.0, "live": False, "tracks": []},
+             "https://youtu.be/long": {"title": "All lessons", "minutes": 95.0, "live": False, "tracks": []},
+             "https://youtu.be/now": {"title": "Now", "minutes": 0.0, "live": True, "tracks": []}}
     monkeypatch.setattr(links, "look", lambda u: found[u])
     _, s = user("a@x.org")
     client.cookies.set(auth.COOKIE, s)
@@ -628,7 +628,7 @@ def test_a_pasted_link_is_checked_first_then_downloaded_by_the_worker(client, mo
     assert t["status"] == "waiting" and t["minutes"] == 2.0 and links.waiting(tools.folder(tid))
     got = []
 
-    def fetch(folder, stem, video=True):
+    def fetch(folder, stem, video=True, lang=""):
         got.append((stem, video))
         (folder / links.SOURCE).unlink()
         (folder / f"{stem}.m4a").write_bytes(b"x")
@@ -637,3 +637,38 @@ def test_a_pasted_link_is_checked_first_then_downloaded_by_the_worker(client, mo
     tools.main(tid)
     assert got == [("input", False)]  # Speech to Text: the sound only
     assert "input.m4a" in db.one("select result from tasks where id=?", tid)["result"]
+
+
+def test_youtube_s_own_dub_comes_first_and_dubbe_dubs_only_when_asked(client, monkeypatch):
+    """A Korean video that YouTube already has in English: that track first, free; DUBBE dubs when the user asks (C64)."""
+    from dubbe.web import links, tools
+    monkeypatch.setattr(web, "public_url", lambda u: True)
+    monkeypatch.setattr(links, "look", lambda u: {"title": "Lesson 1", "minutes": 3.0, "live": False, "original": "ko",
+                                                  "tracks": ["en", "ja"]})
+    _, s = user("a@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    form = {"src": "ko", "tgt": "en", "rights": "1", "link": "https://youtu.be/lesson1"}
+    r = client.post("/app/new", data=form)
+    tid = int(r.headers["location"].rsplit("/", 1)[1])
+    t = db.one("select * from tasks where id=?", tid)
+    assert t["kind"] == "track" and not t["minutes"] and db.one("select count(*) n from projects")["n"] == 0  # no dub yet
+    got = []
+
+    def fetch(folder, stem, video=True, lang=""):
+        got.append((stem, video, lang))
+        (folder / links.SOURCE).unlink()
+        (folder / f"{stem}.mp4").write_bytes(b"x")
+    monkeypatch.setattr(links, "fetch", fetch)
+    tools.main(tid)
+    db.run("update tasks set status='done' where id=?", tid)
+    assert got == [("input", True, "en")]  # the picture with YouTube's English track
+    page = client.get(f"/app/tasks/{tid}").text
+    assert "YouTube already has this video in English" in page and "Dub it with DUBBE" in page
+    monkeypatch.setattr(web, "video_duration", lambda f: 180.0)
+    r = client.post(f"/app/tasks/{tid}/dub")
+    assert r.headers["location"] == "/app/jobs/1"
+    p = db.one("select * from projects")
+    assert (p["src"], p["tgt"], p["minutes"], p["title"]) == ("ko", "en", 3.0, "Lesson 1")
+    assert links.waiting(worker.folder(p["id"]))  # the original sound is downloaded again for the dub
+    assert client.post("/app/new", data={**form, "tgt": "uz"}).headers["location"] == "/app/jobs/2"  # no Uzbek track: dubbed
+    assert "already in" in client.post("/app/new", data={**form, "src": "en", "tgt": "ko"}).text  # it is Korean already

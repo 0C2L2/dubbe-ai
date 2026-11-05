@@ -365,9 +365,10 @@ def main(tid: int) -> None:
     t = db.one("select * from tasks where id=?", tid)
     out = folder(tid)
     p = json.loads(t["params"])
-    if t["kind"] in ("stt", "speakers", "captions", "isolate") and links.waiting(out):  # a pasted link: download it first
-        try:
-            links.fetch(out, "input", video=t["kind"] in ("speakers", "captions"))  # these two show the video
+    if t["kind"] in ("stt", "speakers", "captions", "isolate", "track") and links.waiting(out):  # a link: download it first
+        try:  # speakers, captions: they show the video; track: with the site's own audio track in the dub's language
+            links.fetch(out, "input", video=t["kind"] in ("speakers", "captions", "track"),
+                        lang=p["tgt"] if t["kind"] == "track" else "")
         except Exception as e:
             raise SystemExit(f"The file could not be downloaded from the link: {str(e).removeprefix('ERROR: ')[:300]}")
     if t["kind"] == "tts":
@@ -382,6 +383,8 @@ def main(tid: int) -> None:
         result = captions(p, out, tid)
         if p.get("burn"):  # done: the next run (a rename, another language) does not burn again unasked
             db.run("update tasks set params=? where id=?", json.dumps({**p, "burn": ""}, ensure_ascii=False), tid)
+    elif t["kind"] == "track":  # YouTube's own dub, offered before DUBBE dubs (C64)
+        result = {"files": [media(tid).name], "lang": p["tgt"]}
     elif t["kind"] == "live":  # Live Dubbing (beta): runs until the stream ends, MAX_MINUTES pass or Stop is pressed
         from .. import live
         result = live.run(out, p["url"], p["src"], p.get("voice") or "", tgt=p.get("tgt") or "en")

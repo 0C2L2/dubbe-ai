@@ -581,6 +581,14 @@ def new_dub(request: Request, file: UploadFile | None = File(None), src: str = F
         return fail("Please confirm you own this video or have a licence that allows changing it.")
     if link:
         error, info = from_link(link)
+        if not error and info.get("original") == tgt:
+            error = f"YouTube says this video is already in {NAMES.get(tgt, tgt)}: choose the language it is spoken in."
+        if not error and tgt in info["tracks"]:  # the site has this language already: that first, free (C64)
+            tid = new_task(u, "track", info["title"], {"src": src, "tgt": tgt, "keep_bg": bool(keep_bg), "slow": slow,
+                                                        "voice": voice, "link": link}, status="uploading")
+            links.save(tools.folder(tid), link)
+            db.run("update tasks set status='waiting' where id=?", tid)
+            return go(f"/app/tasks/{tid}")
         if error or (error := limit_error(u, info["minutes"])):
             return fail(error)
         pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
@@ -890,7 +898,7 @@ def settings(request: Request, action: str = Form(...), name: str = Form(""), cu
 # ---------------------------------------------------------------- tools: text to speech, speech to text, translate, voice isolator
 
 TOOLS = {"tts": "Text to Speech", "stt": "Speech to Text", "speakers": "Speaker Detection", "captions": "Subtitles",
-         "translate": "Translate", "isolate": "Voice Isolator", "live": "Live Dubbing"}
+         "translate": "Translate", "isolate": "Voice Isolator", "live": "Live Dubbing", "track": "YouTube's own dub"}
 SPK_COLORS = ["#f76b15", "#6e56cf", "#30a46c", "#3b82f6", "#e5484d", "#e2a336", "#12a594", "#d6409f"]
 MEDIA_TYPES = VIDEO_TYPES | {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 MAX_CHARS = {"tts": 2000, "translate": 5000}
@@ -1255,6 +1263,24 @@ def task_file(request: Request, tid: int, name: str, dl: int = 0):
         raise HTTPException(404)  # only the files the tool listed
     return FileResponse(tools.folder(tid) / name, filename=f"dubbe-{t['kind']}-{tid}-{name}" if dl else None,
                         media_type="text/vtt" if name.endswith(".vtt") else None)  # a <track> needs text/vtt
+
+
+@app.post("/app/tasks/{tid}/dub")
+def track_to_dub(request: Request, tid: int):
+    """YouTube's own track was not good enough: DUBBE dubs the video from its original sound (C64)."""
+    u, t = own_task(request, tid)
+    p = json.loads(t["params"])
+    if t["kind"] != "track" or t["status"] != "done" or not tools.media(tid):
+        raise HTTPException(404)
+    minutes = video_duration(tools.media(tid)) / 60  # the copy with YouTube's track: the same length
+    if error := limit_error(u, minutes):
+        return page(request, "new.html", 400, user=u, langs=LANGS, form=p, error=error, voices=voices(LANGS),
+                    clones=clones.usable(u) if clones.enabled() else [])
+    pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
+                 "values(?,?,?,?,?,?,?,?,?)", u["id"], t["title"], p["src"], p["tgt"], int(bool(p["keep_bg"])),
+                 min(max(float(p["slow"]), 1.0), 1.3), round(minutes, 2), db.now(), p["voice"])
+    links.save(worker.folder(pid), p["link"])  # the original sound: downloaded again, without YouTube's track
+    return go(f"/app/jobs/{db.run('insert into jobs(project_id, created_at) values(?,?)', pid, db.now())}")
 
 
 @app.post("/app/tasks/{tid}/delete")
