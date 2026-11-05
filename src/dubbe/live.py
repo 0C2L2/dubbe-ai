@@ -48,25 +48,34 @@ def cut(speech: list[tuple[float, float]], length: float, piece: float = PIECE, 
     return min(at, most) if at is not None else most if length >= most else None
 
 
-def resolve(url: str) -> tuple[str, bool, dict]:
-    """The media address behind a link (yt-dlp: YouTube and most sites, or a direct .m3u8 / .mp4), whether it is live,
-    and the HTTP headers the site wants. At most 480p: the picture is passed through as it is."""
+def resolve(url: str) -> tuple[list[tuple[str, dict]], bool]:
+    """The media behind a link (yt-dlp: YouTube and most sites, or a direct .m3u8 / .mp4): one stream with picture and
+    sound, or - as YouTube serves live streams - a picture stream and a sound stream (they start within milliseconds of
+    each other: 3.5 ms on a YouTube live, C55), each with the HTTP headers the site wants; and whether it is live.
+    At most 480p: the picture is passed through as it is."""
     from yt_dlp import YoutubeDL
-    with YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True, "format": "b[height<=480]/b"}) as y:
+    with YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True,
+                    "format": "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b"}) as y:
         info = y.extract_info(url, download=False)
-    media = info.get("url") or ""
-    if not media.startswith(("http://", "https://")):
+    parts = info.get("requested_formats") or [info]
+    media = [(f.get("url") or "", f.get("http_headers") or info.get("http_headers") or {}) for f in parts]
+    if not all(m.startswith(("http://", "https://")) for m, _ in media):
         raise ValueError("no stream with picture and sound at this link")
-    return media, bool(info.get("is_live")), info.get("http_headers") or {}
+    return media, bool(info.get("is_live"))
 
 
-def ffmpeg_cmd(media: str, is_live: bool, headers: dict, live: Path, local: bool = False) -> list[str]:
-    """One ffmpeg for the stream: the picture copied and the sound (started at 0, so both clocks agree) into a growing
-    HLS stream, and the same sound as raw 16-bit stereo on stdout for the dubbing."""
-    head = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
-    return ["ffmpeg", "-loglevel", "error", "-protocol_whitelist", ("file," if local else "") + "http,https,tls,tcp,crypto",
-            *(["-headers", head] if head else []), *([] if is_live else ["-re"]), "-t", str(MAX_MINUTES * 60), "-i", media,
-            "-filter_complex", f"[0:a:0]aresample={SR}:async=1:first_pts=0,asplit=2[ah][ap]",
+def ffmpeg_cmd(media: list[tuple[str, dict]], is_live: bool, live: Path, local: bool = False) -> list[str]:
+    """One ffmpeg for the stream (one input, or a picture input and a sound input): the picture copied and the sound
+    (started at 0, so both clocks agree) into a growing HLS stream, and the same sound as raw 16-bit stereo on stdout
+    for the dubbing."""
+    inputs = []
+    for url, headers in media:
+        head = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+        inputs += ["-protocol_whitelist", ("file," if local else "") + "http,https,tls,tcp,crypto",
+                   *(["-headers", head] if head else []), *([] if is_live else ["-re"]), "-t", str(MAX_MINUTES * 60), "-i", url]
+    a = len(media) - 1  # the sound: the last input
+    return ["ffmpeg", "-loglevel", "error", *inputs,
+            "-filter_complex", f"[{a}:a:0]aresample={SR}:async=1:first_pts=0,asplit=2[ah][ap]",
             "-map", "0:v:0?", "-map", "[ah]", "-c:v", "copy", "-c:a", "aac", "-b:a", "64k",
             "-f", "hls", "-hls_time", "2", "-hls_list_size", "0", "-hls_playlist_type", "event",
             "-hls_segment_filename", str(live / "v%05d.ts"), str(live / "video.m3u8"),
@@ -251,10 +260,10 @@ def run(out: Path, url: str, src: str, voice: str = "", local: bool = False, tgt
     save(live, man)
     proc, pos, n = None, 0.0, 0
     try:
-        media, is_live, headers = (url, False, {}) if local else resolve(url)
+        media, is_live = ([(url, {})], False) if local else resolve(url)
         dub = Dubber(src, voice, tgt)
         with open(live / "ffmpeg.log", "wb") as log:
-            proc = subprocess.Popen(ffmpeg_cmd(media, is_live, headers, live, local), stdin=subprocess.PIPE,
+            proc = subprocess.Popen(ffmpeg_cmd(media, is_live, live, local), stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=log)
         reader = Reader(proc.stdout)
         reader.start()
