@@ -14,6 +14,9 @@ def test_a_piece_ends_at_a_pause_never_inside_a_word():
     assert cut([(0, 25)], 21) == 20                      # nobody pauses: cut at 20 s
     assert cut([], 10.5) == 10.5                         # music or silence only
     assert live.cut([(0, 25)], 15) == 14 and live.DELAY == 20  # live: at most 14 s a piece, so 20 s behind covers it (C57)
+    assert live.cut([(0, 5), (5.4, 30)], 14.2) == 5.2      # no pause after 7 s before 14: the last one before (C58)
+    assert live.cut([(0, 2), (2.4, 30)], 14.2) == 14       # ... but not a piece shorter than 3.5 s
+    assert live.cut([(0, 5), (5.4, 15), (15.4, 30)], 15.6) == 5.2  # the pause after 7 s comes too late (15.2 s)
 
 
 def test_ffmpeg_reads_only_the_web_and_keeps_the_picture_as_it_is():
@@ -60,3 +63,12 @@ def test_mms_romanizes_with_one_uroman_not_one_per_sentence(monkeypatch):
     roman = romanizer(tok)
     assert [roman("an"), roman("nyeong")] == ["AN", "NYEONG"] and made == [1] and tok.is_uroman is False
     assert romanizer(types.SimpleNamespace(is_uroman=False))("x") == "x"  # Cyrillic Uzbek, Latin scripts: as they are
+
+
+def test_what_whisper_makes_up_over_music_is_not_dubbed():
+    """Seen on a YouTube live (C58): credits from Whisper's training data, a whole 30-s window, one word five times."""
+    from types import SimpleNamespace as S
+    segs = [S(start=0, end=30, text="Поехали дальше"), S(start=1, end=4, text=" Субтитры сделал DimaTorzok"),
+            S(start=4, end=5, text="Корректор А.Кулакова"), S(start=5, end=6, text="Возвращение."),
+            S(start=6, end=7, text="Возвращение."), S(start=7, end=9, text="Это очень близко!")]
+    assert live.heard(segs, 12) == [(5, "Возвращение."), (7, "Это очень близко!")]

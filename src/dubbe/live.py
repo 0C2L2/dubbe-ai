@@ -15,6 +15,7 @@ usage (test, a file played as if live): python -m dubbe.live <out dir> <spoken l
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -37,15 +38,37 @@ BLOCK = SR * 4 // 4        # bytes per read: 0.25 s of 16-bit stereo
 
 def cut(speech: list[tuple[float, float]], length: float, piece: float = PIECE, most: float = MOST) -> float | None:
     """Where a piece ends, in seconds of the audio heard so far (`length`, speech spans from the VAD): the middle of the
-    first pause after `piece` seconds (a word is never cut), or just after the last speech once the speaker has stopped,
-    or `most` seconds. None: wait for more audio."""
+    first pause after `piece` seconds (a word is never cut), or just after the last speech once the speaker has stopped;
+    with no pause before `most`, the last pause after piece/2 s (C58: a YouTube live hit 14 s in 6 of 10 pieces),
+    else `most` seconds. None: wait for more audio."""
     ends = [(e + s1) / 2 for (_, e), (s1, _) in zip(speech, speech[1:])]
     if speech and length - speech[-1][1] >= .3:
         ends.append(min(speech[-1][1] + .15, length))  # the speaker has stopped (the next words not heard yet)
     if not speech:
         ends.append(length)  # nothing said: music or silence
     at = next((x for x in ends if x >= piece), None)
-    return min(at, most) if at is not None else most if length >= most else None
+    if at is not None and at <= most:
+        return at
+    if length < most:
+        return None
+    return next((x for x in reversed(ends) if piece / 2 <= x < piece), most)
+
+
+# Whisper's training-data credits, "heard" over music on a YouTube live (C58)
+# ponytail: a list of the ones seen; add a phrase when another one turns up
+CREDITS = re.compile(r"субтитр|корректор|dimatorzok|amara\.org|продолжение следует", re.I)
+
+
+def heard(segs, length: float) -> list[tuple[float, str]]:
+    """(start, text) of what was really said in a piece `length` s long. Dropped: a line past the piece's end (Whisper
+    filling its 30-s window over music: all 8 such on a YouTube live, every real line inside), a subtitle credit, and
+    the same line again ("Возвращение." five times)."""
+    said = []
+    for s in segs:
+        text = s.text.strip()
+        if text and s.end <= length + 1 and not CREDITS.search(text) and not (said and said[-1][1] == text):
+            said.append((s.start, text))
+    return said
 
 
 def resolve(url: str) -> tuple[list[tuple[str, dict]], bool, list[tuple]]:
@@ -218,7 +241,7 @@ class Dubber:
         x16 = resample_poly(x.mean(axis=1), 160, 441).astype("float32")
         segs, _ = self.whisper.transcribe(x16, language=self.cfg["src"]["whisper"], condition_on_previous_text=False,
                                           vad_filter=True)
-        said = [(s.start, s.text.strip()) for s in segs if s.text.strip()]
+        said = heard(segs, n / SR)
         src = [self.tok.convert_ids_to_tokens(self.tok.encode(t)) for _, t in said]
         res = self.nllb.translate_batch(src, target_prefix=[[self.cfg["tgt"]["nllb"]]] * len(src), beam_size=8,
                                         max_batch_size=4) if src else []
