@@ -752,84 +752,96 @@ document.querySelectorAll('[data-live]').forEach(root => {
   poll();
 });
 
-// Side art (public pages, wide screens only): the dubbing pipeline down the margins, one step at a time - the voice
-// comes in on the left, is separated and written down, then on the right translated, spoken again and mixed. Each step:
-// everything moves down one place (MOVE s), then that step works while nothing moves; then the next. Both sides share
-// one clock, so the work passes from left to right. Still under prefers-reduced-motion; paused in hidden tabs.
-const SIDE = {P: 3.2, MOVE: .9, STEPS: 5};  // seconds per step, of which moving; steps in the whole pipeline
+// Side art (public pages, wide screens only): one piece of speech goes through the dubbing pipeline down the margins,
+// in order - nothing exists below a step until that step has made it. Left: noisy voice in -> SEPARATE VOICE -> clean
+// voice -> SPEECH -> TEXT -> Korean text, out at the bottom; right: TRANSLATE -> English text -> VOICE CLONE -> a new
+// voice -> LIP SYNC · MIX -> the dub, out. Both sides share one clock. Still under prefers-reduced-motion; paused in
+// hidden tabs. Timeline: [side, what, which segment or step of that side, seconds]
+const SIDE_TL = [['in', 'move', 0, 1.6], ['in', 'work', 0, 1.4], ['in', 'move', 1, 1.6], ['in', 'work', 1, 1.4], ['in', 'move', 2, 1.6],
+                 ['out', 'work', 0, 1.4], ['out', 'move', 0, 1.6], ['out', 'work', 1, 1.4], ['out', 'move', 1, 1.6],
+                 ['out', 'work', 2, 1.4], ['out', 'move', 2, 1.6], ['', 'rest', 0, 1.2]];
+const SIDE_LEN = SIDE_TL.reduce((a, e) => a + e[3], 0);
+const sideNow = T => {  // which timeline event is running, how far into it (0-1), and its index
+  let r = T % SIDE_LEN;
+  for (let i = 0; i < SIDE_TL.length; i++) { if (r < SIDE_TL[i][3]) return [SIDE_TL[i], r / SIDE_TL[i][3], i]; r -= SIDE_TL[i][3]; }
+  return [SIDE_TL[SIDE_TL.length - 1], 1, SIDE_TL.length - 1];
+};
 document.querySelectorAll('canvas[data-wave]').forEach(c => {
-  const ctx = c.getContext('2d'), out = c.dataset.wave === 'out';
+  const ctx = c.getContext('2d'), side = c.dataset.wave, out = side === 'out';
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const cols = out ? ['#e5484d', '#6e56cf'] : ['#f76b15', '#e5484d'];
   let w = 0, h = 0;
   const size = () => {
     const r = devicePixelRatio || 1;
     w = c.clientWidth; h = c.clientHeight; c.width = w * r; c.height = h * r; ctx.setTransform(r, 0, 0, r, 0, 0);
   };
-  // between the steps the voice changes form - noisy sound, clean sound, Korean text, English text, a new voice, the
-  // finished dub. [what flows, the step it reaches at this fraction of the height, that step's label]
+  // what the piece of speech is in each segment, where that segment ends (fraction of the height), the step there
   const flow = out ? [['en', .36, 'VOICE CLONE'], ['steps', .7, 'LIP SYNC · MIX'], ['clean', 1, '']]
                    : [['noisy', .3, 'SEPARATE VOICE'], ['clean', .62, 'SPEECH → TEXT'], ['ko', 1, '']];
-  const words = out ? ['hello', 'today', 'we', 'learn', 'how', 'voices', 'travel'] : ['안', '녕', '하', '세', '요', '오', '늘', '은'];
-  const mono = '500 10px "Geist Mono", ui-monospace, monospace';
-  const level = (s, noisy) => {  // speech: syllables inside phrases; the original also has noise in it
-    const syl = Math.max(0, Math.sin(s * 0.11)) ** 0.7, phrase = 0.3 + 0.7 * Math.max(0, Math.sin(s * 0.019 + 1));
+  const words = out ? ['hello', 'today', 'we', 'learn'] : ['안', '녕', '하', '세'];
+  const mono = '500 10px "Geist Mono", ui-monospace, monospace', H = 112;  // the piece's height
+  const level = (s, noisy) => {  // speech: syllables inside a phrase; the original also has noise in it
+    const syl = Math.max(0, Math.sin(s * 0.11)) ** 0.7, phrase = 0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, Math.max(0, s / 70)));
     return syl * phrase * (noisy ? 0.6 + 0.4 * Math.abs(Math.sin(s * 1.7) * Math.sin(s * 0.53)) : 1);
+  };
+  const piece = (kind, py, g, max) => {  // the piece of speech, its top at py
+    ctx.fillStyle = g;
+    if (kind === 'ko' || kind === 'en') {  // text: one chip per syllable or word
+      ctx.font = mono; ctx.textAlign = 'center';
+      words.forEach((s, k) => {
+        const y = py + 12 + k * 28, cw = ctx.measureText(s).width + 14;
+        ctx.globalAlpha = .7; ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect((w - cw) / 2, y - 8, cw, 16, 8); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(s, w / 2, y + 3.5);
+      });
+      return;
+    }
+    for (let y = 0; y < H; y += 7) {
+      let v = level(y / 1.6, kind === 'noisy');
+      if (kind === 'steps') v = Math.round(v * 6) / 6;  // a new voice, built step by step
+      const bw = Math.max(2, v * max * (kind === 'noisy' ? 1 : .8));
+      ctx.globalAlpha = .42; ctx.beginPath(); ctx.roundRect((w - bw) / 2, py + y, bw, 3, 1.5); ctx.fill();
+    }
   };
   const draw = T => {
     ctx.clearRect(0, 0, w, h);
     if (w < 60) return;
-    const n = Math.floor(T / SIDE.P), ph = T - n * SIDE.P, active = n % SIDE.STEPS;
-    const e = Math.min(1, ph / SIDE.MOVE), ease = e * e * (3 - 2 * e), off = (n + ease) * 30;  // one place per step
+    const [[evSide, what, which], p, idx] = sideNow(T), e = p * p * (3 - 2 * p);
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, cols[0]); g.addColorStop(1, cols[1]);
-    const max = Math.min(w * 0.62, 180), top = out ? 70 : 52, nodes = out ? [[top - 14, 'TRANSLATE', 0]] : [];
+    const max = Math.min(w * 0.62, 180), top = out ? 70 : 52, nodes = out ? [[top - 14, 'TRANSLATE']] : [];
     ctx.globalAlpha = .5; ctx.fillStyle = '#d7d2cc'; ctx.fillRect(w / 2 - .5, top, 1, h - top - 30);  // the line it all runs on
     let y0 = top;
-    flow.forEach(([kind, end, label]) => {
+    flow.forEach(([kind, end, label], k) => {
       const y1 = Math.min(end * h, h - 32);  // room for DUB OUT at the bottom
-      ctx.save(); ctx.beginPath(); ctx.rect(0, y0 + 16, w, y1 - y0 - 32); ctx.clip();
-      ctx.fillStyle = g;
-      if (kind === 'ko' || kind === 'en') {  // text: one chip per syllable or word
-        ctx.font = mono; ctx.textAlign = 'center';
-        for (let k = Math.floor((y0 - off) / 30) - 1; k * 30 + off < y1; k++) {
-          const y = k * 30 + off, s = words[((k % words.length) + words.length) % words.length], cw = ctx.measureText(s).width + 14;
-          ctx.globalAlpha = .7; ctx.beginPath(); ctx.roundRect((w - cw) / 2, y - 8, cw, 16, 8); ctx.fill();
-          ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(s, w / 2, y + 3.5); ctx.fillStyle = g;
-        }
-      } else {
-        for (let y = y0 + 16; y < y1 - 16; y += 7) {
-          let v = level((y - off) / 1.6, kind === 'noisy');
-          if (kind === 'steps') v = Math.round(v * 6) / 6;  // a new voice, built step by step
-          const bw = Math.max(2, v * max * (kind === 'noisy' ? 1 : .8));
-          ctx.globalAlpha = .42; ctx.beginPath(); ctx.roundRect((w - bw) / 2, y, bw, 3, 1.5); ctx.fill();
-        }
+      const here = still || (evSide === side && what === 'move' && which === k);
+      if (here) {  // the piece travels this segment: out of the step above, into the step below (or out)
+        ctx.save(); ctx.beginPath(); ctx.rect(0, y0 + 14, w, y1 - y0 - 28); ctx.clip();
+        piece(kind, still ? (y0 + y1 - H) / 2 : y0 + 14 - H + (y1 - y0 - 28 + H) * e, g, max);
+        ctx.restore();
       }
-      ctx.restore();
-      if (label) nodes.push([y1, label, y0]);
+      if (label) nodes.push([y1, label]);
       y0 = y1;
     });
-    nodes.forEach(([y, label, from], i) => {  // the steps: only the active one works
-      const me = i + (out ? 2 : 0) === active, working = me && ph >= SIDE.MOVE;
-      if (me && !working) {  // its input arriving: one pulse down the line into it
-        ctx.globalAlpha = .9; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(w / 2, from + (y - from) * ease, 2.6, 0, 7); ctx.fill();
-      }
+    nodes.forEach(([y, label], j) => {  // a step: waiting (grey), working (green light, its line filling), or done
+      const at = SIDE_TL.findIndex(([s, wh, n]) => s === side && wh === 'work' && n === j);
+      const working = !still && idx === at, done = still || idx > at;
       ctx.font = mono;
       const bw = Math.min(w * 0.72, ctx.measureText(label).width + 44), x = (w - bw) / 2;
-      ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.strokeStyle = me ? '#a59f97' : '#d7d2cc'; ctx.lineWidth = 1;
+      ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.strokeStyle = working ? '#a59f97' : '#d7d2cc'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.roundRect(x, y - 13, bw, 26, 13); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = working ? '#30a46c' : '#d7d2cc';
+      ctx.fillStyle = working ? '#30a46c' : done ? '#9fd4b5' : '#d7d2cc';
       ctx.beginPath(); ctx.arc(x + 13, y, 3, 0, 7); ctx.fill();
-      ctx.fillStyle = me ? '#292524' : '#a59f97'; ctx.textAlign = 'left'; ctx.fillText(label, x + 22, y + 3.5);
-      if (working) {  // its work: the line fills once
-        ctx.fillStyle = cols[i % 2]; ctx.globalAlpha = .6;
-        ctx.fillRect(x + 12, y + 9, (bw - 24) * Math.min(1, (ph - SIDE.MOVE) / (SIDE.P - SIDE.MOVE - .3)), 1.5);
+      ctx.fillStyle = working ? '#292524' : '#a59f97'; ctx.textAlign = 'left'; ctx.fillText(label, x + 22, y + 3.5);
+      if (working || done) {
+        ctx.fillStyle = cols[j % 2]; ctx.globalAlpha = working ? .6 : .25;
+        ctx.fillRect(x + 12, y + 9, (bw - 24) * (working ? p : 1), 1.5);
       }
     });
     ctx.globalAlpha = 1; ctx.fillStyle = '#a59f97'; ctx.font = mono; ctx.textAlign = 'center';
     ctx.fillText(out ? 'DUB OUT ↓' : 'VOICE IN ↓', w / 2, out ? h - 14 : 26);
   };
   const tick = () => { if (!document.hidden && c.clientWidth) draw(performance.now() / 1000); requestAnimationFrame(tick); };
-  addEventListener('resize', () => { size(); draw(SIDE.MOVE); });
-  size(); draw(SIDE.MOVE);  // still: the first step, working
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(tick);
+  addEventListener('resize', () => { size(); draw(0); });
+  size(); draw(0);
+  if (!still) requestAnimationFrame(tick);
 });
