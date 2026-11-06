@@ -790,3 +790,21 @@ def test_owners_set_their_own_price_and_each_use_earns_at_the_price_it_had(clien
     clones.record_use(f"clone:{vid}", oid, 5000, "dub")  # the owner's own use earns nothing
     v = db.one("select * from voices where id=?", vid)
     assert clones.stats(v)["earn"] == 0.7 and clones.studio(db.one("select * from users where id=?", oid))["earn"] == 0.7
+
+
+def test_a_voice_from_a_video_gets_the_same_card_but_no_publish_button(client):
+    """Every voice has its Studio card (2026-11-07); a video voice stays private, the ones listed before stay listed."""
+    oid, so = user("owner@x.org")
+    vid = db.run("insert into voices(owner_id, name, lang, script, status, created_at, source) values(?,?,?,?,?,?,?)",
+                 oid, "Host", "en", "x", "ready", db.now(), "video:1")
+    client.cookies.set(auth.COOKIE, so)
+    html = client.get(f"/app/studio/{vid}").text
+    assert 'class="mk-card"' in html and "Your card" in html and 'name="description"' in html
+    assert 'value="submit"' not in html and 'name="rate"' not in html
+    form = {"action": "submit", "name": "Host", "description": "A host from my video.", "category": "Narration",
+            "tags": "calm", "agree": "1"}
+    client.post(f"/app/studio/{vid}", data=form)
+    assert db.one("select shared from voices where id=?", vid)["shared"] == "no"  # saved, never sent for review
+    db.run("update voices set shared='listed' where id=?", vid)  # one of those listed before the rule
+    html = client.get(f"/app/studio/{vid}").text
+    assert "Live in the Marketplace" in html and 'name="rate"' in html and 'value="submit"' not in html

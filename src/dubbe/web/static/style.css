@@ -738,7 +738,6 @@ button:disabled, [role=button][aria-disabled=true] { opacity: .4; cursor: not-al
 .studio-banner.bad { border-left-color: var(--red); background: #fdf3f3; }
 .studio-banner p { margin: 6px 0; }
 .studio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
-.studio-grid.solo { grid-template-columns: minmax(0, 760px); }
 .studio-form .card { margin-bottom: 16px; }
 .count { float: right; font-size: .75rem; color: var(--muted-2); font-variant-numeric: tabular-nums; }
 .count.full { color: var(--red); }
