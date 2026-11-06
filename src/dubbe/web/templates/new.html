@@ -40,6 +40,23 @@
     <span class="eyebrow" style="margin-top:18px">Options</span>
     <label class="switch"><input type="checkbox" name="keep_bg" value="1" checked><span class="knob"></span>
       <span><b>Keep background sound</b><small>music and effects stay under the new voice</small></span></label>
+    {% if cloning_on %}
+    <label class="switch"><input type="checkbox" name="own_voices" value="1" data-own-voices {{ 'checked' if form.own_voices }}><span class="knob"></span>
+      <span><b>Dub with their own voices</b><small>each speaker is cloned from this video and speaks the dub; the clone stays in this video</small></span></label>
+    <div class="own-consent" data-own-consent {{ '' if form.own_voices else 'hidden' }}>
+      {% if user.phone_verified_at %}
+      <label class="rights"><input type="checkbox" name="clone_ok" value="1">
+        <span>The people in this video agreed to have their voices cloned for this video.</span></label>
+      {% else %}
+      <p class="notice small">Cloning a voice needs a verified phone. <a href="/app/phone?next=/app/new">Verify it</a>, then come back.</p>
+      {% endif %}
+    </div>
+    <script>  // the consent box shows, and is required, only with "their own voices"
+      (() => { const t = document.querySelector('[data-own-voices]'), c = document.querySelector('[data-own-consent]');
+        const sync = () => { c.hidden = !t.checked; const box = c.querySelector('input'); if (box) box.required = t.checked; };
+        t.addEventListener('change', sync); sync(); })();
+    </script>
+    {% endif %}
     <label class="slider">
       <span class="slider-head"><b>Picture slow-down</b><output data-slow-out>off</output></span>
       <input type="range" name="slow" min="1" max="1.3" step="0.05" value="1" data-slow aria-label="Allow slowing the picture">

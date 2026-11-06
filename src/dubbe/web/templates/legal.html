@@ -15,6 +15,11 @@
     use): the translation model is licensed CC BY-NC 4.0.</li>
   <li><b>AI label.</b> Every dub is AI-generated. Do not remove the label or present a dub as a human recording.</li>
   <li><b>Use policy.</b> Follow the <a href="/use-policy">Use policy</a>. We may delete dubs and close accounts that break it.</li>
+  <li><b>Real people's voices.</b> Cloning a voice, dubbing with people's own voices and publishing a voice need a verified
+    phone (one per account). A voice cloned from a video stays in that video. While you use a real person's voice we keep a
+    record of what was done (see the <a href="/privacy">Privacy notice</a>). If such a dub is reported, we may freeze the
+    account, keeping its files and records until the report is resolved, and we give these records to the police or a court
+    when the law requires it. We never give them to the person who reported.</li>
   <li><b>Plans.</b> Minutes and limits are shown on <a href="/pricing">Plans</a>. Nothing is charged during the beta.</li>
   <li><b>Ending.</b> You can delete your account at any time in Settings. We may end the beta; we will tell you first and
     give you time to download your files.</li>
@@ -29,6 +34,8 @@
   <li>dub videos of other people without the rights to them;</li>
   <li>deceive viewers — for example about elections, news, health or money;</li>
   <li>harass, threaten or defame anyone, or create sexual content involving real people;</li>
+  <li>put words in a real person's cloned voice that they did not say or would not agree to;</li>
+  <li>ask viewers for money, codes, passwords or to follow links in someone else's voice (voice scams);</li>
   <li>remove or hide the AI label, or claim a dub is a human recording;</li>
   <li>try to get around plan limits, or attack the service.</li>
 </ul>
@@ -46,6 +53,11 @@
     <tr><td>Contact and waitlist messages</td><td>answering you</td><td>until you ask us to delete them</td></tr>
     <tr><td>A one-way hash of your IP address on contact and waitlist forms</td><td>limiting spam (3 messages an hour)</td><td>with the message</td></tr>
     <tr><td>A sign-in cookie</td><td>keeping you signed in (14 days)</td><td>until you sign out</td></tr>
+    <tr><td>Your phone number, if you verify one</td><td>cloning voices: one person per account, and someone the law can
+      find if a cloned voice is misused (the team sees it masked)</td><td>until you delete the account</td></tr>
+    <tr><td>A record of what you do with a real person's voice (a clone, a Marketplace voice, a speaker of your video):
+      account, phone, IP address, time, which dub</td><td>misuse reports; given to the police or a court only when the
+      law requires</td><td>90 days</td></tr>
   </tbody>
 </table>
 <ul>
@@ -59,12 +71,15 @@
   <li><b>Voice clones:</b> only if you choose to clone your own voice. A voice can be biometric data, so we ask a separate
     consent first. The recording is stored encrypted, used only to make your clone speak, kept until you delete the voice or
     your account, and never given to anyone. Other users can use your clone only if you share it in the voice library; you
-    can stop sharing at any time. Everything a clone says carries an inaudible watermark (Resemble AI's Perth) and the AI label.</li>
+    can stop sharing at any time. Everything a clone says carries the AI label; speech made with Chatterbox (the languages
+    other than English, Korean, Uzbek and Kazakh) also carries an inaudible watermark (Resemble AI's Perth). Sentences a
+    real person's voice speaks are checked for swear words and scam patterns (links, phone or account numbers, money
+    requests); the DUBBE team sees the ones found.</li>
   <li><b>Speakers in your video:</b> to tell people apart we compare their voices while the job runs; these voice
     fingerprints are not stored, only which sentence belongs to which speaker. A speaker's voice is cloned from the video
     only if you confirm that person agreed. That recording is stored encrypted inside the project, used only to dub that
-    project, never shared or listed, and deleted with the project. In Speaker Detection you can instead save a speaker to
-    your voices, with the same confirmation; it stays private, can never be published, and is deleted with the voice.</li>
+    project, never shared or listed, and deleted with the project: a voice from a video stays in that video. To use a
+    person's voice elsewhere, they clone their own voice and share it.</li>
 </ul>
 {% endif %}
 {% endblock %}

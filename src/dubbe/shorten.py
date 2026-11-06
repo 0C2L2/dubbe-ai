@@ -37,6 +37,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
                 s.update(tgt_text=text, tts_dur=dur, shortened=True,
                          mt_conf=next(a["conf"] for a in s["alts"] if a["text"] == text))
                 s["tts_key"] = fingerprint(s, tts)  # the clip is the shorter text's: a re-dub keeps it
+                data["spoken"] = sorted(set(data.get("spoken") or []) | {s["id"]})  # spoken again in this run
         free_gpu()
     print(f"         shortened {sum(s['shortened'] for s in segs)} of {len(todo)} overflowing segments")
     write_json(work / "segments.json", data)

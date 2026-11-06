@@ -13,7 +13,7 @@
   <div class="kpi" data-reveal><span>Uses by others</span><b>{{ k.uses }}</b><small class="muted">{{ "{:,}".format(k.chars) }} characters spoken</small></div>
   <div class="kpi" data-reveal><span>Added by users</span><b>{{ k.saves }}</b><small class="muted">people who got your voices</small></div>
   <div class="kpi" data-reveal><span>Rating</span><b>{{ "%.1f" | format(k.rating) if k.rating else "New" }}</b><small class="muted">{{ stars(k.rating) }} {{ k.reviews }} review{{ "s" if k.reviews != 1 }}</small></div>
-  <div class="kpi" data-reveal><span>Would earn</span><b>${{ ("%.2f" if k.earn >= 0.01 or not k.earn else "%.4f") | format(k.earn) }}</b><small class="muted">at ${{ RATE }} / 1,000 characters · payouts off in the beta</small></div>
+  <div class="kpi" data-reveal><span>Would earn</span><b>${{ ("%.2f" if k.earn >= 0.01 or not k.earn else "%.4f") | format(k.earn) }}</b><small class="muted">at the prices you set · payouts off in the beta</small></div>
 </div>
 
 <section class="app-sec">
@@ -27,7 +27,7 @@
     <div class="studio-row-nums">
       <span><b>{{ v.uses }}</b>uses</span><span><b>{{ v.saves }}</b>added</span>
       <span><b>{{ "%.1f" | format(v.rating) if v.rating else "New" }}</b>rating</span>
-      <span><b>${{ ("%.2f" if v.chars * RATE / 1000 >= 0.01 or not v.chars else "%.4f") | format(v.chars * RATE / 1000) }}</b>would earn</span></div>
+      {% set x = v.earn %}<span><b>${{ ("%.2f" if x >= 0.01 or not x else "%.4f") | format(x) }}</b>would earn at ${{ "%.2f" | format(v.rate) }}/1k</span></div>
     <span class="studio-chev" aria-hidden="true">›</span>
   </a>
   {% else %}

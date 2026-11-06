@@ -1,7 +1,8 @@
 """Runs Ming-3.0-tts-0.5B (MIT) in .venv-ming: it pins torch 2.6 / transformers 4.46.
-stdin: {"repo": path to the Ming code, "model": hf id, "items": [{text, instruct, prompt_wav, out}]}.
+stdin: {"repo": path to the Ming code, "model": hf id, "items": [{text, instruct, prompt_wav, prompt_text, out}]}.
 Each item is spoken in the voice of prompt_wav with the emotion `instruct` (Ming's own value: 高兴, 悲伤, 愤怒 ...);
-without it 中性 (neutral). Ming's EMOTION task needs no transcript of the reference, so clones work the same way."""
+without it 中性 (neutral). With prompt_text (what the reference says) Ming also hears the reference's own sound; without
+it only a speaker fingerprint of it: voice like the reference 0.835 vs 0.592 on 20 sentences (C62)."""
 import json
 import sys
 
@@ -9,12 +10,51 @@ job = json.load(sys.stdin)
 sys.path.insert(0, job["repo"])
 
 import soundfile as sf  # noqa: E402
+import torch  # noqa: E402
 from ming_tts import MingTTS  # noqa: E402
 
+
+def graphed(fn):
+    """fn replayed as a CUDA graph, one per input shape: Ming's small networks run for every audio patch, and Python
+    launched their thousands of small kernels while the GPU waited (21-26 % busy at 8 W). Same audio to the sample (C60)."""
+    graphs = {}
+
+    def run(*args, **kw):
+        names = sorted(kw)
+        given = [*args, *(kw[k] for k in names)]
+        key = (len(args), *names, *((a.shape, a.dtype) if torch.is_tensor(a) else a for a in given))
+        if key not in graphs:
+            static = [a.clone() if torch.is_tensor(a) else a for a in given]
+            call = lambda: fn(*static[:len(args)], **dict(zip(names, static[len(args):])))  # noqa: E731
+            side = torch.cuda.Stream()
+            side.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(side):  # warm up outside the graph (CUDA's rule for capture)
+                for _ in range(2):
+                    call()
+            torch.cuda.current_stream().wait_stream(side)
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                out = call()
+            graphs[key] = (g, static, out)
+        g, static, out = graphs[key]
+        for dst, src in zip(static, given):
+            if torch.is_tensor(src):
+                dst.copy_(src)
+        g.replay()
+        return out.clone()
+    return run
+
+
 model = MingTTS(job["model"], text_normalization=False)  # Korean numbers are written out by DUBBE (korean.read_numbers)
+if torch.cuda.is_available():
+    dit = model.model.flowloss.cfm.model  # the flow head: 10 steps per audio patch (2.6x faster, C60)
+    dit.forward_with_cfg = graphed(dit.forward_with_cfg)
+    agg = model.model.linear_proj_audio  # each new audio patch back into the language model (C60)
+    agg.forward = graphed(agg.forward)
 for it in job["items"]:
     if not it["text"].strip():  # nothing to say
         sf.write(it["out"], [0.0], 44100)
         continue
     model.synthesize(task="EMOTION", text=it["text"], controls={"emotion": it.get("instruct") or "中性"},
-                     prompt_wav_path=it["prompt_wav"], use_spk_emb=True, output_path=it["out"])
+                     prompt_wav_path=it["prompt_wav"], prompt_text=it.get("prompt_text"), use_spk_emb=True,
+                     output_path=it["out"])

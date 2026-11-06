@@ -1,31 +1,50 @@
 {% extends "base.html" %}
+{% from "_parts.html" import icon %}
 {% block title %}Contact — DUBBE{% endblock %}
+{% block notice %}{% endblock %}{# the card itself says it was sent #}
 {% block main %}
-<div class="grid">
-<div>
-  <h1>Contact</h1>
-  <form method="post" action="/contact">
-    <label>Name <input name="name" value="{{ form.name or '' }}" autocomplete="name"></label>
-    <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
-    <label>Topic
-      <select name="topic" required>
-        <option value="" disabled {{ 'selected' if not form.topic }}>Choose…</option>
-        {% for t in TOPICS %}<option {{ 'selected' if form.topic == t }}>{{ t }}</option>{% endfor %}
-      </select></label>
-    <label>Message <textarea name="body" rows="6" maxlength="2000" required
-      placeholder="For a misuse report, paste the link to the dub and say what is wrong.">{{ form.body or '' }}</textarea></label>
-    <label class="honeypot" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
-    <label><input type="checkbox" name="agree" required> I have read the <a href="/privacy">Privacy notice</a>.</label>
-    <button>Send</button>
-  </form>
-</div>
-<aside>
-  <h3>Other ways</h3>
-  <p>Code and issues: <a href="https://github.com/0C2L2/dubbe-ai">GitHub</a></p>
-  <p>Questions about using DUBBE: see <a href="/help">Help</a> first.</p>
-  <p>Report a dub that impersonates someone or breaks the <a href="/use-policy">Use policy</a>: choose
-    "Report misuse". We look at reports within 2 working days.</p>
-  <p class="muted">DUBBE is a student project, not a commercial service yet. We answer within 2 working days.</p>
-</aside>
+{% set sent = request.query_params.get("m") == "sent" %}
+<div class="auth">
+  <aside class="auth-art grain">
+    <span class="eyebrow">Contact</span>
+    <h2>Write to the team. We answer within 2 working days.</h2>
+    <ul class="auth-points">
+      <li><span class="auth-ico">{{ icon("help") }}</span><span>Using DUBBE? <a href="/help" style="color:#fff">Help</a> may answer it first</span></li>
+      <li><span class="auth-ico">{{ icon("shield") }}</span><span>A dub that impersonates someone: choose "Report misuse"</span></li>
+      <li><span class="auth-ico">{{ icon("cap") }}</span><span>A school or a whole course: choose "School / education"</span></li>
+      <li><span class="auth-ico">{{ icon("text") }}</span><span>Code and issues: <a href="https://github.com/0C2L2/dubbe-ai" style="color:#fff">GitHub</a></span></li>
+    </ul>
+    <p class="auth-sub" style="margin-top:auto">DUBBE is a student project, not a commercial service yet.</p>
+  </aside>
+
+  <section class="auth-form">
+  {% if sent %}
+    <div class="msg-sent" role="status">
+      <span class="msg-sent-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <h1>Message sent</h1>
+      <p>Thanks, it reached the team. We reply by email within 2 working days.</p>
+      <p class="actions"><a href="/" role="button">Back to home</a><a href="/contact" role="button" class="secondary">Send another</a></p>
+    </div>
+  {% else %}
+    <h1>Contact</h1>
+    <p class="muted">Tell us what you need; we reply by email.</p>
+    <form method="post" action="/contact">
+      <label>Name <span class="muted">(optional)</span> <input name="name" value="{{ form.name or '' }}" autocomplete="name"></label>
+      <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
+      <label>Topic
+        <select name="topic" required>
+          <option value="" disabled {{ 'selected' if not form.topic }}>Choose…</option>
+          {% for t in TOPICS %}<option {{ 'selected' if form.topic == t }}>{{ t }}</option>{% endfor %}
+        </select></label>
+      <label>Message <textarea name="body" rows="5" maxlength="2000" required
+        placeholder="For a misuse report, paste the link to the dub and say what is wrong.">{{ form.body or '' }}</textarea></label>
+      <label class="honeypot" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
+      <label class="auth-check"><input type="checkbox" name="agree" required>
+        <span>I have read the <a href="/privacy">Privacy notice</a>.</span></label>
+      <button class="block">Send message</button>
+    </form>
+  {% endif %}
+  </section>
 </div>
 {% endblock %}

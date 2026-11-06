@@ -1,51 +1,84 @@
 {% extends "base.html" %}
+{% from "_parts.html" import icon %}
 {% block title %}{{ {"signup": "Sign up", "signin": "Sign in", "forgot": "Forgot password", "reset": "New password"}[mode] }} — DUBBE{% endblock %}
+{% macro password(name, auto, hint="") -%}
+<label>Password
+  <span class="pw"><input type="password" name="{{ name }}" {{ 'minlength=10' if auto == 'new-password' }} required autocomplete="{{ auto }}">
+    <button type="button" data-show-pw aria-label="Show the password">Show</button></span>
+  {% if hint %}<small class="muted">{{ hint }}</small>{% endif %}</label>
+{%- endmacro %}
 {% block main %}
-<article style="max-width:28rem;margin:2rem auto">
-{% if mode == "signup" %}
-  <h1>Start free</h1>
-  <p class="muted">15 dubbed minutes a month, review editor included. No card needed.</p>
-  <form method="post" action="/signup">
-    <label>Name (optional) <input name="name" value="{{ form.name or '' }}" autocomplete="name"></label>
-    <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
-    <label>Password <input type="password" name="password" minlength="10" required autocomplete="new-password">
-      <small>At least 10 characters.</small></label>
-    <label><input type="checkbox" name="agree" required> I accept the <a href="/terms">Terms</a> and have read the
-      <a href="/privacy">Privacy notice</a>.</label>
-    <button>Create account</button>
-  </form>
-  <p>Already have an account? <a href="/signin">Sign in</a></p>
+<div class="auth">
+  <aside class="auth-art grain">
+    <span class="eyebrow">Dubbe AI</span>
+    {% if mode == "signup" %}
+    <h2>Dub your lecture into {{ NAMES | length }} languages, and see what to check.</h2>
+    <ul class="auth-points">
+      <li><span class="auth-ico">{{ icon("clock") }}</span>15 dubbed minutes a month, no card</li>
+      <li><span class="auth-ico">{{ icon("globe") }}</span>{{ NAMES | length }} languages, Korean ↔ English tested most</li>
+      <li><span class="auth-ico">{{ icon("list") }}</span>The review editor marks the sentences to check</li>
+    </ul>
+    {% elif mode == "signin" %}
+    <h2>Welcome back.</h2>
+    <p class="auth-sub">Your dubs, voices and tool results are where you left them.</p>
+    {% else %}
+    <h2>Back in a minute.</h2>
+    <p class="auth-sub">A new password signs you out everywhere else, so only you are in.</p>
+    {% endif %}
+    <svg class="auth-wave" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true">
+      {% for v in [6,10,16,24,30,22,14,20,28,34,26,18,10,14,22,30,36,28,20,12,8,14,24,32,26,16,10,6] %}
+      <rect x="{{ loop.index0 * 8.6 }}" y="{{ (40 - v) / 2 }}" width="4" height="{{ v }}" rx="2"/>{% endfor %}
+    </svg>
+  </aside>
 
-{% elif mode == "signin" %}
-  <h1>Sign in</h1>
-  <form method="post" action="/signin">
-    <input type="hidden" name="next" value="{{ next }}">
-    <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
-    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-    <button>Sign in</button>
-  </form>
-  <p><a href="/forgot">Forgot password?</a> · New here? <a href="/signup">Start free</a></p>
+  <section class="auth-form">
+  {% if mode == "signup" %}
+    <h1>Start free</h1>
+    <p class="muted">Create your account. It takes a minute.</p>
+    <form method="post" action="/signup">
+      <label>Name <span class="muted">(optional)</span> <input name="name" value="{{ form.name or '' }}" autocomplete="name"></label>
+      <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
+      {{ password("password", "new-password", "At least 10 characters.") }}
+      <label class="auth-check"><input type="checkbox" name="agree" required>
+        <span>I accept the <a href="/terms">Terms</a> and have read the <a href="/privacy">Privacy notice</a>.</span></label>
+      <button class="block">Create account</button>
+    </form>
+    <p class="auth-alt">Already have an account? <a href="/signin">Sign in</a></p>
 
-{% elif mode == "forgot" %}
-  <h1>Forgot password</h1>
-  <p class="muted">We email you a link to choose a new password. It works once, for 30 minutes.</p>
-  <form method="post" action="/forgot">
-    <label>Email <input type="email" name="email" required autocomplete="email"></label>
-    <button>Send the link</button>
-  </form>
+  {% elif mode == "signin" %}
+    <h1>Sign in</h1>
+    <p class="muted">Good to see you again.</p>
+    <form method="post" action="/signin">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>Email <input type="email" name="email" value="{{ form.email or '' }}" required autocomplete="email"></label>
+      {{ password("password", "current-password") }}
+      <p class="auth-forgot"><a href="/forgot">Forgot password?</a></p>
+      <button class="block">Sign in</button>
+    </form>
+    <p class="auth-alt">New here? <a href="/signup">Start free</a></p>
 
-{% else %}
-  <h1>Choose a new password</h1>
-  {% if token %}
-  <form method="post" action="/reset">
-    <input type="hidden" name="token" value="{{ token }}">
-    <label>New password <input type="password" name="password" minlength="10" required autocomplete="new-password">
-      <small>At least 10 characters. You will be signed out everywhere.</small></label>
-    <button>Save password</button>
-  </form>
+  {% elif mode == "forgot" %}
+    <h1>Forgot password</h1>
+    <p class="muted">We email you a link to choose a new password. It works once, for 30 minutes.</p>
+    <form method="post" action="/forgot">
+      <label>Email <input type="email" name="email" required autocomplete="email"></label>
+      <button class="block">Send the link</button>
+    </form>
+    <p class="auth-alt"><a href="/signin">Back to sign in</a></p>
+
   {% else %}
-  <p><a href="/forgot">Ask for a new link</a>.</p>
+    <h1>Choose a new password</h1>
+    {% if token %}
+    <form method="post" action="/reset">
+      <input type="hidden" name="token" value="{{ token }}">
+      {{ password("password", "new-password", "At least 10 characters. You will be signed out everywhere.") }}
+      <button class="block">Save password</button>
+    </form>
+    {% else %}
+    <p class="muted">This link is used or expired.</p>
+    <p><a href="/forgot" role="button" class="block">Ask for a new link</a></p>
+    {% endif %}
   {% endif %}
-{% endif %}
-</article>
+  </section>
+</div>
 {% endblock %}

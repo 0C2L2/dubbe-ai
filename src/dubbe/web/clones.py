@@ -5,7 +5,8 @@ Rules:
   nobody can clone a voice from someone else's video). Whisper checks that the recording says them.
 - The recording is stored encrypted (Fernet, key in DUBBE_VOICE_KEY) and goes with the voice or the account. A dub or a
   text-to-speech job gets a decrypted copy for its own length only.
-- Everything a clone says carries Chatterbox's watermark and the AI label, like every DUBBE voice.
+- Everything a clone says carries the AI label, like every DUBBE voice; Chatterbox voices (the languages other than
+  English and Korean, which Ming speaks) also carry its inaudible watermark (Perth).
 - Sharing is opt-in and listed only after an admin listened to it; the owner can stop it at any time. Uses by other
   people are counted and the owner sees what they would earn - nothing is paid during the non-commercial beta.
 
@@ -23,7 +24,8 @@ import yaml
 
 from . import db
 
-RATE = 0.03  # US$ per 1,000 characters, what ElevenLabs pays voice owners (docs/project-plan.md C14); shown, not paid
+RATE = 0.03  # US$ per 1,000 characters, what ElevenLabs pays voice owners (docs/project-plan.md C14): a new voice's price
+MAX_RATE = 1.0  # the most an owner may ask; the owner sets their own price in the listing (shown, not charged in the beta)
 MAX_CER = 0.3  # how far the recording may be from the shown sentences (Whisper's own error on read speech: ~10 %)
 MIN_SECONDS = 8  # Chatterbox needs more than 5 s of voice
 FRESH_S = 1800  # the sentences are valid for 30 minutes after they were shown
@@ -108,6 +110,7 @@ def _listed(uid: int, where: str, args: list, order: str = "voices.id desc") -> 
     return db.all_("select voices.*, users.name owner_name, "
                    "(select count(*) from voice_uses where voice_id=voices.id and user_id<>voices.owner_id) uses, "  # by others, like earnings
                    "(select coalesce(sum(chars), 0) from voice_uses where voice_id=voices.id and user_id<>voices.owner_id) chars, "
+                   "(select coalesce(sum(chars * rate), 0) / 1000.0 from voice_uses where voice_id=voices.id and user_id<>voices.owner_id) earn, "
                    "(select count(*) from voice_saves where voice_id=voices.id) saves, "
                    "(select avg(stars) from voice_reviews where voice_id=voices.id) rating, "
                    "(select count(*) from voice_reviews where voice_id=voices.id) reviews, "
@@ -153,8 +156,10 @@ def studio(u) -> dict:
     r = db.one(f"select (select count(*) {mine.format(t='voice_uses')} and user_id<>owner_id) uses, "
                f"(select coalesce(sum(chars), 0) {mine.format(t='voice_uses')} and user_id<>owner_id) chars, "
                f"(select count(*) {mine.format(t='voice_saves')}) saves, (select avg(stars) {mine.format(t='voice_reviews')}) rating, "
-               f"(select count(*) {mine.format(t='voice_reviews')}) reviews", *[u["id"]] * 5)
-    return {**dict(r), "earn": round(r["chars"] / 1000 * RATE, 4)}
+               f"(select count(*) {mine.format(t='voice_reviews')}) reviews, "
+               f"(select coalesce(sum(chars * voice_uses.rate), 0) / 1000.0 {mine.format(t='voice_uses')} and user_id<>owner_id) earn",
+               *[u["id"]] * 6)
+    return {**dict(r), "earn": round(r["earn"], 4)}  # each use at the price it had then
 
 
 def listing_error(description: str, category: str, tags: list[str], complete: bool = True) -> str | None:
@@ -183,6 +188,9 @@ def write_reference(u, key: str | None, dest: Path) -> bool:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)  # a first dub: the pipeline has not made its work folder yet
     dest.write_bytes(load(voice_id(key), "reference"))
+    row = db.one("select heard, lang from voices where id=?", voice_id(key))
+    if row and row["heard"]:  # what the recording says, checked against the sentences shown (check): Ming then hears the voice itself (C62)
+        dest.with_suffix(".txt").write_text(f"{row['lang']}\n{row['heard']}", encoding="utf8")
     return True
 
 
@@ -220,11 +228,16 @@ def speaker_clip(work: Path, segs: list[dict], sp: str) -> tuple[bytes | None, f
 def make_speaker_clone(pid: int, work: Path, segs: list[dict], sp: str) -> float:
     """The reference recording of one speaker of this video, after the uploader confirmed consent, encrypted next to
     the project. Returns the seconds of speech; nothing is stored below MIN_SECONDS."""
-    wav, total, _ = speaker_clip(work, segs, sp)
+    wav, total, said = speaker_clip(work, segs, sp)
     if wav:
         speaker_file(pid, sp).parent.mkdir(parents=True, exist_ok=True)
         speaker_file(pid, sp).write_bytes(_fernet().encrypt(wav))
+        text_file(pid, sp).write_bytes(_fernet().encrypt(said.encode("utf8")))  # what they say in it (C62)
     return total
+
+
+def text_file(pid: int, sp: str) -> Path:
+    return speaker_file(pid, sp).with_suffix(".txt.enc")
 
 
 def write_speaker_reference(pid: int, key: str, dest: Path) -> bool:
@@ -234,19 +247,34 @@ def write_speaker_reference(pid: int, key: str, dest: Path) -> bool:
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(_fernet().decrypt(f.read_bytes()))
+    t = text_file(pid, key.split(":", 1)[1])
+    p = db.one("select src from projects where id=?", pid)
+    if t.exists() and p:  # clones made before C62 have no text: Ming then uses only a fingerprint of the voice
+        dest.with_suffix(".txt").write_text(p["src"] + "\n" + _fernet().decrypt(t.read_bytes()).decode("utf8"), encoding="utf8")
     return True
 
 
 def record_use(key: str, uid: int, chars: int, kind: str) -> None:
-    db.run("insert into voice_uses(voice_id, user_id, chars, kind, created_at) values(?,?,?,?,?)",
-           voice_id(key), uid, chars, kind, db.now())
+    """A use, at the voice's price now: a later price change does not rewrite what was earned."""
+    vid = voice_id(key)
+    db.run("insert into voice_uses(voice_id, user_id, chars, kind, created_at, rate) "
+           "values(?,?,?,?,?,(select rate from voices where id=?))", vid, uid, chars, kind, db.now(), vid)
+
+
+def rate_error(raw: str) -> tuple[float | None, str | None]:
+    """The owner's price from the listing form: US$ per 1,000 characters, 0 (free) to MAX_RATE, in cents."""
+    try:
+        r = round(float((raw or "").strip().lstrip("$")), 2)
+    except ValueError:
+        return None, "Set the price as a number, for example 0.03."
+    return (r, None) if 0 <= r <= MAX_RATE else (None, f"Set a price from $0 (free) to ${MAX_RATE:.2f} per 1,000 characters.")
 
 
 def stats(v) -> dict:
-    """Uses by other people and what the owner would earn at RATE (nothing is paid in the beta)."""
-    r = db.one("select count(*) n, coalesce(sum(chars), 0) chars from voice_uses where voice_id=? and user_id<>?",
-               v["id"], v["owner_id"])
-    return {"uses": r["n"], "chars": r["chars"], "earn": round(r["chars"] / 1000 * RATE, 4)}
+    """Uses by other people and what the owner would earn, each use at the price it had (nothing is paid in the beta)."""
+    r = db.one("select count(*) n, coalesce(sum(chars), 0) chars, coalesce(sum(chars * rate), 0) / 1000.0 earn "
+               "from voice_uses where voice_id=? and user_id<>?", v["id"], v["owner_id"])
+    return {"uses": r["n"], "chars": r["chars"], "earn": round(r["earn"], 4)}
 
 
 def delete(vid: int) -> None:
@@ -299,7 +327,8 @@ def check(vid: int) -> None:
                                                                "prompt": str(wav)}))
         sf.write(Path(tmp) / "sample.wav", trim(audio), sr)
         ffmpeg("-i", str(Path(tmp) / "sample.wav"), "-b:a", "160k", "-metadata",
-               "comment=AI-generated: DUBBE voice clone, made with the owner's consent (watermarked)", str(folder(vid) / "sample.mp3"))
+               "comment=AI-generated: DUBBE voice clone, made with the owner's consent"
+               + (" (watermarked)" if engine.startswith("chatterbox") else ""), str(folder(vid) / "sample.mp3"))
     db.run("update voices set status='ready', heard=?, error=null, checked_at=? where id=?", heard, db.now(), vid)
 
 

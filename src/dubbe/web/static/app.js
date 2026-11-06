@@ -33,8 +33,14 @@ document.querySelectorAll('[data-drop]').forEach(zone => {
   const first = [title.textContent, info.textContent];
   ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, () => zone.classList.add('over')));
   ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, () => zone.classList.remove('over')));
+  const link = zone.closest('form')?.querySelector('[data-link]');
+  link?.addEventListener('input', () => {  // a link instead of a file: one or the other is sent
+    input.required = !link.value.trim();
+    if (link.value.trim() && input.files.length) { input.value = ''; input.dispatchEvent(new Event('change')); }
+  });
   input.addEventListener('change', () => {
     const f = input.files[0];
+    if (f && link) { link.value = ''; input.required = true; }
     zone.classList.toggle('has-file', !!f);
     [title.textContent, info.textContent] = f ? [f.name, `${(f.size / 1048576).toFixed(1)} MB · click or drop to change`] : first;
     zone.querySelector('.pick').textContent = f ? 'Change file' : 'Choose file';
@@ -646,4 +652,206 @@ document.querySelectorAll('[data-spk-editor]').forEach(root => {
     rows().filter(r => r.dataset.spk === b.dataset.merge).forEach(r => setSpeaker(r, b.dataset.into));
     save();
   }));
+});
+
+// Live Dubbing (beta, dubbe/live.py): the stream's picture plays muted from its start, about DELAY seconds behind the
+// stream; each dub piece (pieces.json: start t, length d, file f) plays on the picture's clock, so the two stay together.
+// The picture waits when the dub has not reached it yet.
+document.querySelectorAll('[data-live]').forEach(root => {
+  const base = root.dataset.base, v = root.querySelector('[data-live-video]'), btn = root.querySelector('[data-live-play]');
+  const info = root.querySelector('[data-live-info]'), lines = root.querySelector('[data-live-lines]');
+  const pieces = [], loading = new Set();
+  let ctx = null, state = 'starting', delay = 30, until = 0, hls = null, waiting = false, error = '';
+  const decoder = new OfflineAudioContext(2, 1, 32000);  // decodes the pieces before Play (an AudioBuffer plays in any context)
+  const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const stopAll = () => pieces.forEach(p => { if (p.src) { try { p.src.stop(); } catch (e) {} p.src = null; } });
+
+  function attach() {  // the picture: hls.js (Chrome, Firefox) or the browser's own HLS (Safari)
+    if (hls || v.src) return;
+    if (window.Hls && Hls.isSupported()) {
+      hls = new Hls({ startPosition: 0, liveDurationInfinity: false });
+      hls.loadSource(base + 'video.m3u8');
+      hls.attachMedia(v);
+    } else v.src = base + 'video.m3u8';
+  }
+
+  async function poll() {
+    try {
+      const m = await (await fetch(base + 'pieces.json', { cache: 'no-store' })).json();
+      state = m.state; delay = m.delay || delay; error = m.error || '';
+      if (m.pieces.length) attach();
+      for (const p of m.pieces) {
+        if (loading.has(p.f)) continue;
+        loading.add(p.f);
+        const buf = await (await fetch(base + p.f)).arrayBuffer();
+        const audio = await decoder.decodeAudioData(buf);
+        pieces.push({ t: p.t, d: p.d, audio, lines: p.lines, src: null, at: 0 });
+        until = Math.max(until, p.t + p.d);
+      }
+    } catch (e) { /* the list is being rewritten: next time */ }
+    show();
+    if (state === 'starting' || state === 'live') setTimeout(poll, 2000);
+  }
+
+  function show() {
+    const ready = state === 'ended' || state === 'failed' ? until > 0 : until >= delay;
+    btn.disabled = !ready;
+    info.textContent = state === 'failed' ? 'The live dub stopped: ' + error
+      : state === 'starting' ? 'Loading the models and opening the stream (about 30 s)…'
+      : waiting ? `Waiting for the dub (ready up to ${clock(until)})…`
+      : state === 'ended' ? `Ended · ${clock(until)} dubbed` + (ctx ? '' : ' · play it from the start')
+      : ctx ? `Playing ${clock(v.currentTime)} · the dub is ready up to ${clock(until)}`
+      : until >= delay ? 'Ready: press Play' : `Building up the delay: ${Math.round(until)} of ${delay} s dubbed`;
+  }
+
+  // every 250 ms: play the pieces at the picture's time; re-sync if they drift; wait when the dub is behind
+  function tick() {
+    if (!ctx) return;
+    const now = v.currentTime, open = state === 'starting' || state === 'live';
+    if (!v.paused && open && now > until - 1) { v.pause(); waiting = true; stopAll(); }
+    else if (waiting && (until > now + 5 || !open)) { waiting = false; v.play(); }
+    if (!v.paused && !v.seeking) {
+      for (const p of pieces) {
+        if (p.src) {  // drift: the audio clock against the picture's
+          const expect = p.at + (now - p.t);
+          if (Math.abs(ctx.currentTime - expect) > .15 && now < p.t + p.d) { p.src.stop(); p.src = null; }
+          else continue;
+        }
+        if (p.t + p.d <= now || p.t > now + 1) continue;
+        const s = ctx.createBufferSource();
+        s.buffer = p.audio;
+        s.connect(ctx.destination);
+        const off = now - p.t;
+        s.start(ctx.currentTime + Math.max(0, -off), Math.max(0, off));
+        p.src = s; p.at = ctx.currentTime - off;
+        s.onended = () => { if (p.src === s) p.src = null; };
+      }
+    }
+    const said = pieces.flatMap(p => p.lines).filter(l => l.t <= now).slice(-4);
+    lines.innerHTML = '';
+    for (const l of said) {
+      const row = document.createElement('p');
+      row.innerHTML = `<span class="muted small"></span> <b></b><br><span class="muted"></span>`;
+      row.children[0].textContent = clock(l.t); row.children[1].textContent = l.tgt; row.children[3].textContent = l.src;
+      lines.append(row);
+    }
+    show();
+  }
+
+  btn.addEventListener('click', async () => {
+    ctx = ctx || new AudioContext();
+    await ctx.resume();
+    attach();
+    v.currentTime = 0;
+    await v.play().catch(() => {});
+    btn.hidden = true;
+    setInterval(tick, 250);
+  });
+  ['pause', 'seeking', 'waiting'].forEach(e => v.addEventListener(e, stopAll));
+  v.controls = true;
+  poll();
+});
+
+// Password fields: Show / Hide what was typed.
+document.querySelectorAll('[data-show-pw]').forEach(b => b.addEventListener('click', () => {
+  const input = b.previousElementSibling, show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  b.textContent = show ? 'Hide' : 'Show';
+  b.setAttribute('aria-label', show ? 'Hide the password' : 'Show the password');
+}));
+
+// Side art (public pages, wide screens only): one piece of speech goes through the dubbing pipeline down the margins,
+// in order - nothing exists below a step until that step has made it. Left: noisy voice in -> SEPARATE VOICE -> clean
+// voice -> SPEECH -> TEXT -> Korean text, out at the bottom; right: TRANSLATE -> English text -> VOICE CLONE -> a new
+// voice -> LIP SYNC · MIX -> the dub, out. Both sides share one clock. Still under prefers-reduced-motion; paused in
+// hidden tabs. Timeline: [side, what, which segment or step of that side, seconds]
+const SIDE_TL = [['in', 'move', 0, 1.6], ['in', 'work', 0, 1.4], ['in', 'move', 1, 1.6], ['in', 'work', 1, 1.4], ['in', 'move', 2, 1.6],
+                 ['out', 'work', 0, 1.4], ['out', 'move', 0, 1.6], ['out', 'work', 1, 1.4], ['out', 'move', 1, 1.6],
+                 ['out', 'work', 2, 1.4], ['out', 'move', 2, 1.6], ['', 'rest', 0, 1.2]];
+const SIDE_LEN = SIDE_TL.reduce((a, e) => a + e[3], 0);
+const sideNow = T => {  // which timeline event is running, how far into it (0-1), and its index
+  let r = T % SIDE_LEN;
+  for (let i = 0; i < SIDE_TL.length; i++) { if (r < SIDE_TL[i][3]) return [SIDE_TL[i], r / SIDE_TL[i][3], i]; r -= SIDE_TL[i][3]; }
+  return [SIDE_TL[SIDE_TL.length - 1], 1, SIDE_TL.length - 1];
+};
+document.querySelectorAll('canvas[data-wave]').forEach(c => {
+  const ctx = c.getContext('2d'), side = c.dataset.wave, out = side === 'out';
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const cols = out ? ['#e5484d', '#6e56cf'] : ['#f76b15', '#e5484d'];
+  let w = 0, h = 0;
+  const size = () => {
+    const r = devicePixelRatio || 1;
+    w = c.clientWidth; h = c.clientHeight; c.width = w * r; c.height = h * r; ctx.setTransform(r, 0, 0, r, 0, 0);
+  };
+  // what the piece of speech is in each segment, where that segment ends (fraction of the height), the step there
+  const flow = out ? [['en', .36, 'VOICE CLONE'], ['steps', .7, 'LIP SYNC · MIX'], ['clean', 1, '']]
+                   : [['noisy', .3, 'SEPARATE VOICE'], ['clean', .62, 'SPEECH → TEXT'], ['ko', 1, '']];
+  const words = out ? ['hello', 'everyone', 'today', 'we', 'learn', 'how', 'voices', 'travel']
+                    : ['안', '녕', '하', '세', '요', '오', '늘', '은'];
+  const mono = '500 10px "Geist Mono", ui-monospace, monospace', H = 200;  // the piece: a whole sentence, not a burst
+  const level = (y, noisy) => {  // a spoken sentence: never silent inside, syllables on top, swelling in the middle
+    const syl = 0.3 + 0.7 * Math.abs(Math.sin(y * 0.09)) ** 0.6, sentence = 0.35 + 0.65 * Math.sin(Math.PI * y / H);
+    const v = syl * sentence * (0.75 + 0.25 * Math.sin(y * 0.031 + 1));
+    return noisy ? v * (0.65 + 0.35 * Math.abs(Math.sin(y * 1.7) * Math.sin(y * 0.53))) : v;
+  };
+  const piece = (kind, py, g, max) => {  // the piece of speech, its top at py
+    ctx.fillStyle = g;
+    if (kind === 'ko' || kind === 'en') {  // text: one chip per syllable or word
+      ctx.font = mono; ctx.textAlign = 'center';
+      words.forEach((s, k) => {
+        const y = py + 12 + k * 24, cw = ctx.measureText(s).width + 14;
+        ctx.globalAlpha = .7; ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect((w - cw) / 2, y - 8, cw, 16, 8); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(s, w / 2, y + 3.5);
+      });
+      return;
+    }
+    for (let y = 0; y < H; y += 5) {
+      let v = level(y, kind === 'noisy');
+      if (kind === 'steps') v = Math.round(v * 6) / 6;  // a new voice, built step by step
+      const bw = Math.max(2, v * max * (kind === 'noisy' ? 1 : .8));
+      ctx.globalAlpha = .42; ctx.beginPath(); ctx.roundRect((w - bw) / 2, py + y, bw, 3, 1.5); ctx.fill();
+    }
+  };
+  const draw = T => {
+    ctx.clearRect(0, 0, w, h);
+    if (w < 60) return;
+    const [[evSide, what, which], p, idx] = sideNow(T), e = p * p * (3 - 2 * p);
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, cols[0]); g.addColorStop(1, cols[1]);
+    const max = Math.min(w * 0.62, 180), top = out ? 70 : 52, nodes = out ? [[top - 14, 'TRANSLATE']] : [];
+    ctx.globalAlpha = .5; ctx.fillStyle = '#d7d2cc'; ctx.fillRect(w / 2 - .5, top, 1, h - top - 30);  // the line it all runs on
+    let y0 = top;
+    flow.forEach(([kind, end, label], k) => {
+      const y1 = Math.min(end * h, h - 32);  // room for DUB OUT at the bottom
+      const here = still || (evSide === side && what === 'move' && which === k);
+      if (here) {  // the piece travels this segment: out of the step above, into the step below (or out)
+        ctx.save(); ctx.beginPath(); ctx.rect(0, y0 + 14, w, y1 - y0 - 28); ctx.clip();
+        piece(kind, still ? (y0 + y1 - H) / 2 : y0 + 14 - H + (y1 - y0 - 28 + H) * e, g, max);
+        ctx.restore();
+      }
+      if (label) nodes.push([y1, label]);
+      y0 = y1;
+    });
+    nodes.forEach(([y, label], j) => {  // a step: waiting (grey), working (green light, its line filling), or done
+      const at = SIDE_TL.findIndex(([s, wh, n]) => s === side && wh === 'work' && n === j);
+      const working = !still && idx === at, done = still || idx > at;
+      ctx.font = mono;
+      const bw = Math.min(w * 0.72, ctx.measureText(label).width + 44), x = (w - bw) / 2;
+      ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.strokeStyle = working ? '#a59f97' : '#d7d2cc'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(x, y - 13, bw, 26, 13); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = working ? '#30a46c' : done ? '#9fd4b5' : '#d7d2cc';
+      ctx.beginPath(); ctx.arc(x + 13, y, 3, 0, 7); ctx.fill();
+      ctx.fillStyle = working ? '#292524' : '#a59f97'; ctx.textAlign = 'left'; ctx.fillText(label, x + 22, y + 3.5);
+      if (working || done) {
+        ctx.fillStyle = cols[j % 2]; ctx.globalAlpha = working ? .6 : .25;
+        ctx.fillRect(x + 12, y + 9, (bw - 24) * (working ? p : 1), 1.5);
+      }
+    });
+    ctx.globalAlpha = 1; ctx.fillStyle = '#a59f97'; ctx.font = mono; ctx.textAlign = 'center';
+    ctx.fillText(out ? 'DUB OUT ↓' : 'VOICE IN ↓', w / 2, out ? h - 14 : 26);
+  };
+  const tick = () => { if (!document.hidden && c.clientWidth) draw(performance.now() / 1000); requestAnimationFrame(tick); };
+  addEventListener('resize', () => { size(); draw(0); });
+  size(); draw(0);
+  if (!still) requestAnimationFrame(tick);
 });

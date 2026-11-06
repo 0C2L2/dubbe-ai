@@ -75,6 +75,7 @@
   <summary><b>#{{ s.id }}</b> <span class="muted">{{ t(a) }}</span>
     {% if speakers | length > 1 %}<span class="spk-chip" style="--c:{{ colors[spk_list.index(sp) % colors | length] if sp in spk_list else '#999' }}">{{ (speakers.get(sp) or {}).name or sp }}</span>{% endif %}
     {% if not blind %}{% for f in s.flag or [] %}<span class="chip {{ f }}">{{ STAGE[f] }}</span>{% endfor %}{% endif %}
+    {% if s.word_flag %}<span class="chip low_mt" title="Spoken in a real person's voice: the admin sees this sentence">{{ s.word_flag | join(", ") }}</span>{% endif %}
     {% set heard = [] if s.tags_edited else s.auto_tags or [] %}
     {% for tg in s.tags or [] %}<span class="chip tag{{ ' auto' if tg in heard }}"{% if tg in heard %} title="Heard in the original"{% endif %}>[{{ tg }}]</span>{% endfor %}
     {% if s.edited %}<span class="chip grey">edited</span>{% endif %}

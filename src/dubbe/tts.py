@@ -43,6 +43,17 @@ def _kokoro(texts: list[str], tts: dict):
         yield np.concatenate([np.asarray(a) for _, _, a in pipe(text, voice=tts["voice"], speed=1.0)]), 24000
 
 
+def romanizer(tok):
+    """For an MMS voice that reads romanized text (Korean): one uroman for all sentences. The tokenizer would load a new
+    one for every sentence - 4 s each, 0.6 s to speak it (live Korean ran 1.3x slower than real time, C54). Same tokens."""
+    if not getattr(tok, "is_uroman", False):
+        return lambda text: text
+    import uroman
+    u = uroman.Uroman()
+    tok.is_uroman = False
+    return u.romanize_string
+
+
 def _mms(texts: list[str], tts: dict):
     # Meta MMS-TTS (VITS), one model per language, CC BY-NC 4.0; non-Latin scripts need `uroman`
     import torch
@@ -51,9 +62,10 @@ def _mms(texts: list[str], tts: dict):
     dev = device()
     tok = AutoTokenizer.from_pretrained(tts["voice"])
     model = VitsModel.from_pretrained(tts["voice"]).to(dev)
+    roman = romanizer(tok)
     for i, text in enumerate(texts):
         torch.manual_seed((tts.get("seeds") or [0] * len(texts))[i])  # VITS samples noise: same take, same clip; a retake differs
-        ids = tok(text, return_tensors="pt").to(dev)
+        ids = tok(roman(text), return_tensors="pt").to(dev)
         if ids["input_ids"].shape[1] == 0:  # nothing pronounceable
             yield np.zeros(1, dtype="float32"), model.config.sampling_rate
             continue
@@ -103,7 +115,8 @@ def _prompted(texts: list[str], tts: dict):
     prompts = tts.get("prompts") or [tts["prompt"]] * len(texts)  # one recording per sentence: several speakers, one load
     with tempfile.TemporaryDirectory() as tmp:
         items = [{"text": t.rpartition(INSTRUCT_END)[2], "instruct": t.rpartition(INSTRUCT_END)[0] or (NAVOIY_CALM if navoiy else ""),
-                  "prompt_wav": p, "out": str(Path(tmp) / f"{i}.wav")} for i, (t, p) in enumerate(zip(texts, prompts))]
+                  "prompt_wav": p, "prompt_text": prompt_text(p, tts.get("lang") or "en"), "out": str(Path(tmp) / f"{i}.wav")}
+                 for i, (t, p) in enumerate(zip(texts, prompts))]
         worker = Path(__file__).with_name("cosyvoice_worker.py" if navoiy else f"{tts['engine']}_worker.py")
         p = subprocess.run([str(env_py(tts["engine"])), "-I", "-X", "utf8", str(worker)],
                            input=json.dumps({"repo": str(repo), "model": model, "items": items, **({"llm": NAVOIY_LLM} if navoiy else {})}),
@@ -200,13 +213,28 @@ def sample_name(voice: str, lang: str, info: dict) -> str:
 
 def preset_prompt(voice: str) -> Path:
     """A reference recording of an English preset (Kokoro reading PROMPT_TEXT), so Chatterbox can speak another language
-    in that voice - a synthetic voice, nobody's real one (test-results C24). Made once, then cached."""
+    in that voice - a synthetic voice, nobody's real one (test-results C24). Made once, then cached; with what it says
+    next to it (prompt_text)."""
     f = PROMPTS / f"{voice}.wav"
     if not f.exists():
         audio, sr = next(_kokoro([PROMPT_TEXT], {"voice": voice}))
         f.parent.mkdir(parents=True, exist_ok=True)
         sf.write(f, trim(audio), sr)
+    if not f.with_suffix(".txt").exists() or f.with_suffix(".txt").read_text(encoding="utf8") != "en\n" + PROMPT_TEXT:
+        f.with_suffix(".txt").write_text("en\n" + PROMPT_TEXT, encoding="utf8")  # PROMPT_TEXT never changed since the first
     return f
+
+
+def prompt_text(wav, lang: str) -> str | None:
+    """What a reference recording says, if it is in `lang`: kept next to it as <name>.txt, "<language>
+<text>" (presets;
+    clones: what was heard or said). Ming uses the recording's own sound only with its transcript, otherwise just a
+    speaker fingerprint: 20 English sentences, voice like the reference 0.592 -> 0.835, sentences like each other 0.799
+    -> 0.885. An English recording for Korean: voice 0.521 -> 0.797 but Whisper 3 of 8 off instead of 2, so only the
+    same language (C62)."""
+    f = Path(wav).with_suffix(".txt")
+    said, _, text = (f.read_text(encoding="utf8") if f.exists() else "").partition("\n")
+    return text.strip() or None if said == lang else None
 
 
 def tts_cfg(data: dict, cfg: dict, prompt: Path | None = None, speaker: str = "S1") -> dict:
@@ -348,7 +376,8 @@ def synth(data: dict, cfg: dict, work: Path, items: list[tuple[dict, str]]):
             yield s, audio, sr, tts, sp
 
 
-CLIP_VERSION = 2  # raise when finish() changes how a clip sounds (2: one level, no glide on self-asked questions, C50)
+CLIP_VERSION = 3  # raise when a clip sounds different (2: one level, no glide on self-asked questions, C50;
+                  # 3: Ming hears the reference recording itself, C62)
 
 
 def fingerprint(s: dict, tts: dict) -> str:
@@ -374,6 +403,7 @@ def run(video: Path, work: Path, cfg: dict) -> None:
         s["tags_not_performed"] = not_performed(s.get("tags") or [], tts["engine"])
         s["tts_key"] = fingerprint(s, tts)
     print(f"         spoke {len(todo)} of {len(segs)} sentences (the others are unchanged)")
+    data["spoken"] = [s["id"] for s in todo]  # this run's sentences: a library clone's use counts only these (web/worker.py)
     used = {sp: {"engine": t["engine"], "voice": t["voice"]} for sp, t in voices.items()}
     for sp, u in used.items():
         data.setdefault("speakers", {}).setdefault(sp, {})["used"] = u

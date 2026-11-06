@@ -229,6 +229,9 @@ def test_voice_clone_consent_sharing_and_permissions(client, tmp_path, monkeypat
     assert len(re.findall(r"[.?!]", v["script"])) == 3  # three sentences, picked now
     files = {"file": ("recording.webm", b"x" * 5000, "audio/webm")}
     assert client.post(f"/app/voices/{v['id']}/record", data={"name": "Me"}, files=files).status_code == 400  # no consent
+    no_phone = client.post(f"/app/voices/{v['id']}/record", data={"name": "Me", "own": "1", "consent": "1"}, files=files)
+    assert no_phone.status_code == 400 and "phone" in no_phone.text  # trust.py: a verified phone before any cloning
+    db.run("update users set phone='+821000000001', phone_verified_at=? where id=?", db.now(), oid)
     r = client.post(f"/app/voices/{v['id']}/record", data={"name": "Me", "own": "1", "consent": "1"}, files=files)
     assert r.status_code == 303 and db.one("select status from voices where id=?", v["id"])["status"] == "waiting"
     stored = (tmp_path / "voices" / str(v["id"]) / "recording.enc").read_bytes()
@@ -324,6 +327,8 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     monkeypatch.setenv("DUBBE_VOICE_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr(clones, "enabled", lambda: True)
     assert "consent-needed" in client.post(f"/app/p/{pid}/speakers/S2/clone", data={}).headers["location"]
+    assert client.post(f"/app/p/{pid}/speakers/S1/clone", data={"consent": "1"}).headers["location"].startswith("/app/phone")
+    db.run("update users set phone='+821000000002', phone_verified_at=?", db.now())
     assert "too-little-speech" in client.post(f"/app/p/{pid}/speakers/S1/clone", data={"consent": "1"}).headers["location"]  # 3 s
     assert "speaker-cloned" in client.post(f"/app/p/{pid}/speakers/S2/clone", data={"consent": "1"}).headers["location"]
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
@@ -385,19 +390,10 @@ def test_speaker_detection_tool_names_speakers_and_clones_one_privately_with_con
     assert client.post(f"/app/tasks/{tid}/speakers/S9", data={"name": "x"}).status_code == 404
     monkeypatch.setenv("DUBBE_VOICE_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr(clones, "enabled", lambda: True)
-    assert "consent-needed" in client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={}).headers["location"]
-    assert "too-little-speech" in client.post(f"/app/tasks/{tid}/speakers/S1/clone", data={"consent": "1"}).headers["location"]
-    r = client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1", "name": "Jesse"})
-    v = db.one("select * from voices")
-    assert r.headers["location"] == f"/app/studio/{v['id']}" and v["status"] == "waiting" and v["source"] == f"video:{tid}"
-    assert v["script"] == "Yes, I know." and clones.load(v["id"], "recording")[:4] == b"RIFF"  # checked like a recording
-    db.run("update voices set status='ready' where id=?", v["id"])
-    client.post(f"/app/studio/{v['id']}", data={"action": "submit", "name": "Jesse", "description": "A calm voice for stories.",
-                                                "category": "Narration", "tags": "calm", "agree": "1"})
-    assert db.one("select shared from voices")["shared"] == "no"  # a voice from a video is never published
-    _, other = user("o@x.org")
-    client.cookies.set(auth.COOKIE, other)
-    assert client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1"}).status_code == 404
+    # a voice from a video stays in that video: no route puts a speaker into a library any more
+    assert client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1", "name": "Jesse"}).status_code in (404, 405)
+    assert db.one("select count(*) n from voices")["n"] == 0
+    assert "stays in that video" in client.get(f"/app/tasks/{tid}").text
 
 
 def test_speaker_fix_moves_words_between_sentences_and_keeps_every_word(client):
@@ -477,3 +473,338 @@ def test_subtitles_tool_names_speakers_burns_on_request_and_dub_captions(client)
     assert r.headers["location"] == f"/app/tasks/{task['id']}" and json.loads(task["params"]) == {"project": pid, "src": "en", "to": "ko", "burn": "ko"}
     assert '<font color="#FFFF00">응.</font>' in client.get(f"/app/p/{pid}/download/tgt.color.srt").text
     assert "Style: S2,Malgun Gothic" in client.get(f"/app/p/{pid}/download/tgt.ass").text
+
+
+def test_subtitles_review_fixes_speakers_colours_and_text(client):
+    """Subtitles has the Speaker Detection review: pick a colour, fix who said what (a sentence whose words did not change
+    keeps its translation, a changed one is translated again), fix the text. A dub's captions follow the dub."""
+    import json
+    from dubbe.web import tools
+    uid, s = user("cap2@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    tid = db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
+                 uid, "captions", "Scene", json.dumps({"src": "en", "to": "ko"}), "done", db.now())
+    out = tools.folder(tid)
+    out.mkdir(parents=True)
+    words = [{"w": w, "start": a, "end": a + .4} for w, a in [("Hello", 0), ("there.", .5), ("Yes,", 1), ("I", 1.5), ("know.", 2)]]
+    (out / "words.json").write_text(json.dumps({"words": words}), encoding="utf8")
+    segs = [{"id": 1, "start": 0.0, "end": 1.4, "speaker": "S1", "src_text": "Hello there. Yes,", "tgt_text": "A"},
+            {"id": 2, "start": 1.5, "end": 2.4, "speaker": "S2", "src_text": "I know.", "tgt_text": "B"}]
+    (out / "segments.json").write_text(json.dumps({"segments": segs, "duration": 3.0, "speakers": {
+        "S1": {"name": "Walter", "color": "#FFFFFF"}, "S2": {"name": "Jesse", "color": "#FFFF00"}}}), encoding="utf8")
+    p = {"src": "en", "to": "ko"}
+    db.run("update tasks set result=? where id=?", json.dumps(tools.caption_files(out, p, tid)), tid)
+    page_ = client.get(f"/app/tasks/{tid}").text
+    assert "Fix speakers" in page_ and 'type="color"' in page_ and "Edit caption text" in page_
+
+    client.post(f"/app/tasks/{tid}/speakers/S2", data={"name": "Jesse", "color": "#ff0000"})  # a colour of the user's
+    assert "::cue(.s2) { color: #FF0000; }" in (out / "en.vtt").read_text(encoding="utf8")
+    client.post(f"/app/tasks/{tid}/speakers/S2", data={"name": "Jesse", "color": "red;}"})  # not a colour: ignored
+    assert json.loads((out / "segments.json").read_text(encoding="utf8"))["speakers"]["S2"]["color"] == "#FF0000"
+
+    fix = lambda parts: client.post(f"/app/tasks/{tid}/speakers-edit", json={"sentences": parts})  # noqa: E731
+    assert fix([{"speaker": "S1", "words": [0, 1, 2]}, {"speaker": "S1", "words": [3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert [(x["speaker"], x["tgt_text"]) for x in data["segments"]] == [("S1", "A"), ("S1", "B")]  # same words: translations kept
+    assert db.one("select status from tasks where id=?", tid)["status"] == "done"  # nothing to translate again
+    assert fix([{"speaker": "S1", "words": [0, 1]}, {"speaker": "new", "words": [2, 3, 4]}]).status_code == 200
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert not any(x.get("tgt_text") for x in data["segments"])  # both lines changed: translated again
+    assert data["speakers"]["S2"]["color"] == "#FFFF00"  # the new person gets a colour nobody has
+    assert db.one("select status from tasks where id=?", tid)["status"] == "waiting"  # the task runs once more
+
+    for x in data["segments"]:
+        x["tgt_text"] = "T"
+    (out / "segments.json").write_text(json.dumps(data), encoding="utf8")
+    db.run("update tasks set status='done' where id=?", tid)
+    r = client.post(f"/app/tasks/{tid}/captions-text", data={"src-1": "Hello there!", "tgt-1": "T", "src-2": "Yes, I know.", "tgt-2": "Mine."})
+    data = json.loads((out / "segments.json").read_text(encoding="utf8"))
+    assert r.status_code == 303 and data["segments"][0]["src_text"] == "Hello there!" and data["segments"][0]["tgt_text"] is None
+    assert data["segments"][1]["tgt_text"] == "Mine." and data["segments"][1]["edited"]  # a person's translation stays theirs
+
+    # a dub's captions: fixed in the dub's editor (not here), and they read the dub again on every run
+    pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at) values(?,?,?,?,?,?,?,?)",
+                 uid, "Dub", "en", "ko", 1, 1.0, 0.1, db.now())
+    w = worker.work(db.one("select * from projects where id=?", pid))
+    w.mkdir(parents=True)
+    (w / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"name": "A"}, "S2": {"name": "B"}}}), encoding="utf8")
+    dub = db.run("insert into tasks(owner_id, kind, title, params, status, created_at) values(?,?,?,?,?,?)",
+                 uid, "captions", "Dub", json.dumps({"project": pid, "src": "en", "to": "ko"}), "done", db.now())
+    assert fix and client.post(f"/app/tasks/{dub}/speakers-edit", json={"sentences": []}).status_code == 404
+    d = tools.folder(dub)
+    d.mkdir(parents=True)
+    (d / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"name": "Narrator", "custom": True},
+                                                                              "S2": {"name": "old B"}}}), encoding="utf8")
+    (w / "segments.json").write_text(json.dumps({"segments": segs, "speakers": {"S1": {"name": "A"}, "S2": {"name": "Bea"}}}), encoding="utf8")
+    tools.from_project(d, pid)
+    spk = json.loads((d / "segments.json").read_text(encoding="utf8"))["speakers"]
+    assert spk["S1"]["name"] == "Narrator" and spk["S2"]["name"] == "Bea"  # named here: kept; renamed in the dub: followed
+
+
+def test_a_redub_counts_a_library_clone_only_for_what_it_spoke_again():
+    """Re-dubbing one sentence counted the speaker's whole text as a use of their library clone again."""
+    data = {"spoken": [2], "segments": [{"id": 1, "speaker": "S1", "tgt_text": "A long first sentence."},
+                                        {"id": 2, "speaker": "S1", "tgt_text": "Fixed."},
+                                        {"id": 3, "speaker": "S2", "tgt_text": "Not spoken again."}],
+            "speakers": {"S1": {"used": {"voice": "clone:7"}}, "S2": {"used": {"voice": "clone:8"}}, "S3": {"used": {"voice": "af_heart"}}}}
+    assert worker.clone_chars(data) == {"clone:7": 6}  # only "Fixed."; clone 8 spoke nothing new; a preset is no clone
+    data["spoken"] = [1, 2, 3]  # a full dub
+    assert worker.clone_chars(data) == {"clone:7": 28, "clone:8": 17}
+
+
+def test_live_dubbing_beta_checks_the_link_runs_one_at_a_time_and_serves_only_its_files(client, monkeypatch):
+    import json
+    import socket
+    from dubbe.web import tools
+    uid, s = user("live@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    assert "Live Dubbing" in client.get("/app/live").text
+    form = {"url": "https://example.org/stream", "src": "ko", "voice": "af_heart", "rights": "1"}
+    public = lambda host, *a: [(0, 0, 0, "", ("93.184.216.34", 0))]  # noqa: E731 - no DNS in tests
+    monkeypatch.setattr(socket, "getaddrinfo", public)
+    assert client.post("/app/live", data={**form, "rights": ""}).status_code == 400
+    for bad in ("file:///C:/Windows/win.ini", "ftp://example.org/x", "http://127.0.0.1:8000/", "http://192.168.0.10/live"):
+        monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a: [(0, 0, 0, "", (host, 0))])
+        assert client.post("/app/live", data={**form, "url": bad}).status_code == 400, bad  # never the server's files or network
+    monkeypatch.setattr(socket, "getaddrinfo", public)
+    r = client.post("/app/live", data=form)
+    t = db.one("select * from tasks where kind='live'")
+    assert r.status_code == 303 and json.loads(t["params"]) == {"url": "https://example.org/stream", "src": "ko", "tgt": "en", "voice": "af_heart"}
+    assert client.post("/app/live", data=form).status_code == 400  # one session at a time
+    db.run("update tasks set status='done' where id=?", t["id"])
+    assert client.post("/app/live", data={**form, "src": "kk", "tgt": "kk"}).status_code == 400  # two different languages
+    client.post("/app/live", data={**form, "src": "en", "tgt": "kk", "voice": "af_heart"})  # an English voice for Kazakh: its own
+    kk = db.one("select * from tasks where kind='live' order by id desc limit 1")
+    assert json.loads(kk["params"])["tgt"] == "kk" and json.loads(kk["params"])["voice"] == "issai-0"
+    db.run("delete from tasks where id=?", kk["id"])
+    db.run("update tasks set status='waiting' where id=?", t["id"])
+    client.post(f"/app/tasks/{t['id']}/stop")
+    assert db.one("select status from tasks where id=?", t["id"])["status"] == "done"  # stopped before it started
+
+    db.run("update tasks set status='running' where id=?", t["id"])
+    out = tools.folder(t["id"]) / "live"
+    out.mkdir(parents=True)
+    (out / "pieces.json").write_text('{"state": "live", "delay": 30, "pieces": []}', encoding="utf8")
+    (out / "ffmpeg.log").write_text("secret", encoding="utf8")
+    page_ = client.get(f"/app/tasks/{t['id']}").text
+    assert "data-live" in page_ and 'http-equiv="refresh"' not in page_  # the player is not reloaded every 3 s
+    assert client.get(f"/app/tasks/{t['id']}/live/pieces.json").json()["state"] == "live"
+    assert client.get(f"/app/tasks/{t['id']}/live/ffmpeg.log").status_code == 404  # only the stream and the dub
+    client.post(f"/app/tasks/{t['id']}/stop")
+    assert (out / "stop").exists()  # the running session is asked to end
+    _, other = user("o3@x.org")
+    client.cookies.set(auth.COOKIE, other)
+    assert client.get(f"/app/tasks/{t['id']}/live/pieces.json").status_code == 404
+
+
+def test_a_pasted_link_is_checked_first_then_downloaded_by_the_worker(client, monkeypatch):
+    """A video on YouTube (a course, say) in place of an upload: length and plan are checked before any download."""
+    from dubbe.web import links, tools
+    monkeypatch.setattr(web, "public_url", lambda u: u.startswith("https://"))
+    found = {"https://youtu.be/lesson1": {"title": "My course, lesson 1", "minutes": 2.0, "live": False, "tracks": []},
+             "https://youtu.be/long": {"title": "All lessons", "minutes": 95.0, "live": False, "tracks": []},
+             "https://youtu.be/now": {"title": "Now", "minutes": 0.0, "live": True, "tracks": []}}
+    monkeypatch.setattr(links, "look", lambda u: found[u])
+    _, s = user("a@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    form = {"src": "ko", "tgt": "en", "rights": "1"}
+    assert client.post("/app/new", data=form).status_code == 400  # neither a file nor a link
+    assert "public web page" in client.post("/app/new", data={**form, "link": "http://192.168.0.2/v.mp4"}).text
+    assert "Live Dubbing" in client.post("/app/new", data={**form, "link": "https://youtu.be/now"}).text
+    assert "up to 10 min" in client.post("/app/new", data={**form, "link": "https://youtu.be/long"}).text  # free plan
+    r = client.post("/app/new", data={**form, "link": "https://youtu.be/lesson1"})
+    assert r.headers["location"] == "/app/jobs/1"
+    p = db.one("select * from projects")
+    assert p["title"] == "My course, lesson 1" and p["minutes"] == 2.0
+    assert links.waiting(worker.folder(p["id"])) and worker.video(p["id"]) is None  # the worker downloads it
+
+    r = client.post("/app/stt", data={"src": "en", "rights": "1", "link": "https://youtu.be/lesson1"})
+    tid = int(r.headers["location"].rsplit("/", 1)[1])
+    t = db.one("select * from tasks where id=?", tid)
+    assert t["status"] == "waiting" and t["minutes"] == 2.0 and links.waiting(tools.folder(tid))
+    got = []
+
+    def fetch(folder, stem, video=True, lang=""):
+        got.append((stem, video))
+        (folder / links.SOURCE).unlink()
+        (folder / f"{stem}.m4a").write_bytes(b"x")
+    monkeypatch.setattr(links, "fetch", fetch)
+    monkeypatch.setattr(tools, "speech_to_text", lambda p, out, media: {"heard": media.name})
+    tools.main(tid)
+    assert got == [("input", False)]  # Speech to Text: the sound only
+    assert "input.m4a" in db.one("select result from tasks where id=?", tid)["result"]
+
+
+def test_youtube_s_own_dub_comes_first_and_dubbe_dubs_only_when_asked(client, monkeypatch):
+    """A Korean video that YouTube already has in English: that track first, free; DUBBE dubs when the user asks (C64)."""
+    from dubbe.web import links, tools
+    monkeypatch.setattr(web, "public_url", lambda u: True)
+    monkeypatch.setattr(links, "look", lambda u: {"title": "Lesson 1", "minutes": 3.0, "live": False, "original": "ko",
+                                                  "tracks": ["en", "ja"]})
+    _, s = user("a@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    form = {"src": "ko", "tgt": "en", "rights": "1", "link": "https://youtu.be/lesson1"}
+    r = client.post("/app/new", data=form)
+    tid = int(r.headers["location"].rsplit("/", 1)[1])
+    t = db.one("select * from tasks where id=?", tid)
+    assert t["kind"] == "track" and not t["minutes"] and db.one("select count(*) n from projects")["n"] == 0  # no dub yet
+    got = []
+
+    def fetch(folder, stem, video=True, lang=""):
+        got.append((stem, video, lang))
+        (folder / links.SOURCE).unlink()
+        (folder / f"{stem}.mp4").write_bytes(b"x")
+    monkeypatch.setattr(links, "fetch", fetch)
+    tools.main(tid)
+    db.run("update tasks set status='done' where id=?", tid)
+    assert got == [("input", True, "en")]  # the picture with YouTube's English track
+    page = client.get(f"/app/tasks/{tid}").text
+    assert "YouTube already has this video in English" in page and "Dub it with DUBBE" in page
+    monkeypatch.setattr(web, "video_duration", lambda f: 180.0)
+    r = client.post(f"/app/tasks/{tid}/dub")
+    assert r.headers["location"] == "/app/jobs/1"
+    p = db.one("select * from projects")
+    assert (p["src"], p["tgt"], p["minutes"], p["title"]) == ("ko", "en", 3.0, "Lesson 1")
+    assert links.waiting(worker.folder(p["id"]))  # the original sound is downloaded again for the dub
+    assert client.post("/app/new", data={**form, "tgt": "uz"}).headers["location"] == "/app/jobs/2"  # no Uzbek track: dubbed
+    assert "already in" in client.post("/app/new", data={**form, "src": "en", "tgt": "ko"}).text  # it is Korean already
+
+
+def test_a_sent_message_shows_in_the_card_and_on_the_admin_sidebar(client, monkeypatch):
+    """The sent page confirms inside the card (no grey bar over an empty form); admins see how many messages are open."""
+    form = {"email": "a@x.org", "topic": "Support", "body": "Hello", "agree": "1"}
+    assert client.post("/contact", data=form).headers["location"] == "/contact?m=sent"
+    page = client.get("/contact?m=sent").text
+    assert "Message sent" in page and 'name="body"' not in page and "your message reached the team" not in page
+    uid, s = user("admin@x.org")
+    monkeypatch.setattr(web.auth, "is_admin", lambda u: bool(u))
+    client.cookies.set(auth.COOKIE, s)
+    assert 'side-badge count">1<' in client.get("/app").text
+    db.run("update messages set handled_at=?", db.now())
+    assert "side-badge count" not in client.get("/app").text
+
+
+def test_phone_check_one_number_per_account_codes_expire_and_wrong_tries_count(client, tmp_path):
+    """Beta SMS: the code goes to the outbox; one verified phone per account; 5 wrong tries end a code (trust.py)."""
+    from dubbe.web import trust
+    uid, s = user("p@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    assert "country code" in client.post("/app/phone/send", data={"phone": "12"}).text
+    assert client.post("/app/phone/send", data={"phone": "010-1234-5678", "next": "/app/new"}).headers["location"].startswith("/app/phone?sent=1")
+    sms = sorted((tmp_path / "outbox").glob("*.sms.txt"))[-1].read_text(encoding="utf8")
+    code = re.search(r"code is (\d{6})", sms)[1]
+    assert "+821012345678" in sms
+    for _ in range(5):
+        assert "not right" in client.post("/app/phone/verify", data={"code": "000000" if code != "000000" else "111111"}).text
+    assert "Too many wrong tries" in client.post("/app/phone/verify", data={"code": code}).text
+    client.post("/app/phone/send", data={"phone": "+82 10 1234 5678"})
+    code = re.search(r"code is (\d{6})", sorted((tmp_path / "outbox").glob("*.sms.txt"))[-1].read_text(encoding="utf8"))[1]
+    r = client.post("/app/phone/verify", data={"code": code, "next": "/app/new"})
+    assert r.headers["location"] == "/app/new?m=phone-verified"
+    assert trust.verified(db.one("select * from users where id=?", uid))
+    _, s2 = user("p2@x.org")
+    client.cookies.set(auth.COOKIE, s2)
+    assert "already verifies another account" in client.post("/app/phone/send", data={"phone": "01012345678"}).text
+
+
+def test_words_and_scam_patterns_are_flagged_only_in_a_real_persons_voice(client):
+    from dubbe.web import trust
+    assert trust.check("Hello everyone, today we learn how voices travel.", "en") == []
+    assert trust.check("Send me the money now, call +82 10 1234 5678 or visit www.pay-me.top", "en") == \
+        ["link", "phone or account number", "money request"]
+    assert "swear word" in trust.check("what the fuck", "en")
+    assert trust.check("계좌로 송금해 주세요", "ko") == ["money request"]
+    assert trust.real_voice("clone:3") and trust.real_voice("video:S2") and not trust.real_voice("af_bella")
+    uid, _ = user("w@x.org")
+    p = {"id": 7, "owner_id": uid, "tgt": "en"}
+    data = {"speakers": {"S1": {"voice": "video:S1"}, "S2": {"voice": "af_bella"}},
+            "segments": [{"speaker": "S1", "tgt_text": "Wire the money to my bank account."},
+                         {"speaker": "S2", "tgt_text": "Wire the money to my bank account."}]}  # a preset: not checked
+    assert trust.flag_dub(p, data) == 1 and data["segments"][0]["word_flag"] and "word_flag" not in data["segments"][1]
+    assert db.one("select n from flags where kind='dub' and ref=7")["n"] == 1
+
+
+def test_evidence_is_kept_frozen_accounts_cannot_sign_in_and_admins_export_it(client, monkeypatch):
+    from dubbe.web import trust
+    uid, s = user("bad@x.org")
+    db.run("update users set phone='+821099999999', phone_verified_at=? where id=?", db.now(), uid)
+    u = db.one("select * from users where id=?", uid)
+    trust.log(u, "clone-speaker", "5:S1")
+    db.run("update evidence set created_at=? where id=1", db.now() - 91 * 86400)  # older than 90 days
+    trust.log(u, "download-video", "5")
+    assert [r["what"] for r in db.all_("select what from evidence")] == ["download-video"]  # the old entry went
+    aid, sa = user("admin@x.org")
+    monkeypatch.setattr(web.auth, "is_admin", lambda x: bool(x) and x["id"] == aid)
+    client.cookies.set(auth.COOKIE, sa)
+    client.post(f"/admin/users/{uid}/freeze")
+    assert db.one("select frozen_at from users where id=?", uid)["frozen_at"]
+    assert db.one("select count(*) n from sessions where user_id=?", uid)["n"] == 0  # signed out everywhere
+    assert client.post(f"/admin/users/{uid}/delete").headers["location"] == "/admin/users?m=frozen"  # evidence is kept
+    ev = client.get(f"/admin/users/{uid}/evidence")
+    assert ev.json()["account"]["phone"] == "+821099999999" and ev.json()["evidence"][0]["what"] == "download-video"
+    client.cookies.clear()
+    r = client.post("/signin", data={"email": "bad@x.org", "password": "long enough pw"})
+    assert r.status_code == 403 and "frozen" in r.text
+
+
+def test_dub_with_their_own_voices_needs_consent_and_a_verified_phone(client, monkeypatch, tmp_path):
+    import subprocess
+    from dubbe.web import clones
+    clip = tmp_path / "clip.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=64x64:rate=10",
+                    "-f", "lavfi", "-i", "sine=duration=2", "-shortest", str(clip)], check=True)
+    monkeypatch.setattr(clones, "enabled", lambda: True)
+    uid, s = user("own@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    assert "Dub with their own voices" in client.get("/app/new").text
+    form = {"src": "ko", "tgt": "en", "rights": "1", "own_voices": "1"}
+    files = {"file": ("talk.mp4", clip.read_bytes(), "video/mp4")}
+    assert "agreed to have their voices cloned" in client.post("/app/new", data=form, files=files).text
+    assert "Verify your phone" in client.post("/app/new", data={**form, "clone_ok": "1"}, files=files).text
+    db.run("update users set phone='+821000000003', phone_verified_at=? where id=?", db.now(), uid)
+    r = client.post("/app/new", data={**form, "clone_ok": "1"}, files=files)
+    assert r.headers["location"].startswith("/app/jobs/")
+    assert db.one("select own_voices from projects")["own_voices"] == 1
+    assert db.one("select what from evidence")["what"] == "dub-upload"
+    assert "--until" in worker.command(db.one("select * from projects"), None, "speakers")
+
+
+def test_owners_set_their_own_price_and_each_use_earns_at_the_price_it_had(client, monkeypatch):
+    """Marketplace prices (2026-11-07): the owner's own US$ per 1,000 characters, 0 = free, at most MAX_RATE."""
+    from dubbe.web import clones
+    assert clones.rate_error("0.05") == (0.05, None) and clones.rate_error("0") == (0.0, None)
+    assert clones.rate_error("-1")[1] and clones.rate_error("5")[1] and clones.rate_error("abc")[1]
+    oid, so = user("owner@x.org")
+    vid = db.run("insert into voices(owner_id, name, lang, script, status, created_at) values(?,?,?,?,?,?)",
+                 oid, "Calm", "en", "x", "ready", db.now())
+    assert db.one("select rate from voices where id=?", vid)["rate"] == clones.RATE  # a new voice starts at $0.03
+    client.cookies.set(auth.COOKIE, so)
+    form = {"action": "save", "name": "Calm", "description": "A calm voice for stories.", "category": "Narration", "tags": "calm"}
+    assert "from $0 (free)" in client.post(f"/app/studio/{vid}", data={**form, "rate": "9"}).text
+    client.post(f"/app/studio/{vid}", data={**form, "rate": "0.10"})
+    assert db.one("select rate from voices where id=?", vid)["rate"] == 0.10
+    other, _ = user("buyer@x.org")
+    clones.record_use(f"clone:{vid}", other, 2000, "dub")  # 2,000 characters at $0.10 / 1k
+    client.post(f"/app/studio/{vid}", data={**form, "rate": "0.50"})  # a later price does not rewrite it
+    clones.record_use(f"clone:{vid}", other, 1000, "dub")  # 1,000 characters at $0.50 / 1k
+    clones.record_use(f"clone:{vid}", oid, 5000, "dub")  # the owner's own use earns nothing
+    v = db.one("select * from voices where id=?", vid)
+    assert clones.stats(v)["earn"] == 0.7 and clones.studio(db.one("select * from users where id=?", oid))["earn"] == 0.7
+
+
+def test_a_voice_from_a_video_gets_the_same_card_but_no_publish_button(client):
+    """Every voice has its Studio card (2026-11-07); a video voice stays private, the ones listed before stay listed."""
+    oid, so = user("owner@x.org")
+    vid = db.run("insert into voices(owner_id, name, lang, script, status, created_at, source) values(?,?,?,?,?,?,?)",
+                 oid, "Host", "en", "x", "ready", db.now(), "video:1")
+    client.cookies.set(auth.COOKIE, so)
+    html = client.get(f"/app/studio/{vid}").text
+    assert 'class="mk-card"' in html and "Your card" in html and 'name="description"' in html
+    assert 'value="submit"' not in html and 'name="rate"' not in html
+    form = {"action": "submit", "name": "Host", "description": "A host from my video.", "category": "Narration",
+            "tags": "calm", "agree": "1"}
+    client.post(f"/app/studio/{vid}", data=form)
+    assert db.one("select shared from voices where id=?", vid)["shared"] == "no"  # saved, never sent for review
+    db.run("update voices set shared='listed' where id=?", vid)  # one of those listed before the rule
+    html = client.get(f"/app/studio/{vid}").text
+    assert "Live in the Marketplace" in html and 'name="rate"' in html and 'value="submit"' not in html

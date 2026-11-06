@@ -85,16 +85,21 @@ def transcript(segs: list[dict], field: str, speakers: dict | None = None) -> st
 
 
 # caption colour per speaker: the BBC subtitle guidelines' order (white, yellow, cyan, green), then four more
-CAPTION_COLORS = ["#FFFFFF", "#FFFF00", "#00FFFF", "#00FF00", "#FF80FF", "#FFB040", "#80B0FF", "#FF8080"]
+CAPTION_COLORS = ["#FFFFFF", "#FFFF00", "#00FFFF", "#00FF00", "#FF80FF", "#FFB040", "#80B0FF", "#FF8080",
+                  "#C0FF80", "#FFD0A0", "#C0A0FF", "#80FFD0"]  # readable on video; a person can pick any other
 # fonts for burned-in captions, checked on Windows with ffmpeg's libass (Korean, Japanese, Chinese, Arabic, Hindi);
 # ponytail: Windows font names - a Linux server needs e.g. Noto Sans CJK here
 CAPTION_FONTS = {"ko": "Malgun Gothic", "ja": "Yu Gothic", "zh": "Microsoft YaHei", "hi": "Nirmala UI"}
 
 
-def speaker_colors(segs: list[dict]) -> dict:
-    """Speaker -> caption colour, S1 (who speaks most) white; empty with one speaker (no colours needed)."""
+def speaker_colors(segs: list[dict], speakers: dict | None = None) -> dict:
+    """Speaker -> caption colour: the one a person picked (speakers[sp]["color"]), else by number, S1 (who speaks most)
+    white. Empty with one speaker and no colour picked (no colours needed)."""
     ids = sorted({s.get("speaker", "S1") for s in segs}, key=lambda k: (len(k), k))
-    return {sp: CAPTION_COLORS[i % len(CAPTION_COLORS)] for i, sp in enumerate(ids)} if len(ids) > 1 else {}
+    picked = {sp: (speakers or {}).get(sp, {}).get("color") for sp in ids}
+    if len(ids) < 2 and not any(picked.values()):
+        return {}
+    return {sp: picked[sp] or CAPTION_COLORS[i % len(CAPTION_COLORS)] for i, sp in enumerate(ids)}
 
 
 def subtitles(segs: list[dict], field: str, vtt: bool = False, speakers: dict | None = None) -> str:
@@ -106,7 +111,7 @@ def subtitles(segs: list[dict], field: str, vtt: bool = False, speakers: dict | 
         m, rest = divmod(rest, 60_000)
         return f"{h:02}:{m:02}:{rest // 1000:02}{'.' if vtt else ','}{rest % 1000:03}"
 
-    colors = speaker_colors(segs) if speakers is not None else {}
+    colors = speaker_colors(segs, speakers) if speakers is not None else {}
     names = {k: (v.get("name") or k) for k, v in (speakers or {}).items()}
     cues = [s for s in segs if (s.get(field) or "").strip()]
     out = ["WEBVTT", ""] if vtt else []
@@ -124,7 +129,7 @@ def subtitles(segs: list[dict], field: str, vtt: bool = False, speakers: dict | 
 def ass(segs: list[dict], field: str, speakers: dict | None = None, lang: str = "en") -> str:
     """Advanced SubStation Alpha: one style per speaker in its colour (white with one speaker), for players that read it
     (VLC, mpv) and for burning the captions into the video (ffmpeg's libass)."""
-    colors = speaker_colors(segs) or {s.get("speaker", "S1"): CAPTION_COLORS[0] for s in segs}
+    colors = speaker_colors(segs, speakers) or {s.get("speaker", "S1"): CAPTION_COLORS[0] for s in segs}
     names = {k: (v.get("name") or k) for k, v in (speakers or {}).items()}
     font = CAPTION_FONTS.get(lang, "Arial")
 

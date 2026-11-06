@@ -1,41 +1,76 @@
 {% extends "base.html" %}
+{% from "_parts.html" import icon %}
 {% block title %}Safety — DUBBE{% endblock %}
 {% block main %}
-<h1>Safety</h1>
-<p class="lead" style="margin:0 0 1.5rem">A dub puts words in someone's mouth in another language. These are the rules
-  and limits we built in — sized to a student project, and stated honestly.</p>
+<section class="phero">
+  <div>
+    <span class="eyebrow">Safety</span>
+    <h1>Words in someone's mouth, with rules</h1>
+    <p class="lead">A dub puts words in someone's mouth in another language. These are the rules and limits we built in,
+      sized to a student project and stated honestly.</p>
+    <p class="actions"><a href="/contact?topic=report" role="button">Report misuse</a><a href="/use-policy" role="button" class="secondary">Use policy</a></p>
+  </div>
+  <div class="phero-art grain" aria-hidden="true">
+    <div class="quad">
+      <div>{{ icon("shield") }}<b>Prevent</b><span>rights and consent first</span></div>
+      <div>{{ icon("search") }}<b>Detect</b><span>every report is read</span></div>
+      <div>{{ icon("out") }}<b>Enforce</b><span>dubs deleted, accounts closed</span></div>
+      <div>{{ icon("cc") }}<b>Inform</b><span>every dub is labelled AI</span></div>
+    </div>
+  </div>
+</section>
 
-<div class="cards">
-  <article><h3>Prevent</h3><ul>
-    <li>Every upload needs a confirmation that you own the video or have a licence that allows changing it.</li>
-    <li>Your email must be confirmed before you can dub.</li>
-    <li>Cloning your own voice: a live recording of sentences picked at that moment, checked by speech recognition — no
-      uploads. Shared clones are reviewed before they are listed and can be reported.</li>
-    <li>Cloning a speaker in your video only after you confirm that person agreed; the clone stays inside that project, or
-      private in your voices, and can never be published.</li></ul></article>
-  <article><h3>Detect</h3><ul>
-    <li>We read every misuse report.</li>
-    <li>We have no automatic detector for misuse; say so if you see it.</li></ul></article>
-  <article><h3>Enforce</h3><ul>
-    <li>Dubs that break the <a href="/use-policy">Use policy</a> are deleted.</li>
-    <li>Accounts that break it on purpose are closed.</li></ul></article>
-  <article><h3>Inform</h3><ul>
-    <li>Every dubbed file carries an "AI-dubbed with DUBBE" note in its metadata.</li>
-    <li>The download page says the video is AI-generated.</li>
-    <li>Speech made with Chatterbox — every language except English presets, and every voice clone — also carries its
-      inaudible audio watermark (Resemble AI's Perth).</li></ul></article>
-</div>
+<section class="sec">
+  <div class="icards two">
+    <div class="icard" style="--c:var(--orange)"><span class="ic">{{ icon("shield") }}</span><h3>Prevent</h3><ul>
+      <li>Every upload needs a confirmation that you own the video or have a licence that allows changing it.</li>
+      <li>Your email must be confirmed before you can dub.</li>
+      <li>Cloning your own voice: a live recording of sentences picked at that moment, checked by speech recognition; no
+        uploads. Shared clones are reviewed before they are listed and can be reported.</li>
+      <li>Cloning a speaker in your video only after you confirm that person agreed; the clone stays inside that video and can
+        never be saved, shared or published. To use a voice elsewhere, its owner clones it and shares it.</li>
+      <li>Every cloning step needs a verified phone, one per account.</li></ul></div>
+    <div class="icard" style="--c:#3b82f6"><span class="ic">{{ icon("cc") }}</span><h3>Inform</h3><ul>
+      <li>Every dubbed file carries an "AI-dubbed with DUBBE" note in its metadata.</li>
+      <li>The download page says the video is AI-generated.</li>
+      <li>Speech made with Chatterbox, the voice of the languages other than English, Korean, Uzbek and Kazakh, also
+        carries its inaudible audio watermark (Resemble AI's Perth). The English, Korean, Uzbek and Kazakh voices (Ming,
+        CosyVoice, Navoiy, Piper) add none: the label is what marks them.</li></ul></div>
+    <div class="icard" style="--c:var(--violet)"><span class="ic">{{ icon("search") }}</span><h3>Detect</h3><ul>
+      <li>We read every misuse report.</li>
+      <li>Sentences spoken in a real person's voice are checked for swear words and scam patterns (links, phone or account
+        numbers, money requests); the team sees what is found. Lies cannot be caught this way: report them.</li></ul></div>
+    <div class="icard" style="--c:var(--red)"><span class="ic">{{ icon("out") }}</span><h3>Enforce</h3><ul>
+      <li>Dubs that break the <a href="/use-policy">Use policy</a> are deleted.</li>
+      <li>Accounts that break it on purpose are closed.</li>
+      <li>A reported account can be frozen: nothing of it can be deleted until the report is resolved. We keep a 90-day record of
+        what is done with real people's voices and give it to the police or a court when the law requires, never to the
+        person who reported.</li></ul></div>
+  </div>
+</section>
 
-<h2>AI notice</h2>
-<p>Under Korea's AI Basic Act (in force since 22 January 2026), people should be told when content is generated by AI.
-  Every DUBBE dub is made by AI models: speech recognition, machine translation and synthetic speech. A person may have
-  corrected some sentences, but the voice is always synthetic. Keep the label when you publish a dub, and tell your
-  viewers it is AI-dubbed.</p>
-<p>Known limits: the translation can be wrong while sounding fluent; review flags do not catch every error; names and
-  technical terms are often mistranslated; the voice follows the original's loudness and pitch but does not reliably carry its
-  emotion; similar voices can be taken for one speaker.</p>
+<section class="sec">
+  <h2>AI notice</h2>
+  <p class="sub">Under Korea's AI Basic Act (in force since 22 January 2026), people should be told when content is generated by AI.
+    Every DUBBE dub is made by AI models: speech recognition, machine translation and synthetic speech. A person may have
+    corrected some sentences, but the voice is always synthetic. Keep the label when you publish a dub, and tell your
+    viewers it is AI-dubbed.</p>
+  <h3>Known limits</h3>
+  <div class="icards compact">
+    <div class="icard" style="--c:var(--amber)"><span class="ic">{{ icon("globe") }}</span><p>The translation can be wrong while sounding fluent.</p></div>
+    <div class="icard" style="--c:var(--amber)"><span class="ic">{{ icon("list") }}</span><p>Review flags do not catch every error.</p></div>
+    <div class="icard" style="--c:var(--amber)"><span class="ic">{{ icon("text") }}</span><p>Names and technical terms are often mistranslated.</p></div>
+    <div class="icard" style="--c:var(--amber)"><span class="ic">{{ icon("speak") }}</span><p>The voice follows the original's loudness and pitch but does not reliably carry its emotion.</p></div>
+    <div class="icard" style="--c:var(--amber)"><span class="ic">{{ icon("users") }}</span><p>Similar voices can be taken for one speaker.</p></div>
+  </div>
+</section>
 
-<h2>Report misuse</h2>
-<p>If you find a dub made with DUBBE that impersonates someone, deceives viewers, or uses a video without permission,
-  <a href="/contact?topic=report">report it</a>. Include a link and what is wrong. We answer within 2 working days.</p>
+<section class="sec">
+  <div class="split-card">
+    <div><h2>Report misuse</h2>
+      <p>Found a dub made with DUBBE that impersonates someone, deceives viewers, or uses a video without permission?
+        Include a link and what is wrong. We answer within 2 working days.</p></div>
+    <p class="actions"><a href="/contact?topic=report" role="button">Report it</a></p>
+  </div>
+</section>
 {% endblock %}

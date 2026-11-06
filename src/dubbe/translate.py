@@ -18,7 +18,8 @@ def run(video: Path, work: Path, cfg: dict) -> None:
     from transformers import AutoTokenizer
 
     data = read_json(work / "segments.json")
-    todo = [s for s in data["segments"] if not s["edited"]]  # human edits always win
+    todo = [s for s in data["segments"] if not s.get("edited")  # human edits always win
+            and not (cfg.get("only_missing") and s.get("tgt_text"))]  # Subtitles after a fix: only sentences without one
     dev = device()
     tok = AutoTokenizer.from_pretrained(TOKENIZER, src_lang=cfg["src"]["nllb"])
     tr = ctranslate2.Translator(snapshot_download(MODEL), device=dev, compute_type="int8_float16" if dev == "cuda" else "int8")

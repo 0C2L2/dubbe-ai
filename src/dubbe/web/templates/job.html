@@ -21,7 +21,8 @@
   <form method="post" action="/app/jobs/{{ job.id }}/retry"><button>Try again from this step</button></form>
 {% endif %}
 
-{% set cur = stages.index(job.stage) if job.stage in stages else (-1 if job.status == "waiting" else 0) %}
+{% if job.stage == "download" and job.status == "running" %}<p class="muted">Downloading the video from your link…</p>{% endif %}
+{% set cur = stages.index(job.stage) if job.stage in stages else (-1 if job.status == "waiting" or job.stage == "download" else 0) %}
 <ul class="stages">
 {% for s in stages %}
   <li class="{{ 'done' if job.status == 'done' or loop.index0 < cur else ('now' if loop.index0 == cur and job.status == 'running' else 'todo') }}">{{ s }}</li>

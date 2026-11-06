@@ -199,6 +199,7 @@ def test_redub_speaks_only_changed_sentences(monkeypatch, tmp_path):
     (tmp_path / "segments.json").write_text(json.dumps(data))
     data = redub()
     assert [(len(t), seeds) for t, seeds in spoken] == [(2, [0, 1])]  # the fixed one and the retake, with its own seed
+    assert data["spoken"] == [2, 3]  # what this run spoke: a library clone's use counts only these
     spoken.clear()
     data["speakers"]["S1"]["voice"] = "af_bella"  # a new voice for the speaker: all their sentences again
     (tmp_path / "segments.json").write_text(json.dumps(data))
@@ -231,3 +232,31 @@ def test_every_sentence_is_spoken_at_one_level():
     for x in (quiet, loud, with_pause):
         assert abs(tts.speech_db(tts.level(x, sr), sr) - tts.LEVEL_DB) < .1
     assert not tts.level(np.zeros(sr, "float32"), sr).any() and tts.level(quiet, sr).dtype == np.float32
+
+
+def test_ming_hears_the_reference_itself_when_it_knows_what_it_says(monkeypatch, tmp_path):
+    """Without a transcript Ming drops the reference's sound and keeps only a speaker fingerprint (C62)."""
+    import json
+    import subprocess
+    import soundfile as sf
+    sent = {}
+
+    def run(cmd, input, **kw):
+        sent["items"] = json.loads(input)["items"]
+        for it in sent["items"]:
+            sf.write(it["out"], np.zeros(10, "float32"), 44100)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(tts.subprocess, "run", run)
+    monkeypatch.setattr(tts, "PROMPTS", tmp_path)
+    (tmp_path / "af_test.wav").write_bytes(b"RIFF")  # already recorded: no Kokoro needed
+    preset = tts.preset_prompt("af_test")
+    assert tts.prompt_text(preset, "en") == tts.PROMPT_TEXT  # a preset says PROMPT_TEXT, in English
+    assert tts.prompt_text(preset, "ko") is None  # an English recording for Korean: worse words (C62), fingerprint only
+    clone = tmp_path / "voice_prompt_S2.wav"
+    clone.write_bytes(b"RIFF")
+    list(tts._prompted(["Hi.", "Bye."], {"engine": "ming", "prompts": [str(preset), str(clone)]}))
+    assert sent["items"][0]["prompt_text"] == tts.PROMPT_TEXT  # English dub (lang unset = English)
+    assert sent["items"][1]["prompt_text"] is None  # a clone made before C62: no text, fingerprint only
+    clone.with_suffix(".txt").write_text("ko\n안녕하세요", encoding="utf8")
+    list(tts._prompted(["안녕."], {"engine": "ming", "lang": "ko", "prompt": str(clone)}))
+    assert sent["items"][0]["prompt_text"] == "안녕하세요"  # a Korean clone in a Korean dub
