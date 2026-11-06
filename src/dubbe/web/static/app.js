@@ -778,25 +778,27 @@ document.querySelectorAll('canvas[data-wave]').forEach(c => {
   // what the piece of speech is in each segment, where that segment ends (fraction of the height), the step there
   const flow = out ? [['en', .36, 'VOICE CLONE'], ['steps', .7, 'LIP SYNC · MIX'], ['clean', 1, '']]
                    : [['noisy', .3, 'SEPARATE VOICE'], ['clean', .62, 'SPEECH → TEXT'], ['ko', 1, '']];
-  const words = out ? ['hello', 'today', 'we', 'learn'] : ['안', '녕', '하', '세'];
-  const mono = '500 10px "Geist Mono", ui-monospace, monospace', H = 112;  // the piece's height
-  const level = (s, noisy) => {  // speech: syllables inside a phrase; the original also has noise in it
-    const syl = Math.max(0, Math.sin(s * 0.11)) ** 0.7, phrase = 0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, Math.max(0, s / 70)));
-    return syl * phrase * (noisy ? 0.6 + 0.4 * Math.abs(Math.sin(s * 1.7) * Math.sin(s * 0.53)) : 1);
+  const words = out ? ['hello', 'everyone', 'today', 'we', 'learn', 'how', 'voices', 'travel']
+                    : ['안', '녕', '하', '세', '요', '오', '늘', '은'];
+  const mono = '500 10px "Geist Mono", ui-monospace, monospace', H = 200;  // the piece: a whole sentence, not a burst
+  const level = (y, noisy) => {  // a spoken sentence: never silent inside, syllables on top, swelling in the middle
+    const syl = 0.3 + 0.7 * Math.abs(Math.sin(y * 0.09)) ** 0.6, sentence = 0.35 + 0.65 * Math.sin(Math.PI * y / H);
+    const v = syl * sentence * (0.75 + 0.25 * Math.sin(y * 0.031 + 1));
+    return noisy ? v * (0.65 + 0.35 * Math.abs(Math.sin(y * 1.7) * Math.sin(y * 0.53))) : v;
   };
   const piece = (kind, py, g, max) => {  // the piece of speech, its top at py
     ctx.fillStyle = g;
     if (kind === 'ko' || kind === 'en') {  // text: one chip per syllable or word
       ctx.font = mono; ctx.textAlign = 'center';
       words.forEach((s, k) => {
-        const y = py + 12 + k * 28, cw = ctx.measureText(s).width + 14;
+        const y = py + 12 + k * 24, cw = ctx.measureText(s).width + 14;
         ctx.globalAlpha = .7; ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect((w - cw) / 2, y - 8, cw, 16, 8); ctx.fill();
         ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(s, w / 2, y + 3.5);
       });
       return;
     }
-    for (let y = 0; y < H; y += 7) {
-      let v = level(y / 1.6, kind === 'noisy');
+    for (let y = 0; y < H; y += 5) {
+      let v = level(y, kind === 'noisy');
       if (kind === 'steps') v = Math.round(v * 6) / 6;  // a new voice, built step by step
       const bw = Math.max(2, v * max * (kind === 'noisy' ? 1 : .8));
       ctx.globalAlpha = .42; ctx.beginPath(); ctx.roundRect((w - bw) / 2, py + y, bw, 3, 1.5); ctx.fill();
