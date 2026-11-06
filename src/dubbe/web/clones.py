@@ -24,7 +24,8 @@ import yaml
 
 from . import db
 
-RATE = 0.03  # US$ per 1,000 characters, what ElevenLabs pays voice owners (docs/project-plan.md C14); shown, not paid
+RATE = 0.03  # US$ per 1,000 characters, what ElevenLabs pays voice owners (docs/project-plan.md C14): a new voice's price
+MAX_RATE = 1.0  # the most an owner may ask; the owner sets their own price in the listing (shown, not charged in the beta)
 MAX_CER = 0.3  # how far the recording may be from the shown sentences (Whisper's own error on read speech: ~10 %)
 MIN_SECONDS = 8  # Chatterbox needs more than 5 s of voice
 FRESH_S = 1800  # the sentences are valid for 30 minutes after they were shown
@@ -109,6 +110,7 @@ def _listed(uid: int, where: str, args: list, order: str = "voices.id desc") -> 
     return db.all_("select voices.*, users.name owner_name, "
                    "(select count(*) from voice_uses where voice_id=voices.id and user_id<>voices.owner_id) uses, "  # by others, like earnings
                    "(select coalesce(sum(chars), 0) from voice_uses where voice_id=voices.id and user_id<>voices.owner_id) chars, "
+                   "(select coalesce(sum(chars * rate), 0) / 1000.0 from voice_uses where voice_id=voices.id and user_id<>voices.owner_id) earn, "
                    "(select count(*) from voice_saves where voice_id=voices.id) saves, "
                    "(select avg(stars) from voice_reviews where voice_id=voices.id) rating, "
                    "(select count(*) from voice_reviews where voice_id=voices.id) reviews, "
@@ -154,8 +156,10 @@ def studio(u) -> dict:
     r = db.one(f"select (select count(*) {mine.format(t='voice_uses')} and user_id<>owner_id) uses, "
                f"(select coalesce(sum(chars), 0) {mine.format(t='voice_uses')} and user_id<>owner_id) chars, "
                f"(select count(*) {mine.format(t='voice_saves')}) saves, (select avg(stars) {mine.format(t='voice_reviews')}) rating, "
-               f"(select count(*) {mine.format(t='voice_reviews')}) reviews", *[u["id"]] * 5)
-    return {**dict(r), "earn": round(r["chars"] / 1000 * RATE, 4)}
+               f"(select count(*) {mine.format(t='voice_reviews')}) reviews, "
+               f"(select coalesce(sum(chars * voice_uses.rate), 0) / 1000.0 {mine.format(t='voice_uses')} and user_id<>owner_id) earn",
+               *[u["id"]] * 6)
+    return {**dict(r), "earn": round(r["earn"], 4)}  # each use at the price it had then
 
 
 def listing_error(description: str, category: str, tags: list[str], complete: bool = True) -> str | None:
@@ -251,15 +255,26 @@ def write_speaker_reference(pid: int, key: str, dest: Path) -> bool:
 
 
 def record_use(key: str, uid: int, chars: int, kind: str) -> None:
-    db.run("insert into voice_uses(voice_id, user_id, chars, kind, created_at) values(?,?,?,?,?)",
-           voice_id(key), uid, chars, kind, db.now())
+    """A use, at the voice's price now: a later price change does not rewrite what was earned."""
+    vid = voice_id(key)
+    db.run("insert into voice_uses(voice_id, user_id, chars, kind, created_at, rate) "
+           "values(?,?,?,?,?,(select rate from voices where id=?))", vid, uid, chars, kind, db.now(), vid)
+
+
+def rate_error(raw: str) -> tuple[float | None, str | None]:
+    """The owner's price from the listing form: US$ per 1,000 characters, 0 (free) to MAX_RATE, in cents."""
+    try:
+        r = round(float((raw or "").strip().lstrip("$")), 2)
+    except ValueError:
+        return None, "Set the price as a number, for example 0.03."
+    return (r, None) if 0 <= r <= MAX_RATE else (None, f"Set a price from $0 (free) to ${MAX_RATE:.2f} per 1,000 characters.")
 
 
 def stats(v) -> dict:
-    """Uses by other people and what the owner would earn at RATE (nothing is paid in the beta)."""
-    r = db.one("select count(*) n, coalesce(sum(chars), 0) chars from voice_uses where voice_id=? and user_id<>?",
-               v["id"], v["owner_id"])
-    return {"uses": r["n"], "chars": r["chars"], "earn": round(r["chars"] / 1000 * RATE, 4)}
+    """Uses by other people and what the owner would earn, each use at the price it had (nothing is paid in the beta)."""
+    r = db.one("select count(*) n, coalesce(sum(chars), 0) chars, coalesce(sum(chars * rate), 0) / 1000.0 earn "
+               "from voice_uses where voice_id=? and user_id<>?", v["id"], v["owner_id"])
+    return {"uses": r["n"], "chars": r["chars"], "earn": round(r["earn"], 4)}
 
 
 def delete(vid: int) -> None:

@@ -56,7 +56,9 @@ create table if not exists evidence(id integer primary key, user_id integer not 
 """
 # trust.py (2026-11-07): a verified phone before cloning, frozen accounts, dubs in the speakers' own voices
 ADDED = {"users": (("phone", "text"), ("phone_verified_at", "real"), ("frozen_at", "real")),
-         "projects": (("own_voices", "integer not null default 0"),)}
+         "projects": (("own_voices", "integer not null default 0"),),
+         # the Marketplace: each owner's price (US$ per 1,000 characters), and the price at the time of each use
+         "voices": (("rate", "real not null default 0.03"),), "voice_uses": (("rate", "real not null default 0.03"),)}
 # added after the voices table shipped: the marketplace listing of a shared voice, the admin's note on a rejection,
 # and source ("video:<task id>" for a speaker cloned from an uploaded video: always private, never listed)
 VOICE_LISTING = ("description", "category", "tags", "review_note", "source")

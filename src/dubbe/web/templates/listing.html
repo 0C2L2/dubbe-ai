@@ -15,6 +15,7 @@
       <div><b>{{ v.uses }}</b><span>uses by others</span></div>
       <div><b>{{ v.saves }}</b><span>added</span></div>
       <div><b>{{ v.category or "—" }}</b><span>category</span></div>
+      <div><b>{{ "Free" if not v.rate else "$%.2f" | format(v.rate) }}</b><span>per 1,000 characters, set by the owner · not charged in the beta</span></div>
     </div>
     <div class="actions">
       {% if v.owner_id == user.id %}<a role="button" href="/app/studio/{{ v.id }}">Edit in Voice Studio</a>

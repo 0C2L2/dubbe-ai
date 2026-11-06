@@ -1425,6 +1425,7 @@ def studio(request: Request):
 def studio_page(request: Request, u, vid: int, status: int = 200, **ctx):
     v = clones.listing(u, vid)
     return page(request, "studio_voice.html", status, user=u, v=v, step=clones.step(v), STEPS=clones.STEPS, RATE=clones.RATE,
+                MAX_RATE=clones.MAX_RATE,
                 CATS=clones.CATEGORIES, ALLTAGS=clones.TAGS, sample=(clones.folder(vid) / "sample.mp3").exists(),
                 **{"form": None, **ctx})
 
@@ -1437,22 +1438,23 @@ def studio_voice(request: Request, vid: int):
 
 @app.post("/app/studio/{vid}")
 def studio_save(request: Request, vid: int, action: str = Form("save"), name: str = Form(""), description: str = Form(""),
-                category: str = Form(""), chosen: list[str] = Form([], alias="tags"), agree: str = Form("")):
+                category: str = Form(""), chosen: list[str] = Form([], alias="tags"), agree: str = Form(""), rate: str = Form("")):
     """Save the listing as a draft, or submit it for review (first time, or again after a rejection: needs the agreement).
     A listed or in-review listing must stay complete."""
     u, v = own_voice(request, vid)
     if v["owner_id"] != u["id"] or v["status"] != "ready":
         raise HTTPException(400)
     submit = action == "submit" and v["shared"] in ("no", "rejected") and not v["source"]  # a voice from a video stays private
-    error = ("Give the voice a name." if not name.strip() else
+    price, price_error = clones.rate_error(rate) if rate.strip() else (v["rate"], None)
+    error = ("Give the voice a name." if not name.strip() else price_error or
              clones.listing_error(description, category, chosen, complete=submit or v["shared"] in ("listed", "pending")) or
              ("Please tick the agreement to publish." if submit and not agree else None) or
              ("Verify your phone first (Settings → Phone): publishing a voice needs it." if submit and not trust.verified(u) else None))
     if error:
         return studio_page(request, u, vid, 400, error=error,
-                           form={"name": name, "description": description, "category": category, "tags": chosen})
-    db.run("update voices set name=?, description=?, category=?, tags=? where id=?",
-           name.strip()[:60], description.strip(), category, ",".join(chosen), vid)
+                           form={"name": name, "description": description, "category": category, "tags": chosen, "rate": rate})
+    db.run("update voices set name=?, description=?, category=?, tags=?, rate=? where id=?",
+           name.strip()[:60], description.strip(), category, ",".join(chosen), price, vid)
     if submit:
         db.run("update voices set shared='pending', shared_at=?, review_note='' where id=?", db.now(), vid)
         trust.log(u, "publish-voice", vid, request)

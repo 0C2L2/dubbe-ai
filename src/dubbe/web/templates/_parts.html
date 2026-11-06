@@ -55,7 +55,8 @@
     <span class="muted small">by {{ v.owner_name or "a DUBBE user" }}</span>
     <span class="mk-meta">{{ stars(v.rating) }}<span class="small muted">{{ "%.1f" | format(v.rating) if v.rating else "New" }}{% if v.reviews %} ({{ v.reviews }}){% endif %} · {{ v.uses }} use{{ "s" if v.uses != 1 }}</span></span>
     <p class="small mk-desc">{{ v.description }}</p>
-    <span class="mk-tags"><span class="chip grey">{{ NAMES[v.lang] }}</span>{% if v.category %} <span class="chip grey">{{ v.category }}</span>{% endif %}</span>
+    <span class="mk-tags"><span class="chip grey">{{ NAMES[v.lang] }}</span>{% if v.category %} <span class="chip grey">{{ v.category }}</span>{% endif %}
+      <span class="chip grey" title="Set by the owner; not charged during the beta">{{ "Free" if not v.rate else "$%.2f / 1k chars" | format(v.rate) }}</span></span>
   </div>
   <div class="mk-act">
     {% if v.owner_id == me %}<a role="button" class="secondary" href="/app/voices/{{ v.id }}">Yours</a>

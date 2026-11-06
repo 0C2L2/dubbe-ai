@@ -767,3 +767,26 @@ def test_dub_with_their_own_voices_needs_consent_and_a_verified_phone(client, mo
     assert db.one("select own_voices from projects")["own_voices"] == 1
     assert db.one("select what from evidence")["what"] == "dub-upload"
     assert "--until" in worker.command(db.one("select * from projects"), None, "speakers")
+
+
+def test_owners_set_their_own_price_and_each_use_earns_at_the_price_it_had(client, monkeypatch):
+    """Marketplace prices (2026-11-07): the owner's own US$ per 1,000 characters, 0 = free, at most MAX_RATE."""
+    from dubbe.web import clones
+    assert clones.rate_error("0.05") == (0.05, None) and clones.rate_error("0") == (0.0, None)
+    assert clones.rate_error("-1")[1] and clones.rate_error("5")[1] and clones.rate_error("abc")[1]
+    oid, so = user("owner@x.org")
+    vid = db.run("insert into voices(owner_id, name, lang, script, status, created_at) values(?,?,?,?,?,?)",
+                 oid, "Calm", "en", "x", "ready", db.now())
+    assert db.one("select rate from voices where id=?", vid)["rate"] == clones.RATE  # a new voice starts at $0.03
+    client.cookies.set(auth.COOKIE, so)
+    form = {"action": "save", "name": "Calm", "description": "A calm voice for stories.", "category": "Narration", "tags": "calm"}
+    assert "from $0 (free)" in client.post(f"/app/studio/{vid}", data={**form, "rate": "9"}).text
+    client.post(f"/app/studio/{vid}", data={**form, "rate": "0.10"})
+    assert db.one("select rate from voices where id=?", vid)["rate"] == 0.10
+    other, _ = user("buyer@x.org")
+    clones.record_use(f"clone:{vid}", other, 2000, "dub")  # 2,000 characters at $0.10 / 1k
+    client.post(f"/app/studio/{vid}", data={**form, "rate": "0.50"})  # a later price does not rewrite it
+    clones.record_use(f"clone:{vid}", other, 1000, "dub")  # 1,000 characters at $0.50 / 1k
+    clones.record_use(f"clone:{vid}", oid, 5000, "dub")  # the owner's own use earns nothing
+    v = db.one("select * from voices where id=?", vid)
+    assert clones.stats(v)["earn"] == 0.7 and clones.studio(db.one("select * from users where id=?", oid))["earn"] == 0.7

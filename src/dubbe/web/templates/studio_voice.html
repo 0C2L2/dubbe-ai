@@ -36,7 +36,7 @@
     Change the listing and send it again, or keep the voice private.</div>
   {% elif v.shared == "listed" %}<div class="card studio-banner good"><b>Live in the Marketplace.</b>
     {{ v.uses }} use{{ "s" if v.uses != 1 }} by others, {{ v.saves }} added, {{ "%.1f ★" | format(v.rating) if v.rating else "no ratings yet" }} ·
-    would earn <b>${{ ("%.2f" if v.chars * RATE / 1000 >= 0.01 or not v.chars else "%.4f") | format(v.chars * RATE / 1000) }}</b>
+    {% set x = v.earn %}would earn <b>${{ ("%.2f" if x >= 0.01 or not x else "%.4f") | format(x) }}</b> at ${{ "%.2f" | format(v.rate) }} per 1,000 characters
     (payouts off in the beta). <a href="/app/market/{{ v.id }}">Open the listing →</a></div>{% endif %}
 
   <form method="post" action="/app/studio/{{ v.id }}" class="studio-grid{{ ' solo' if v.source }}" data-studio>
@@ -59,6 +59,10 @@
         <fieldset class="pick-group"><legend>Category</legend>
           {% for c in CATS %}<label class="pick-pill"><input type="radio" name="category" value="{{ c }}" {{ 'checked' if f.category == c }}><span>{{ c }}</span></label>{% endfor %}
         </fieldset>
+        <label>Your price <span class="muted">(US$ per 1,000 characters spoken by other people)</span>
+          <input name="rate" type="number" min="0" max="{{ MAX_RATE }}" step="0.01" value="{{ f.rate if f.rate is not none else '%.2f' | format(RATE) }}">
+          <small class="muted">0 makes it free. For comparison, ElevenLabs pays voice owners about ${{ RATE }}. Shown to people who use
+            your voice; nothing is charged or paid during the beta.</small></label>
         <fieldset class="pick-group" data-max="3"><legend>Tags <span class="count" data-count="tags">0/3</span></legend>
           {% for t in ALLTAGS %}<label class="pick-pill"><input type="checkbox" name="tags" value="{{ t }}" {{ 'checked' if t in chosen }}><span>{{ t }}</span></label>{% endfor %}
         </fieldset>
