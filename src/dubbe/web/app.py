@@ -187,7 +187,7 @@ def sample(vid: str):
 def _static(name: str):
     def view(request: Request):
         return page(request, "legal.html" if name in ("terms", "use-policy", "privacy") else f"{name}.html", name=name,
-                    voices=voices())
+                    voices=voices(), **({"ex": example(next(iter(EXAMPLES)))} if name == "features" else {}))
     return view
 
 

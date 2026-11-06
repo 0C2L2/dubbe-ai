@@ -1087,3 +1087,15 @@ label.pick-pill { display: inline-flex; margin: 0; position: relative; cursor: p
   .split-card { grid-template-columns: 1fr; padding: 24px; }
 }
 
+/* ---------- features: the steps of a dub light up one after another (10 s round, 2 s each) ---------- */
+.flow { display: grid; gap: 4px; }
+.fstep { position: relative; display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px;
+  color: var(--muted-2); font-size: .9rem; animation: fstep 10s var(--ease) infinite; animation-delay: calc(var(--i) * 2s); }
+.fstep .ico { width: 18px; height: 18px; margin: 0; flex: none; }
+.fstep b { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 2px; transform: scaleX(0);
+  transform-origin: left; background: linear-gradient(90deg, var(--orange), var(--red), var(--violet));
+  animation: fbar 10s linear infinite; animation-delay: calc(var(--i) * 2s); }
+@keyframes fstep { 0%, 19% { background: var(--bg-2); color: var(--ink); } 23%, 100% { background: transparent; color: var(--muted-2); } }
+@keyframes fbar { 0% { transform: scaleX(0); opacity: 1; } 19% { transform: scaleX(1); opacity: 1; } 23%, 100% { transform: scaleX(1); opacity: 0; } }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; color: var(--ink-3); font-size: .92rem; }
+
