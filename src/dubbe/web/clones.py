@@ -5,7 +5,8 @@ Rules:
   nobody can clone a voice from someone else's video). Whisper checks that the recording says them.
 - The recording is stored encrypted (Fernet, key in DUBBE_VOICE_KEY) and goes with the voice or the account. A dub or a
   text-to-speech job gets a decrypted copy for its own length only.
-- Everything a clone says carries Chatterbox's watermark and the AI label, like every DUBBE voice.
+- Everything a clone says carries the AI label, like every DUBBE voice; Chatterbox voices (the languages other than
+  English and Korean, which Ming speaks) also carry its inaudible watermark (Perth).
 - Sharing is opt-in and listed only after an admin listened to it; the owner can stop it at any time. Uses by other
   people are counted and the owner sees what they would earn - nothing is paid during the non-commercial beta.
 
@@ -311,7 +312,8 @@ def check(vid: int) -> None:
                                                                "prompt": str(wav)}))
         sf.write(Path(tmp) / "sample.wav", trim(audio), sr)
         ffmpeg("-i", str(Path(tmp) / "sample.wav"), "-b:a", "160k", "-metadata",
-               "comment=AI-generated: DUBBE voice clone, made with the owner's consent (watermarked)", str(folder(vid) / "sample.mp3"))
+               "comment=AI-generated: DUBBE voice clone, made with the owner's consent"
+               + (" (watermarked)" if engine.startswith("chatterbox") else ""), str(folder(vid) / "sample.mp3"))
     db.run("update voices set status='ready', heard=?, error=null, checked_at=? where id=?", heard, db.now(), vid)
 
 

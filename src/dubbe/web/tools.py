@@ -79,8 +79,9 @@ def text_to_speech(p: dict, out: Path, owner=None) -> dict:
         prompt.with_suffix(".txt").unlink(missing_ok=True)
     sf.write(out / "speech.wav", np.concatenate(parts[:-1]), sr)
     clone = tts["voice"].startswith("clone:")
+    marked = ", watermarked" if tts["engine"].startswith("chatterbox") else ""  # only Chatterbox adds one (Perth)
     ffmpeg("-i", str(out / "speech.wav"), "-b:a", "160k", "-metadata", "comment=AI-generated speech (DUBBE" +
-           (", consented voice clone, watermarked)" if clone else ")"), str(out / "speech.mp3"))
+           (f", consented voice clone{marked})" if clone else ")"), str(out / "speech.mp3"))
     if clone:
         clones.record_use(tts["voice"], owner["id"], sum(len(x) for x, _, _ in sents), "tts")
     return {"engine": tts["engine"], "voice": tts["voice"], "seconds": round(sf.info(out / "speech.wav").duration, 1),
