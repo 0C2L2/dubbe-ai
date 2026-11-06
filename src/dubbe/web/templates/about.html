@@ -1,41 +1,62 @@
 {% extends "base.html" %}
+{% from "_parts.html" import icon %}
 {% block title %}About — DUBBE{% endblock %}
 {% block main %}
-<h1>About DUBBE</h1>
-<p>Every step of automatic dubbing is a model, and errors compound: a misheard word becomes a confident wrong
-  translation, then fluent synthetic speech that says something wrong. DUBBE's answer is a second output next to the
-  dub — a short list of sentences a person should check, shown on the video's timeline.</p>
-<p>DUBBE is a capstone project of the Applied AI &amp; Business Capstone Design course, Inha University × HumbleBeeAI,
-  Fall 2026 (Team 1, project C2b — Video Translation and Dubbing).</p>
+<section class="phero">
+  <div>
+    <span class="eyebrow">About</span>
+    <h1>A dub that tells you what to check</h1>
+    <p class="lead">Every step of automatic dubbing is a model, and errors compound: a misheard word becomes a confident
+      wrong translation, then fluent synthetic speech that says something wrong. DUBBE's answer is a second output next to
+      the dub: a short list of sentences a person should check, shown on the video's timeline.</p>
+  </div>
+  <div class="phero-art grain" aria-hidden="true">
+    <span class="eyebrow">Where a dub goes wrong</span>
+    <div class="chips"><span>{{ icon("mic") }}Speech heard</span><span class="warn">{{ icon("text") }}Misheard word</span>
+      <span>{{ icon("globe") }}Translated</span><span class="warn">{{ icon("globe") }}Confidently wrong</span>
+      <span>{{ icon("speak") }}Spoken fluently</span><span>{{ icon("list") }}DUBBE flags it for a person</span></div>
+  </div>
+</section>
 
-<h2>Team</h2>
-<table>
-  <thead><tr><th>Member</th><th>Major</th><th>Role</th></tr></thead>
-  <tbody>
-    <tr><td>Kalandarov Ulugbek</td><td>IBT</td><td>Team Representative / PM</td></tr>
-    <tr><td>Isokulov Azamat</td><td>IBT</td><td>Problem &amp; Business</td></tr>
-    <tr><td>Samandarova Madina</td><td>IBT</td><td>Data &amp; Research, User &amp; Requirements</td></tr>
-    <tr><td>Musurmonov Jakhongir</td><td>IBT</td><td>Demo &amp; Presentation</td></tr>
-    <tr><td>Tagaev Rashid</td><td>ISE</td><td>AI / Technical Lead</td></tr>
-    <tr><td>Kholmirzaev Temurjon</td><td>ISE</td><td>Software / IT Engineer</td></tr>
-  </tbody>
-</table>
+<section class="sec">
+  <div class="split-card">
+    <div><h2>A capstone project</h2>
+      <p>Applied AI &amp; Business Capstone Design, Inha University × HumbleBeeAI, Fall 2026: Team 1, project C2b, Video
+        Translation and Dubbing.</p></div>
+    <p class="actions"><a href="https://github.com/0C2L2/dubbe-ai" role="button" class="secondary">Code on GitHub</a></p>
+  </div>
+</section>
 
-<h2>Models and licences</h2>
-<table class="small">
-  <thead><tr><th>Step</th><th>Model</th><th>Licence</th></tr></thead>
-  <tbody>
-    <tr><td>Speech recognition</td><td>Whisper large-v3 or large-v3-turbo per language, via faster-whisper</td><td>MIT</td></tr>
-    <tr><td>Voice / background separation</td><td>Demucs (htdemucs)</td><td>MIT</td></tr>
-    <tr><td>Translation</td><td>NLLB-200 3.3B (int8, CTranslate2)</td><td>CC BY-NC 4.0 (non-commercial)</td></tr>
-    <tr><td>English voice</td><td>Kokoro-82M</td><td>Apache 2.0</td></tr>
-    <tr><td>Voices in the other {{ NAMES | length - 1 }} languages</td><td>Chatterbox Multilingual — its built-in voice, or an English Kokoro preset speaking the language</td><td>MIT</td></tr>
-    <tr><td>Speaker detection</td><td>WavLM base plus SV (microsoft/wavlm-base-plus-sv)</td><td>none stated on the model card (WavLM code: MIT)</td></tr>
-    <tr><td>Emotion heard in the original</td><td>HuBERT large, SUPERB emotion (superb/hubert-large-superb-er)</td><td>Apache 2.0</td></tr>
-    <tr><td>Sounds heard in the original</td><td>AST, AudioSet (MIT/ast-finetuned-audioset-10-10-0.4593)</td><td>BSD 3-Clause</td></tr>
-    <tr><td>Expressive English voice (optional)</td><td>Chatterbox Turbo, built-in voice</td><td>MIT</td></tr>
-  </tbody>
-</table>
-<p class="muted">The code is on <a href="https://github.com/0C2L2/dubbe-ai">GitHub</a>. AI tools (Claude) were used to
-  write code and documentation; the team reviewed and tested it.</p>
+<section class="sec">
+  <h2>Team</h2>
+  <div class="people">
+  {% for name, major, role in [("Kalandarov Ulugbek", "IBT", "Team Representative / PM"), ("Isokulov Azamat", "IBT", "Problem & Business"),
+                              ("Samandarova Madina", "IBT", "Data & Research, User & Requirements"), ("Musurmonov Jakhongir", "IBT", "Demo & Presentation"),
+                              ("Tagaev Rashid", "ISE", "AI / Technical Lead"), ("Kholmirzaev Temurjon", "ISE", "Software / IT Engineer")] %}
+    {% set c = [("#f76b15", "#e5484d"), ("#e5484d", "#6e56cf"), ("#6e56cf", "#3b82f6"), ("#3b82f6", "#12a594"), ("#12a594", "#30a46c"), ("#e2a336", "#f76b15")][loop.index0] %}
+    <div class="person"><span class="av" style="--c1:{{ c[0] }};--c2:{{ c[1] }}">{{ name[0] }}{{ name.split(" ")[1][0] }}</span>
+      <div><b>{{ name }}<em>{{ major }}</em></b><span>{{ role }}</span></div></div>
+  {% endfor %}
+  </div>
+</section>
+
+<section class="sec">
+  <h2>Models and licences</h2>
+  <p class="sub">Every step is an open model running on our own GPU. The translation model is the reason the beta is non-commercial.</p>
+  <div class="icards">
+  {% for ic, c, step, model, lic, nc in [
+      ("mic", "var(--orange)", "Speech recognition", "Whisper large-v3 / large-v3-turbo (faster-whisper); Uzbek: rubaistt v2", "MIT · Apache 2.0", False),
+      ("layers", "var(--red)", "Voice and background", "Demucs (htdemucs)", "MIT", False),
+      ("users", "var(--violet)", "Who speaks when", "NVIDIA Nemotron 3 Diarization, with TitaNet-large voice fingerprints", "OpenMDW 1.1 · CC BY 4.0", False),
+      ("globe", "#3b82f6", "Translation", "NLLB-200 3.3B (int8, CTranslate2)", "CC BY-NC 4.0 · non-commercial", True),
+      ("speak", "#12a594", "English and Korean voices", "Ming-3.0-tts 0.5B and CosyVoice 3, from Kokoro-82M preset recordings", "MIT · Apache 2.0", False),
+      ("speak", "var(--green)", "Uzbek and Kazakh voices", "Navoiy TTS (CosyVoice 2); Piper with the ISSAI Kazakh voice", "Apache 2.0 · MIT, voice CC BY 4.0", False),
+      ("speak", "var(--amber)", "The other languages", "Chatterbox Multilingual; MMS as a fallback", "MIT · MMS CC BY-NC 4.0", False),
+      ("gauge", "#d6409f", "Emotion and sounds heard", "emotion2vec+ large (FunASR); AST on AudioSet", "FunASR model licence · BSD 3-Clause", False)] %}
+    <div class="icard" style="--c:{{ c }}"><span class="ic">{{ icon(ic) }}</span><h3>{{ step }}</h3><p>{{ model }}</p>
+      <span class="lic{{ ' nc' if nc }}">{{ lic }}</span></div>
+  {% endfor %}
+  </div>
+  <p class="fine">AI tools (Claude) were used to write code and documentation; the team reviewed and tested it.</p>
+</section>
 {% endblock %}

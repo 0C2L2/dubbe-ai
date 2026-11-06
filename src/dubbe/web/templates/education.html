@@ -1,35 +1,72 @@
 {% extends "base.html" %}
+{% from "_parts.html" import icon %}
 {% block title %}DUBBE for lecturers and schools{% endblock %}
 {% block main %}
-<section class="hero">
-  <h1>Lectures in a second language — checked before students see them</h1>
-  <p class="lead">A wrong sentence in a lecture is worse than a wrong sentence in an ad: students learn it. DUBBE dubs
-    lectures between {{ NAMES | length }} languages (Korean ↔ English tested most) and shows you which sentences to check first.</p>
-  <p class="actions"><a href="/signup" role="button">Start free</a><a href="/contact?topic=school" role="button" class="secondary">School / team: contact us</a></p>
+<section class="phero">
+  <div>
+    <span class="eyebrow">For lecturers and schools</span>
+    <h1>Lectures in a second language, checked before students see them</h1>
+    <p class="lead">A wrong sentence in a lecture is worse than a wrong sentence in an ad: students learn it. DUBBE dubs
+      lectures between {{ NAMES | length }} languages (Korean ↔ English tested most) and shows you which sentences to check first.</p>
+    <p class="actions"><a href="/signup" role="button">Start free</a><a href="/contact?topic=school" role="button" class="secondary">School / team: contact us</a></p>
+  </div>
+  <div class="phero-art grain" aria-hidden="true">
+    <div class="paper">
+      <div class="paper-head"><span>Lecture 3 · 42 sentences</span><span>review</span></div>
+      <div class="pl"><b>0:12</b><i></i></div>
+      <div class="pl flag"><b>0:31</b><i></i><em>check · term</em></div>
+      <div class="pl"><b>0:48</b><i></i></div>
+      <div class="pl"><b>1:05</b><i></i></div>
+      <div class="pl flag"><b>1:22</b><i></i><em>check · heard</em></div>
+      <div class="pl"><b>1:40</b><i></i></div>
+    </div>
+    <div class="chips"><span class="warn">{{ icon("list") }}11 of 42 to check</span><span>{{ icon("cc") }}SRT · WebVTT</span></div>
+  </div>
 </section>
 
-<h2>Why lecturers use review flags</h2>
-<div class="cards">
-  <article><b>Start with the flagged sentences</b><p>On our test clips DUBBE flagged 3 of 15 and 11 of 42 sentences,
-    so a teaching assistant knows where to start. Flags miss some confident mistakes — a final listen is still needed.</p></article>
-  <article><b>Terms stay right</b><p>Correct a technical term once in the editor; your text is never re-translated.</p></article>
-  <article><b>Subtitles too</b><p>SRT and WebVTT in both languages for your learning platform, timed to the dubbed video.</p></article>
-</div>
+<section class="sec">
+  <div class="stats">
+    <div><b>3 of 15</b><span>sentences flagged on one test clip: a teaching assistant knows where to start</span></div>
+    <div><b>11 of 42</b><span>flagged on a longer one; flags miss some confident mistakes, so a final listen is still needed</span></div>
+    <div><b>{{ NAMES | length }}</b><span>languages, Korean ↔ English tested most</span></div>
+  </div>
+</section>
 
-<h2>Built for course videos</h2>
-<ul>
-  <li><b>Long videos without drift</b> — every sentence is placed where it was said.</li>
-  <li><b>Slides stay in sync</b> — DUBBE can slow the picture slightly instead of rushing the voice.</li>
-  <li><b>Your files, not a platform's</b> — download an MP4 for any learning platform (YouTube's free auto-dubbing
-    only works for videos published on YouTube).</li>
-  <li><b>Privacy</b> — videos are deleted after your plan's retention period, or whenever you delete them.
-    <a href="/privacy">Privacy notice</a></li>
-</ul>
+<section class="sec">
+  <h2>Why lecturers use review flags</h2>
+  <p class="sub">The dub is the draft. The flags tell you which few sentences to listen to before it goes to students.</p>
+  <div class="icards">
+    <div class="icard" style="--c:var(--orange)"><span class="ic">{{ icon("list") }}</span><h3>Start with the flagged sentences</h3>
+      <p>Not every sentence needs a check: start where DUBBE was unsure, then listen through once.</p></div>
+    <div class="icard" style="--c:var(--violet)"><span class="ic">{{ icon("text") }}</span><h3>Terms stay right</h3>
+      <p>Correct a technical term once in the editor; your text is never re-translated.</p></div>
+    <div class="icard" style="--c:var(--green)"><span class="ic">{{ icon("cc") }}</span><h3>Subtitles too</h3>
+      <p>SRT and WebVTT in both languages for your learning platform, timed to the dubbed video.</p></div>
+  </div>
+</section>
 
-<h2>For schools</h2>
-<p>Students and staff with a school email address (for example <code>.ac.kr</code> or <code>.edu</code>) will get extra
-  free minutes — the amount is being decided. Departments that want to dub a whole course can
-  <a href="/contact?topic=school">contact us</a>.</p>
-<p class="notice draft">DUBBE is a student project and non-commercial during the beta: the translation model is licensed
-  for non-commercial use only. Teaching use is fine; selling the dubbed videos is not.</p>
+<section class="sec">
+  <h2>Built for course videos</h2>
+  <div class="icards">
+    <div class="icard" style="--c:#3b82f6"><span class="ic">{{ icon("clock") }}</span><h3>Long videos without drift</h3>
+      <p>Every sentence is placed where it was said.</p></div>
+    <div class="icard" style="--c:var(--red)"><span class="ic">{{ icon("film") }}</span><h3>Slides stay in sync</h3>
+      <p>DUBBE can slow the picture slightly instead of rushing the voice.</p></div>
+    <div class="icard" style="--c:var(--amber)"><span class="ic">{{ icon("folder") }}</span><h3>Your files, not a platform's</h3>
+      <p>Download an MP4 for any learning platform. YouTube's free auto-dubbing only works for videos published on YouTube.</p></div>
+    <div class="icard" style="--c:#12a594"><span class="ic">{{ icon("shield") }}</span><h3>Privacy</h3>
+      <p>Videos are deleted after your plan's retention period, or whenever you delete them. <a href="/privacy">Privacy notice</a></p></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="split-card">
+    <div><h2>For schools</h2>
+      <p>Students and staff with a school email address (for example <code>.ac.kr</code> or <code>.edu</code>) will get extra
+        free minutes; the amount is being decided. Departments that want to dub a whole course can contact us.</p></div>
+    <p class="actions"><a href="/contact?topic=school" role="button">Contact us</a></p>
+  </div>
+  <p class="fine">DUBBE is a student project and non-commercial during the beta: the translation model is licensed for
+    non-commercial use only. Teaching use is fine; selling the dubbed videos is not.</p>
+</section>
 {% endblock %}

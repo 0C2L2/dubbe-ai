@@ -1007,3 +1007,83 @@ label.pick-pill { display: inline-flex; margin: 0; position: relative; cursor: p
   .auth-form { padding: 28px 24px; }
 }
 
+/* ---------- content pages (education, about, safety, language pairs): a hero with art, sections of icon cards,
+   measured numbers, steps, people. Cards are white on the off-white page, icons in the brand colours (--c). ---------- */
+.phero { display: grid; grid-template-columns: 1.08fr .92fr; gap: 56px; align-items: center; padding: 56px 0 24px; }
+.phero h1 { margin: 0 0 18px; }
+.phero .lead { margin: 0 0 26px; }
+.phero .actions { margin: 0; }
+.phero-art { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 360px;
+  padding: 30px; border-radius: 28px; color: #fff; overflow: hidden; }
+.phero-art .eyebrow { color: rgba(255, 255, 255, .8); margin: 0 0 4px; }
+.sec { padding-top: 72px; }
+.sec > h2 { margin: 0 0 8px; }
+.sec > .sub { color: var(--muted); max-width: 46rem; margin: 0 0 26px; }
+.icards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.icards.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.icards.compact { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.icards.compact .icard { padding: 18px; } .icards.compact .ic { width: 36px; height: 36px; margin-bottom: 12px; }
+.icard { padding: 24px; border: 1px solid var(--line); border-radius: 22px; background: #fff; }
+.icard .ic { display: inline-grid; place-items: center; width: 42px; height: 42px; margin-bottom: 16px; border-radius: 13px;
+  background: var(--c, var(--orange)); color: #fff; }
+.icard .ic .ico { width: 21px; height: 21px; margin: 0; }
+.icard h3 { margin: 0 0 6px; font-size: 1.08rem; font-weight: 500; letter-spacing: -.01em; }
+.icard p { margin: 0; color: var(--ink-3); font-size: .95rem; }
+.icard ul { margin: 0; padding-left: 1.1rem; color: var(--ink-3); font-size: .93rem; }
+.icard li { margin-bottom: .5em; }
+.icard small { display: block; margin-top: 4px; color: var(--muted); }
+.lic { display: inline-block; margin-top: 14px; padding: 5px 9px; border-radius: 999px; background: var(--panel); color: var(--ink-3);
+  font: 500 .7rem/1.4 var(--mono); }
+.lic.nc { background: #fbf4e6; color: #6b4a0d; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); overflow: hidden; border: 1px solid var(--line);
+  border-radius: 22px; background: #fff; }
+.stats > div { padding: 26px; border-left: 1px solid var(--line); margin-left: -1px; }
+.stats b { display: block; margin-bottom: 10px; font: 300 2.5rem/1 var(--display); letter-spacing: -.03em; }
+.stats span { display: block; color: var(--muted); font-size: .88rem; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 0; padding: 0; list-style: none;
+  counter-reset: st; }
+.steps li { margin: 0; padding: 22px 20px; border: 1px solid var(--line); border-radius: 20px; background: #fff; color: var(--ink-3);
+  font-size: .93rem; counter-increment: st; }
+.steps li::before { content: counter(st); display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 14px;
+  border-radius: 50%; background: var(--ink); color: #fff; font: 500 .82rem/1 var(--mono); }
+.steps li b { display: block; margin-bottom: 4px; color: var(--ink); font-weight: 500; }
+.steps li.key::before { background: linear-gradient(135deg, var(--orange), var(--red) 55%, var(--violet)); }
+.people { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.person { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 20px;
+  background: #fff; }
+.person .av { display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: 50%; color: #fff;
+  font: 500 .95rem/1 var(--display); background: linear-gradient(135deg, var(--c1), var(--c2)); }
+.person b { display: block; font-weight: 500; }
+.person span { color: var(--muted); font-size: .88rem; }
+.person em { margin-left: 6px; padding: 3px 7px; border-radius: 999px; background: var(--panel); color: var(--ink-3);
+  font: 500 .66rem/1 var(--mono); font-style: normal; vertical-align: 2px; }
+.split-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 24px; padding: 30px 32px;
+  border: 1px solid var(--line); border-radius: 24px; background: var(--bg-2); }
+.split-card h2 { margin: 0 0 8px; font-size: 1.7rem; }
+.split-card p { margin: 0; color: var(--ink-3); }
+.split-card .actions { margin: 0; }
+.fine { margin: 18px 0 0; color: var(--muted); font-size: .85rem; }
+/* art pieces on the gradient: a white card listing a lecture's sentences (some flagged), chips, a 2x2 of pills */
+.paper { padding: 18px 18px 16px; border-radius: 18px; background: #fff; color: var(--ink); box-shadow: 0 22px 44px -22px rgba(0, 0, 0, .45); }
+.paper-head { display: flex; justify-content: space-between; margin-bottom: 12px; font: 500 .72rem/1 var(--mono); color: var(--muted); }
+.pl { display: flex; align-items: center; gap: 10px; padding: 6px 0; font: 500 .7rem/1 var(--mono); color: var(--muted-2); }
+.pl i { flex: 1; height: 7px; border-radius: 4px; background: var(--panel); }
+.pl.flag i { background: #fde3cf; }
+.pl em { padding: 4px 8px; border-radius: 999px; background: #fff1e6; color: #b5480b; font-style: normal; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips span { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 999px; background: rgba(255, 255, 255, .92);
+  color: var(--ink); font-size: .88rem; }
+.chips span.warn { background: #fff1e6; color: #b5480b; }
+.chips .ico { width: 16px; height: 16px; margin: 0; }
+.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.quad > div { padding: 16px; border-radius: 16px; background: rgba(255, 255, 255, .16); }
+.quad b { display: block; font-weight: 500; } .quad span { font-size: .82rem; color: rgba(255, 255, 255, .85); }
+.quad .ico { width: 20px; height: 20px; margin: 0 0 10px; }
+@media (max-width: 900px) {
+  .phero { grid-template-columns: 1fr; gap: 28px; padding: 28px 0 8px; }
+  .phero-art { min-height: 0; }
+  .sec { padding-top: 52px; }
+  .icards.two { grid-template-columns: 1fr; }
+  .split-card { grid-template-columns: 1fr; padding: 24px; }
+}
+
