@@ -752,6 +752,14 @@ document.querySelectorAll('[data-live]').forEach(root => {
   poll();
 });
 
+// Password fields: Show / Hide what was typed.
+document.querySelectorAll('[data-show-pw]').forEach(b => b.addEventListener('click', () => {
+  const input = b.previousElementSibling, show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  b.textContent = show ? 'Hide' : 'Show';
+  b.setAttribute('aria-label', show ? 'Hide the password' : 'Show the password');
+}));
+
 // Side art (public pages, wide screens only): one piece of speech goes through the dubbing pipeline down the margins,
 // in order - nothing exists below a step until that step has made it. Left: noisy voice in -> SEPARATE VOICE -> clean
 // voice -> SPEECH -> TEXT -> Korean text, out at the bottom; right: TRANSLATE -> English text -> VOICE CLONE -> a new
