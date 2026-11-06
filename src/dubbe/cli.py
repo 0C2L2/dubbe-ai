@@ -18,6 +18,8 @@ def main(argv=None) -> None:
     p.add_argument("--work", type=Path, default=Path("work"), help="folder for intermediate files")
     p.add_argument("--from", dest="start", choices=STAGES, help="re-run from this stage (e.g. after editing segments.json)")
     p.add_argument("--force", action="store_true", help="re-run every stage")
+    p.add_argument("--until", choices=STAGES, help="stop after this stage (the website clones the speakers after "
+                                                     "'speakers', then runs the rest)")
     p.add_argument("--slow-video", type=float, metavar="MAX", help="allow slowing the picture up to MAX (e.g. 1.2) "
                    "where the dub is longer, instead of only speeding up speech")
     p.add_argument("--no-background", action="store_true", help="voice only: drop music/effects (faster, no separation)")
@@ -63,6 +65,9 @@ def main(argv=None) -> None:
         for later in names[i + 1:]:
             log["done"].pop(later, None)  # later stages are now stale
         write_json(log_path, log)
+        if name == a.until:
+            print(f"Stopped after {name} (--until)")
+            return
     print(f"Done: {(work / 'dubbed.mp4').resolve()}\nReview: {(work / 'report.html').resolve()}")
 
 

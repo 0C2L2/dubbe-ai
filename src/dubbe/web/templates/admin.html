@@ -2,7 +2,7 @@
 {% block title %}Admin — DUBBE{% endblock %}
 {% block main %}
 <span class="eyebrow">Admin</span>
-<h1 class="app-h1">{{ {"overview": "Overview", "users": "Users", "jobs": "Jobs", "messages": "Messages", "voices": "Voice clones", "evaluation": "Evaluation"}[tab] }}</h1>
+<h1 class="app-h1">{{ {"overview": "Overview", "users": "Users", "jobs": "Jobs", "messages": "Messages", "flags": "Flagged dubs", "voices": "Voice clones", "evaluation": "Evaluation"}[tab] }}</h1>
 {% set alive = now - worker.beat < 30 %}
 
 {% if tab == "overview" %}
@@ -49,8 +49,11 @@
       <select name="plan" onchange="this.form.submit()" aria-label="Plan of {{ x.email }}" class="compact">{% for k, pl in PLANS.items() %}
         <option value="{{ k }}" {{ 'selected' if x.plan == k }}>{{ pl.name }}</option>{% endfor %}</select>
       <noscript><button class="secondary">Save</button></noscript></form></td>
-    <td>{{ "yes" if x.verified_at else "no" }}</td><td>{{ x.n_projects }}</td><td>{{ x.n_tasks }}</td><td>{{ x.created_at | date }}</td>
+    <td>{{ "yes" if x.verified_at else "no" }}{% if x.phone_verified_at %} · phone{% endif %}{% if x.frozen_at %} <span class="chip low_mt">frozen</span>{% endif %}</td><td>{{ x.n_projects }}</td><td>{{ x.n_tasks }}</td><td>{{ x.created_at | date }}</td>
     <td class="row-actions">{% if x.id != user.id %}
+      <form method="post" action="/admin/users/{{ x.id }}/freeze" class="inline" data-confirm="{{ 'Unfreeze' if x.frozen_at else 'Freeze' }} {{ x.email }}?{{ '' if x.frozen_at else ' They are signed out and cannot sign in; nothing of theirs can be deleted until you unfreeze.' }}">
+        <button class="secondary">{{ "Unfreeze" if x.frozen_at else "Freeze" }}</button></form>
+      <a href="/admin/users/{{ x.id }}/evidence" role="button" class="secondary" title="For an official request (police, court) only">Evidence</a>
       <form method="post" action="/admin/users/{{ x.id }}/admin" class="inline"><button class="secondary">{{ "Remove admin" if x.admin else "Make admin" }}</button></form>
       <form method="post" action="/admin/users/{{ x.id }}/delete" class="inline" data-confirm="Delete {{ x.email }} and all their files? This cannot be undone.">
         <button class="secondary">Delete</button></form>
@@ -83,6 +86,19 @@
   {% if not m.handled_at %}<form method="post" action="/admin/messages/{{ m.id }}/handled" class="inline"><button class="secondary">Mark handled</button></form>{% endif %}
 </article>
 {% else %}<p class="muted">No messages.</p>{% endfor %}
+
+{% elif tab == "flags" %}
+<p class="muted">Sentences spoken in a real person's voice (a clone, a Marketplace voice, a speaker of the video) with swear words or
+  scam patterns: links, phone or account numbers, crypto wallets, money requests. Nothing was blocked; decide here.</p>
+<table class="small"><thead><tr><th>When</th><th>User</th><th>What</th><th>Sentences</th><th>Found</th><th></th></tr></thead><tbody>
+{% for f in flags %}<tr>
+  <td>{{ f.created_at | date }}</td>
+  <td>{{ f.email }}{% if f.frozen_at %} <span class="chip low_mt">frozen</span>{% endif %}</td>
+  <td>{% if f.kind == "dub" %}<a href="/app/p/{{ f.ref }}">dub #{{ f.ref }}</a>{% else %}<a href="/app/tasks/{{ f.ref }}">text to speech #{{ f.ref }}</a>{% endif %}</td>
+  <td>{{ f.n }}</td><td>{{ f.sample }}</td>
+  <td class="row-actions">{% if not f.handled_at %}<form method="post" action="/admin/flags/{{ f.id }}/handled" class="inline"><button class="secondary">Handled</button></form>
+    {% else %}<span class="muted small">handled</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">Nothing flagged.</td></tr>{% endfor %}</tbody></table>
 
 {% elif tab == "voices" %}
 <p class="muted">Clones of users' own voices. A shared one appears in the library only after you listened to it and listed it;

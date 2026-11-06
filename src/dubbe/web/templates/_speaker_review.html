@@ -26,20 +26,7 @@
   <button type="button" class="spk-merge" data-merge="{{ x.id }}" data-into="{{ m }}" title="The voices are close: maybe one person">
     Same as {{ result.speakers[ids.index(m)].name }}? Merge</button>
   {% endfor %}
-  {% if cloning and t.owner_id == user.id and not p.project %}{% if x.seconds >= CLONE_MIN %}
-  <button type="button" class="secondary spk-clone-btn" onclick="this.nextElementSibling.showModal()">Clone voice</button>
-  <dialog class="modal">
-    <form method="post" action="/app/tasks/{{ t.id }}/speakers/{{ x.id }}/clone">
-      <h3>Clone {{ x.name }}'s voice</h3>
-      <label>Name of the voice <input name="name" value="{{ x.name }}" maxlength="60"></label>
-      <label class="rights"><input type="checkbox" name="consent" required><span>I am <b>{{ x.name }}</b>, or I have their written
-        permission to copy their voice.</span></label>
-      <p class="muted small">Private to you, never published. Everything it says is watermarked as AI.</p>
-      <div class="actions"><button>Clone into my voices</button>
-        <button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button></div>
-    </form>
-  </dialog>
-  {% else %}<span class="muted small spk-clone-note">Needs {{ CLONE_MIN }} s of speech to clone</span>{% endif %}{% endif %}
+  {% if cloning and t.owner_id == user.id and not p.project %}<span class="muted small spk-clone-note">A voice from a video stays in that video. To use it elsewhere, the person clones their own voice in <a href="/app/studio">Voice Studio</a> and shares it with you, or pick one in the <a href="/app/market">Marketplace</a>.</span>{% endif %}
 </section>
 {% endfor %}
 </aside>

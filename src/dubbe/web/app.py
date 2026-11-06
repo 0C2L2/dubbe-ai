@@ -28,7 +28,7 @@ from .. import ffmpeg, ratings, read_json, segment, tags, video_duration, write_
 from .. import live as livedub
 from ..tts import sample_name
 from ..report import STAGE, _t, ass, placed, subtitles, timeline_html, transcript
-from . import auth, clones, db, links, tools, worker
+from . import auth, clones, db, links, tools, trust, worker
 
 HERE = Path(__file__).parent
 _LANGS = yaml.safe_load((HERE.parent / "languages.yaml").read_text(encoding="utf8"))
@@ -52,6 +52,8 @@ MSG = {  # ?m=... notices; fixed texts, so a link cannot put its own words on ou
     "bad-link": "This link is used or expired — ask for a new one.",
     "reset-sent": "If an account exists for that address, we sent a link to reset the password (valid 30 minutes).",
     "pw-changed": "Password changed. Please sign in again.", "sent": "Thanks — your message reached the team.",
+    "phone-verified": "Phone verified: you can clone voices now.", "frozen": "Account frozen; nothing of it can be deleted until it is unfrozen.",
+    "unfrozen": "Account unfrozen.",
     "waitlist": "You are on the waitlist; we will email you when paid plans open.", "deleted": "Project deleted.",
     "saved": "Saved.", "removed": "Deleted.", "voice": "Voice changed — press Re-dub to hear it.", "account-deleted": "Your account and files are deleted.",
     "voice-shared": "Sent for review: an admin listens to it before it is listed in the library.",
@@ -128,6 +130,7 @@ def page(request: Request, template: str, status: int = 200, **ctx):
     extra = {"left": minutes_left(u)} if u else {}
     if auth.is_admin(u):  # the sidebar shows how many contact messages wait for an answer
         extra["open_msgs"] = db.one("select count(*) n from messages where handled_at is null")["n"]
+        extra["open_flags"] = db.one("select count(*) n from flags where handled_at is null")["n"]
     return templates.TemplateResponse(request, template, {"user": u, "admin": auth.is_admin(u), **extra, **ctx},
                                       status_code=status)
 
@@ -382,6 +385,9 @@ def signin(request: Request, email: str = Form(...), password: str = Form(...), 
     if not u or not auth.check_pw(password, u["pw"]):
         auth.failed(email)
         return page(request, "auth.html", 400, mode="signin", error="Email or password is wrong.", form={"email": email}, next=next)
+    if u["frozen_at"]:  # a report about it is being checked (trust.py)
+        return page(request, "auth.html", 403, mode="signin", form={"email": email}, next=next,
+                    error="This account is frozen while a report about it is checked. Contact us if you think this is wrong.")
     return signed_in(request, u["id"], next)
 
 
@@ -553,23 +559,24 @@ def limit_error(u, minutes: float) -> str | None:
 def new_form(request: Request):
     u = auth.require_user(request)
     return page(request, "new.html", user=u, langs=LANGS, form={"src": "ko", "tgt": "en", "voice": request.query_params.get("voice", "")},
-                voices=voices(LANGS), clones=clones.usable(u) if clones.enabled() else [])
+                voices=voices(LANGS), clones=clones.usable(u) if clones.enabled() else [], cloning_on=clones.enabled())
 
 
 @app.post("/app/new")
 def new_dub(request: Request, file: UploadFile | None = File(None), src: str = Form(...), tgt: str = Form(...),
             keep_bg: str = Form(""), slow: float = Form(1.0), rights: str = Form(""), voice: str = Form(""), upload: str = Form(""),
-            link: str = Form("")):
+            link: str = Form(""), own_voices: str = Form(""), clone_ok: str = Form("")):
     u = auth.require_user(request)
     file = chunked(u, upload, file) if file is not None else None
-    form = {"src": src, "tgt": tgt, "voice": voice}
+    form = {"src": src, "tgt": tgt, "voice": voice, "own_voices": own_voices}
+    own = bool(own_voices)
     mine = clones.usable(u) if clones.enabled() else []
 
     def fail(msg: str, pid: int | None = None):
         if pid:
             shutil.rmtree(worker.folder(pid), ignore_errors=True)
             db.run("delete from projects where id=?", pid)
-        return page(request, "new.html", 400, user=u, langs=LANGS, form=form, error=msg, voices=voices(LANGS), clones=mine)
+        return page(request, "new.html", 400, user=u, langs=LANGS, form=form, error=msg, voices=voices(LANGS), clones=mine, cloning_on=clones.enabled())
 
     ext = Path(file.filename or "").suffix.lower() if file else ""
     link = "" if ext else link.strip()  # a chosen file wins over a pasted link
@@ -581,6 +588,12 @@ def new_dub(request: Request, file: UploadFile | None = File(None), src: str = F
         return fail("Choose a voice from the list.")
     if not rights:
         return fail("Please confirm you own this video or have a licence that allows changing it.")
+    if own and not clones.enabled():
+        return fail("Voice cloning is not available on this server.")
+    if own and not clone_ok:
+        return fail("Confirm that the people in the video agreed to have their voices cloned for this video.")
+    if own and not trust.verified(u):
+        return fail("Verify your phone first: dubbing with their own voices clones them.")
     if link:
         error, info = from_link(link)
         if not error and info.get("original") == tgt:
@@ -593,16 +606,17 @@ def new_dub(request: Request, file: UploadFile | None = File(None), src: str = F
             return go(f"/app/tasks/{tid}")
         if error or (error := limit_error(u, info["minutes"])):
             return fail(error)
-        pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
-                     "values(?,?,?,?,?,?,?,?,?)", u["id"], info["title"], src, tgt, int(bool(keep_bg)),
-                     min(max(slow, 1.0), 1.3), round(info["minutes"], 2), db.now(), voice)
+        pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice, own_voices) "
+                     "values(?,?,?,?,?,?,?,?,?,?)", u["id"], info["title"], src, tgt, int(bool(keep_bg)),
+                     min(max(slow, 1.0), 1.3), round(info["minutes"], 2), db.now(), voice, int(own))
         links.save(worker.folder(pid), link)  # the worker downloads it before the dub starts
+        log_real(u, request, "dub-upload", pid, own or trust.real_voice(voice))
         return go(f"/app/jobs/{db.run('insert into jobs(project_id, created_at) values(?,?)', pid, db.now())}")
     if ext not in VIDEO_TYPES:
         return fail("Upload an MP4 or MOV video, or paste a link to it.")
-    pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
-                 "values(?,?,?,?,?,?,0,?,?)", u["id"], Path(file.filename).stem[:80] or "Video", src, tgt,
-                 int(bool(keep_bg)), min(max(slow, 1.0), 1.3), db.now(), voice)
+    pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice, own_voices) "
+                 "values(?,?,?,?,?,?,0,?,?,?)", u["id"], Path(file.filename).stem[:80] or "Video", src, tgt,
+                 int(bool(keep_bg)), min(max(slow, 1.0), 1.3), db.now(), voice, int(own))
     if not save_upload(file, worker.folder(pid) / f"video{ext}"):
         return fail("File too large (2 GB at most).", pid)
     try:
@@ -612,8 +626,22 @@ def new_dub(request: Request, file: UploadFile | None = File(None), src: str = F
     if error := limit_error(u, minutes):
         return fail(error, pid)
     db.run("update projects set minutes=? where id=?", round(minutes, 2), pid)
+    log_real(u, request, "dub-upload", pid, own or trust.real_voice(voice))
     jid = db.run("insert into jobs(project_id, created_at) values(?,?)", pid, db.now())
     return go(f"/app/jobs/{jid}")
+
+
+def project_real(p) -> bool:
+    """Does this dub use a real person's voice (a clone, a Marketplace voice, a speaker of the video)?"""
+    f = worker.work(p) / "segments.json"
+    spk = (read_json(f).get("speakers") or {}) if f.exists() else {}
+    return bool(p["own_voices"]) or trust.real_voice(p["voice"]) or any(trust.real_voice(v.get("voice")) for v in spk.values())
+
+
+def log_real(u, request: Request, what: str, ref, real: bool) -> None:
+    """The evidence log (trust.py): only what was done with a real person's voice."""
+    if real:
+        trust.log(u, what, str(ref), request)
 
 
 @app.get("/app/jobs/{jid}")
@@ -692,6 +720,7 @@ def save_sentence(request: Request, pid: int, sid: int, text: str = Form(""),
     if speaker in spk and speaker != s.get("speaker", "S1"):  # the detection got it wrong
         s["speaker"], data["speakers_edited"] = speaker, True
     write_json(worker.work(p) / "segments.json", data)
+    log_real(u, request, "edit", f"{pid}:{sid}", project_real(p))
     return saved(request, pid, sid)
 
 
@@ -764,6 +793,7 @@ def set_speaker(request: Request, pid: int, sp: str, name: str = Form(""), voice
         spk[sp].update(name=name.strip()[:40] or spk[sp].get("name") or sp, **({"voice": voice, "override": True} if voice else {}))
     data["speakers_edited"] = True  # a re-run never redoes the detection over the reviewer's corrections
     write_json(worker.work(p) / "segments.json", data)
+    log_real(u, request, "voice-set", f"{pid}:{sp}:{voice}", trust.real_voice(voice))
     if request.headers.get("x-fetch") and not merge:  # name/voice saved in place: other rows keep their unsaved changes
         return Response(status_code=204)
     return go(f"/app/p/{pid}?m=speakers#speakers")
@@ -778,6 +808,8 @@ def clone_speaker(request: Request, pid: int, sp: str, consent: str = Form("")):
         raise HTTPException(404)
     if not consent:
         return go(f"/app/p/{pid}?m=consent-needed#speakers")
+    if not trust.verified(u):  # cloning a voice needs a verified phone (trust.py)
+        return go(f"/app/phone?next=/app/p/{pid}")
     secs = clones.make_speaker_clone(pid, worker.work(p), data["segments"], sp)
     if secs < clones.MIN_SECONDS:
         return go(f"/app/p/{pid}?m=too-little-speech#speakers")
@@ -785,12 +817,14 @@ def clone_speaker(request: Request, pid: int, sp: str, consent: str = Form("")):
                                 clone_consent={"by": u["email"], "at": db.now(), "seconds": round(secs, 1)})
     data["speakers_edited"] = True
     write_json(worker.work(p) / "segments.json", data)
+    trust.log(u, "clone-speaker", f"{pid}:{sp}", request)
     return go(f"/app/p/{pid}?m=speaker-cloned#speakers")
 
 
 @app.post("/app/p/{pid}/redub")
 def redub(request: Request, pid: int):
-    own_project(request, pid)
+    u, p = own_project(request, pid)
+    log_real(u, request, "redub", pid, project_real(p))
     return go(f"/app/jobs/{queue(pid, 'tts')}")  # only sentences whose text, tags or voice changed are spoken again (C49)
 
 
@@ -831,6 +865,7 @@ def export(request: Request, pid: int):
 @app.get("/app/p/{pid}/download/{kind}")
 def download(request: Request, pid: int, kind: str):
     u, p = own_project(request, pid)
+    log_real(u, request, f"download-{kind}", pid, project_real(p))
     w = worker.work(p)
     base = re.sub(r"[^A-Za-z0-9-]+", "_", p["title"]).strip("_") or "video"  # ASCII: goes into a header
     if kind == "video":
@@ -866,6 +901,37 @@ def plan_page(request: Request):
     keep = db.PLANS[u["plan"]]["keep_days"] * 86400
     return page(request, "plan.html", user=u, used=round(used_minutes(u["id"]), 1),
                 projects=[{"p": p, "expires": p["created_at"] + keep} for p in rows])
+
+
+def safe_next(next: str) -> str:
+    return next if next.startswith("/") and not next.startswith("//") else "/app/settings"
+
+
+@app.get("/app/phone")
+def phone_form(request: Request, next: str = "", sent: str = ""):
+    u = auth.require_user(request)
+    return page(request, "phone.html", user=u, next=safe_next(next), sent=bool(sent), masked=trust.mask(u["phone"]),
+                beta=trust.SMS_BETA, form={})
+
+
+@app.post("/app/phone/send")
+def phone_send(request: Request, phone: str = Form(""), next: str = Form("")):
+    u = auth.require_user(request)
+    if error := trust.send_code(u, phone):
+        return page(request, "phone.html", 400, user=u, next=safe_next(next), sent=False, masked=trust.mask(u["phone"]),
+                    beta=trust.SMS_BETA, error=error, form={"phone": phone})
+    from urllib.parse import quote
+    return go(f"/app/phone?sent=1&next={quote(safe_next(next))}")
+
+
+@app.post("/app/phone/verify")
+def phone_verify(request: Request, code: str = Form(""), next: str = Form("")):
+    u = auth.require_user(request)
+    if error := trust.check_code(u, code):
+        return page(request, "phone.html", 400, user=u, next=safe_next(next), sent=True, masked=trust.mask(u["phone"]),
+                    beta=trust.SMS_BETA, error=error, form={})
+    nxt = safe_next(next)
+    return go(nxt + ("&" if "?" in nxt else "?") + "m=phone-verified")
 
 
 @app.get("/app/settings")
@@ -956,7 +1022,9 @@ def tts_create(request: Request, text: str = Form(""), lang: str = Form("en"), v
              "Choose a voice for this language." if voice not in keys else None)
     if error:
         return tool_page(request, u, "tts", 400, error=error, form={"text": text, "voice": voice, "lang": lang})
-    return go(f"/app/tasks/{new_task(u, 'tts', text, {'text': text.strip(), 'lang': lang, 'voice': keys[voice]})}")
+    tid = new_task(u, 'tts', text, {'text': text.strip(), 'lang': lang, 'voice': keys[voice]})
+    log_real(u, request, "tts", tid, trust.real_voice(keys[voice]))
+    return go(f"/app/tasks/{tid}")
 
 
 @app.post("/app/translate")
@@ -1137,25 +1205,6 @@ def dub_captions(request: Request, pid: int, lang: str = Form("tgt")):
     return go(f"/app/tasks/{tid}")
 
 
-@app.post("/app/tasks/{tid}/speakers/{sp}/clone")
-def task_speaker_clone(request: Request, tid: int, sp: str, name: str = Form(""), consent: str = Form("")):
-    """A speaker of the uploaded video as a voice in the uploader's library, only with consent. It goes through the
-    same check as a recorded clone and stays private: a voice from a video can never be published."""
-    u, t, data = own_speaker(request, tid, sp)
-    if not clones.enabled() or t["owner_id"] != u["id"]:
-        raise HTTPException(404)
-    if not consent:
-        return go(f"/app/tasks/{tid}?m=consent-needed#{sp}")
-    wav, seconds, said = clones.speaker_clip(tools.folder(tid), data["segments"], sp)
-    if not wav:
-        return go(f"/app/tasks/{tid}?m=too-little-speech#{sp}")
-    vid = db.run("insert into voices(owner_id, name, lang, script, source, created_at) values(?,?,?,?,?,?)", u["id"],
-                 (name.strip() or data["speakers"][sp]["name"])[:60], json.loads(t["params"])["src"], said, f"video:{tid}", db.now())
-    clones.save(vid, "recording", wav)
-    db.run("update voices set status='waiting' where id=?", vid)  # the worker checks it like a recorded clone
-    return go(f"/app/studio/{vid}")
-
-
 def public_url(url: str) -> bool:
     """A link the server may open for Live Dubbing: http(s) to public addresses only - never a file on this machine or
     an address on the local network."""
@@ -1277,7 +1326,7 @@ def track_to_dub(request: Request, tid: int):
     minutes = video_duration(tools.media(tid)) / 60  # the copy with YouTube's track: the same length
     if error := limit_error(u, minutes):
         return page(request, "new.html", 400, user=u, langs=LANGS, form=p, error=error, voices=voices(LANGS),
-                    clones=clones.usable(u) if clones.enabled() else [])
+                    clones=clones.usable(u) if clones.enabled() else [], cloning_on=clones.enabled())
     pid = db.run("insert into projects(owner_id, title, src, tgt, keep_bg, slow, minutes, created_at, voice) "
                  "values(?,?,?,?,?,?,?,?,?)", u["id"], t["title"], p["src"], p["tgt"], int(bool(p["keep_bg"])),
                  min(max(float(p["slow"]), 1.0), 1.3), round(minutes, 2), db.now(), p["voice"])
@@ -1340,6 +1389,7 @@ def voice_record(request: Request, vid: int, file: UploadFile = File(...), name:
     """Answers in plain text: the page sends the recording with fetch and shows the message."""
     u, v = own_voice(request, vid)
     error = ("Voice cloning is not available on this server." if not clones.enabled() or v["owner_id"] != u["id"] else
+             "Verify your phone first (Settings → Phone): cloning a voice needs it." if not trust.verified(u) else
              "Please confirm both statements." if not (own and consent) else
              "These sentences have expired. Open the page again for new ones." if v["status"] != "draft" or
              v["created_at"] < db.now() - clones.FRESH_S else
@@ -1350,6 +1400,7 @@ def voice_record(request: Request, vid: int, file: UploadFile = File(...), name:
         return PlainTextResponse(error, 400)
     clones.save(vid, "recording", data)
     db.run("update voices set name=?, status='waiting' where id=?", name.strip()[:60], vid)
+    trust.log(u, "clone-own-voice", vid, request)
     return go(f"/app/studio/{vid}")  # the Studio shows the check, then the listing editor
 
 
@@ -1395,7 +1446,8 @@ def studio_save(request: Request, vid: int, action: str = Form("save"), name: st
     submit = action == "submit" and v["shared"] in ("no", "rejected") and not v["source"]  # a voice from a video stays private
     error = ("Give the voice a name." if not name.strip() else
              clones.listing_error(description, category, chosen, complete=submit or v["shared"] in ("listed", "pending")) or
-             ("Please tick the agreement to publish." if submit and not agree else None))
+             ("Please tick the agreement to publish." if submit and not agree else None) or
+             ("Verify your phone first (Settings → Phone): publishing a voice needs it." if submit and not trust.verified(u) else None))
     if error:
         return studio_page(request, u, vid, 400, error=error,
                            form={"name": name, "description": description, "category": category, "tags": chosen})
@@ -1403,6 +1455,7 @@ def studio_save(request: Request, vid: int, action: str = Form("save"), name: st
            name.strip()[:60], description.strip(), category, ",".join(chosen), vid)
     if submit:
         db.run("update voices set shared='pending', shared_at=?, review_note='' where id=?", db.now(), vid)
+        trust.log(u, "publish-voice", vid, request)
     return go(f"/app/studio/{vid}?m={'voice-shared' if submit else 'listing-saved'}")
 
 
@@ -1495,7 +1548,7 @@ def market_review(request: Request, vid: int, stars: int = Form(...), body: str 
 
 # ---------------------------------------------------------------- admin (users.admin = 1, or emails in DUBBE_ADMINS)
 
-ADMIN_TABS = ["overview", "users", "jobs", "messages", "voices", "evaluation"]
+ADMIN_TABS = ["overview", "users", "jobs", "messages", "flags", "voices", "evaluation"]
 
 
 def admin_overview() -> dict:
@@ -1549,6 +1602,9 @@ def admin_tab(request: Request, tab: str):
         ctx["tasks"] = db.all_("select tasks.*, users.email from tasks join users on users.id=owner_id order by tasks.id desc limit 50")
     elif tab == "messages":
         ctx["messages"] = db.all_("select * from messages order by handled_at is not null, id desc limit 200")
+    elif tab == "flags":
+        ctx["flags"] = db.all_("select flags.*, users.email, users.frozen_at from flags join users on users.id=flags.user_id "
+                               "order by handled_at is not null, flags.id desc limit 200")
     elif tab == "voices":
         ctx["clones"] = db.all_("select voices.*, users.email, (select count(*) from voice_uses where voice_id=voices.id) uses "
                                 "from voices join users on users.id=owner_id where status<>'draft' "
@@ -1579,9 +1635,40 @@ def admin_toggle(request: Request, uid: int):
     return go("/admin/users?m=saved")
 
 
+@app.post("/admin/users/{uid}/freeze")
+def admin_freeze(request: Request, uid: int):
+    """Freeze (or unfreeze) an account a report is about: it cannot sign in, and nothing of it can be deleted."""
+    u = auth.require_admin(request)
+    x = db.one("select * from users where id=?", uid)
+    if not x or uid == u["id"]:
+        raise HTTPException(404)
+    db.run("update users set frozen_at=? where id=?", None if x["frozen_at"] else db.now(), uid)
+    if not x["frozen_at"]:
+        db.run("delete from sessions where user_id=?", uid)  # signed out everywhere at once
+    return go(f"/admin/users?m={'unfrozen' if x['frozen_at'] else 'frozen'}")
+
+
+@app.get("/admin/users/{uid}/evidence")
+def admin_evidence(request: Request, uid: int):
+    """Everything kept about an account, as one file - for an official request (police, court) only."""
+    u = auth.require_admin(request)
+    trust.log(u, "evidence-export", uid, request)
+    return Response(json.dumps(trust.export(uid), ensure_ascii=False, indent=1), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="dubbe-evidence-user-{uid}.json"'})
+
+
+@app.post("/admin/flags/{fid}/handled")
+def admin_flag_handled(request: Request, fid: int):
+    auth.require_admin(request)
+    db.run("update flags set handled_at=? where id=?", db.now(), fid)
+    return go("/admin/flags")
+
+
 @app.post("/admin/users/{uid}/delete")
 def admin_delete_user(request: Request, uid: int):
     u = auth.require_admin(request)
+    if (db.one("select frozen_at from users where id=?", uid) or {"frozen_at": None})["frozen_at"]:
+        return go("/admin/users?m=frozen")  # unfreeze first: a frozen account is evidence
     if uid != u["id"]:
         worker.delete_user_files(uid)
         db.run("delete from users where id=?", uid)

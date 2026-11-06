@@ -374,6 +374,10 @@ def main(tid: int) -> None:
             raise SystemExit(f"The file could not be downloaded from the link: {str(e).removeprefix('ERROR: ')[:300]}")
     if t["kind"] == "tts":
         result = text_to_speech(p, out, db.one("select * from users where id=?", t["owner_id"]))
+        from . import trust
+        if trust.real_voice(p.get("voice")):  # a real person's voice: words and scam patterns for the admin (trust.py)
+            hits = [(x["text"], why) for x in result.get("sentences", []) if (why := trust.check(x["text"], p["lang"]))]
+            trust.flag("tts", tid, t["owner_id"], hits)
     elif t["kind"] == "translate":
         result = translate_text(p, out)
     elif t["kind"] == "stt":

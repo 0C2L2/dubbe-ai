@@ -46,7 +46,17 @@ create table if not exists voice_saves(user_id integer not null references users
 create table if not exists voice_reviews(voice_id integer not null references voices on delete cascade,
   user_id integer not null references users on delete cascade, stars integer not null, body text not null default '',
   created_at real not null, primary key(voice_id, user_id));
+create table if not exists phone_codes(id integer primary key, user_id integer not null references users on delete cascade,
+  phone text not null, code_hash text not null, expires_at real not null, tries integer not null default 0, created_at real not null);
+create table if not exists flags(id integer primary key, kind text not null, ref integer not null,
+  user_id integer not null references users on delete cascade, n integer not null, sample text not null default '',
+  created_at real not null, handled_at real);
+create table if not exists evidence(id integer primary key, user_id integer not null, what text not null, ref text not null default '',
+  ip text not null default '', phone text not null default '', created_at real not null);
 """
+# trust.py (2026-11-07): a verified phone before cloning, frozen accounts, dubs in the speakers' own voices
+ADDED = {"users": (("phone", "text"), ("phone_verified_at", "real"), ("frozen_at", "real")),
+         "projects": (("own_voices", "integer not null default 0"),)}
 # added after the voices table shipped: the marketplace listing of a shared voice, the admin's note on a rejection,
 # and source ("video:<task id>" for a speaker cloned from an uploaded video: always private, never listed)
 VOICE_LISTING = ("description", "category", "tags", "review_note", "source")
@@ -72,6 +82,13 @@ def init() -> None:
         for col in VOICE_LISTING:
             if col not in have:
                 c.execute(f"alter table voices add column {col} text not null default ''")
+        for table, cols in ADDED.items():
+            have = {r["name"] for r in c.execute(f"pragma table_info({table})")}
+            for col, kind in cols:
+                if col not in have:
+                    c.execute(f"alter table {table} add column {col} {kind}")
+        # one verified phone per account: a number cannot verify a second one
+        c.execute("create unique index if not exists users_phone on users(phone) where phone_verified_at is not null")
 
 
 # ponytail: one short connection per call - fine for SQLite and one worker; PostgreSQL + a pool when deployed

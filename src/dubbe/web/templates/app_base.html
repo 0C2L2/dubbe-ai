@@ -50,6 +50,7 @@
       {{ item("/admin/users", "users", "Users") }}
       {{ item("/admin/jobs", "list", "Jobs") }}
       {{ item("/admin/messages", "mail", "Messages", badge=open_msgs or "") }}
+      {{ item("/admin/flags", "search", "Flagged dubs", badge=open_flags or "") }}
       {{ item("/admin/voices", "speak", "Voice clones") }}
       {{ item("/admin/evaluation", "shield", "Evaluation") }}
       {% endif %}

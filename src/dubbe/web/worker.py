@@ -10,9 +10,9 @@ import time
 from collections import deque
 from pathlib import Path
 
-from .. import read_json
+from .. import read_json, write_json
 from ..cli import STAGES
-from . import clones, db, links
+from . import clones, db, links, trust
 
 STAGE_NAMES = list(STAGES)
 STATE = {"job": None, "proc": None, "beat": 0.0}  # shown on the admin page
@@ -32,10 +32,11 @@ def work(p) -> Path:
     return folder(p["id"]) / f"video.{p['src']}-{p['tgt']}"
 
 
-def command(p, from_stage: str | None) -> list[str]:
+def command(p, from_stage: str | None, until: str | None = None) -> list[str]:
     cmd = [sys.executable, "-m", "dubbe.cli", str(video(p["id"])), "--src", p["src"], "--tgt", p["tgt"],
            "--work", str(folder(p["id"])), "--title", p["title"]]
     cmd += ["--from", from_stage] if from_stage else []
+    cmd += ["--until", until] if until else []
     cmd += [] if p["keep_bg"] else ["--no-background"]
     cmd += ["--slow-video", str(p["slow"])] if p["slow"] > 1 else []
     cmd += ["--voice", p["voice"]] if p["voice"] else []  # chosen at upload; the editor's choice wins later
@@ -55,13 +56,28 @@ def clone_chars(data: dict) -> dict[str, int]:
     return out
 
 
+def clone_speakers(p, owner) -> int:
+    """'Dub with their own voices' (chosen at upload): every speaker found long enough is cloned from this video,
+    kept only in this project (clones.make_speaker_clone), and speaks the dub; the uploader confirmed their consent."""
+    seg_file = work(p) / "segments.json"
+    data = read_json(seg_file)
+    n = 0
+    for sp, v in (data.get("speakers") or {}).items():
+        secs = clones.make_speaker_clone(p["id"], work(p), data["segments"], sp)
+        if secs >= clones.MIN_SECONDS:
+            v.update(voice=f"video:{sp}", override=True,
+                     clone_consent={"by": owner["email"], "at": db.now(), "seconds": round(secs, 1), "at_upload": True})
+            n += 1
+    data["speakers_edited"] = True
+    write_json(seg_file, data)
+    return n
+
+
 def run_job(job) -> None:
     p = db.one("select * from projects where id=?", job["project_id"])
     seg_file = work(p) / "segments.json"
-    voices = {sp: v.get("voice") for sp, v in ((read_json(seg_file).get("speakers") or {}) if seg_file.exists() else {}).items()}
-    voices["S1"] = voices.get("S1") or p["voice"]  # first dub: the voice chosen at upload is the main speaker's
     owner = db.one("select * from users where id=?", p["owner_id"])
-    tail, prompts = deque(maxlen=12), []
+    tail = deque(maxlen=12)
     if links.waiting(folder(p["id"])):  # a pasted link: the video comes first
         db.run("update jobs set stage='download' where id=?", job["id"])
         try:
@@ -70,27 +86,43 @@ def run_job(job) -> None:
             db.run("update jobs set status='failed', error=?, finished_at=? where id=?",
                    f"The video could not be downloaded from the link: {str(e).removeprefix('ERROR: ')[:300]}", db.now(), job["id"])
             return
-    try:
-        for sp, key in voices.items():  # each speaker's clone recording, for this job only
-            prompts.append(work(p) / f"voice_prompt_{sp}.wav")
-            if (key or "").startswith("video:"):
-                clones.write_speaker_reference(p["id"], key, prompts[-1])  # cloned from this video, with consent
-            else:
-                clones.write_reference(owner, key, prompts[-1])  # the owner's own clone, or one they got
-        proc = subprocess.Popen(command(p, job["from_stage"]), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf8"})
-        STATE["proc"] = proc
-        for line in proc.stdout:
-            if "warn" in line.lower():
-                continue
-            tail.append(line.rstrip())
-            if m := re.match(r"\[run\]\s+(\w+)", line):
-                db.run("update jobs set stage=? where id=?", m[1], job["id"])
-        ok = proc.wait() == 0
-    finally:
-        for f in prompts:
-            f.unlink(missing_ok=True)
-            f.with_suffix(".txt").unlink(missing_ok=True)
+    def run(until=None) -> bool:
+        """One pipeline run, with each speaker's clone recording written for this run only."""
+        voices = {sp: v.get("voice") for sp, v in ((read_json(seg_file).get("speakers") or {}) if seg_file.exists() else {}).items()}
+        voices["S1"] = voices.get("S1") or p["voice"]  # first dub: the voice chosen at upload is the main speaker's
+        prompts = []
+        try:
+            for sp, key in voices.items():
+                prompts.append(work(p) / f"voice_prompt_{sp}.wav")
+                if (key or "").startswith("video:"):
+                    clones.write_speaker_reference(p["id"], key, prompts[-1])  # cloned from this video, with consent
+                else:
+                    clones.write_reference(owner, key, prompts[-1])  # the owner's own clone, or one they got
+            proc = subprocess.Popen(command(p, job["from_stage"], until), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf8"})
+            STATE["proc"] = proc
+            for line in proc.stdout:
+                if "warn" in line.lower():
+                    continue
+                tail.append(line.rstrip())
+                if m := re.match(r"\[run\]\s+(\w+)", line):
+                    db.run("update jobs set stage=? where id=?", m[1], job["id"])
+            return proc.wait() == 0
+        finally:
+            for f in prompts:
+                f.unlink(missing_ok=True)
+                f.with_suffix(".txt").unlink(missing_ok=True)
+
+    own = p["own_voices"] and not job["from_stage"] and clones.enabled() and not (
+        seg_file.exists() and any((v.get("voice") or "").startswith("video:") for v in (read_json(seg_file).get("speakers") or {}).values()))
+    ok = run("speakers") if own else True  # their own voices: find the speakers first, clone them, then dub
+    if ok and own:
+        tail.append(f"cloned {clone_speakers(p, owner)} speaker(s) from the video")
+    ok = ok and run()
+    if ok and seg_file.exists():  # words and scam patterns in a real person's voice, for the admin (trust.py)
+        data = read_json(seg_file)
+        trust.flag_dub(p, data)
+        write_json(seg_file, data)
     if ok and seg_file.exists() and (job["from_stage"] or "tts") in STAGE_NAMES[:STAGE_NAMES.index("tts") + 1]:
         for used, chars in clone_chars(read_json(seg_file)).items():
             clones.record_use(used, p["owner_id"], chars, "dub")

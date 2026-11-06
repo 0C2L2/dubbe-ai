@@ -229,6 +229,9 @@ def test_voice_clone_consent_sharing_and_permissions(client, tmp_path, monkeypat
     assert len(re.findall(r"[.?!]", v["script"])) == 3  # three sentences, picked now
     files = {"file": ("recording.webm", b"x" * 5000, "audio/webm")}
     assert client.post(f"/app/voices/{v['id']}/record", data={"name": "Me"}, files=files).status_code == 400  # no consent
+    no_phone = client.post(f"/app/voices/{v['id']}/record", data={"name": "Me", "own": "1", "consent": "1"}, files=files)
+    assert no_phone.status_code == 400 and "phone" in no_phone.text  # trust.py: a verified phone before any cloning
+    db.run("update users set phone='+821000000001', phone_verified_at=? where id=?", db.now(), oid)
     r = client.post(f"/app/voices/{v['id']}/record", data={"name": "Me", "own": "1", "consent": "1"}, files=files)
     assert r.status_code == 303 and db.one("select status from voices where id=?", v["id"])["status"] == "waiting"
     stored = (tmp_path / "voices" / str(v["id"]) / "recording.enc").read_bytes()
@@ -324,6 +327,8 @@ def test_speakers_in_the_editor_and_cloning_a_speaker_only_with_consent(client, 
     monkeypatch.setenv("DUBBE_VOICE_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr(clones, "enabled", lambda: True)
     assert "consent-needed" in client.post(f"/app/p/{pid}/speakers/S2/clone", data={}).headers["location"]
+    assert client.post(f"/app/p/{pid}/speakers/S1/clone", data={"consent": "1"}).headers["location"].startswith("/app/phone")
+    db.run("update users set phone='+821000000002', phone_verified_at=?", db.now())
     assert "too-little-speech" in client.post(f"/app/p/{pid}/speakers/S1/clone", data={"consent": "1"}).headers["location"]  # 3 s
     assert "speaker-cloned" in client.post(f"/app/p/{pid}/speakers/S2/clone", data={"consent": "1"}).headers["location"]
     data = json.loads((w / "segments.json").read_text(encoding="utf8"))
@@ -385,19 +390,10 @@ def test_speaker_detection_tool_names_speakers_and_clones_one_privately_with_con
     assert client.post(f"/app/tasks/{tid}/speakers/S9", data={"name": "x"}).status_code == 404
     monkeypatch.setenv("DUBBE_VOICE_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr(clones, "enabled", lambda: True)
-    assert "consent-needed" in client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={}).headers["location"]
-    assert "too-little-speech" in client.post(f"/app/tasks/{tid}/speakers/S1/clone", data={"consent": "1"}).headers["location"]
-    r = client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1", "name": "Jesse"})
-    v = db.one("select * from voices")
-    assert r.headers["location"] == f"/app/studio/{v['id']}" and v["status"] == "waiting" and v["source"] == f"video:{tid}"
-    assert v["script"] == "Yes, I know." and clones.load(v["id"], "recording")[:4] == b"RIFF"  # checked like a recording
-    db.run("update voices set status='ready' where id=?", v["id"])
-    client.post(f"/app/studio/{v['id']}", data={"action": "submit", "name": "Jesse", "description": "A calm voice for stories.",
-                                                "category": "Narration", "tags": "calm", "agree": "1"})
-    assert db.one("select shared from voices")["shared"] == "no"  # a voice from a video is never published
-    _, other = user("o@x.org")
-    client.cookies.set(auth.COOKIE, other)
-    assert client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1"}).status_code == 404
+    # a voice from a video stays in that video: no route puts a speaker into a library any more
+    assert client.post(f"/app/tasks/{tid}/speakers/S2/clone", data={"consent": "1", "name": "Jesse"}).status_code in (404, 405)
+    assert db.one("select count(*) n from voices")["n"] == 0
+    assert "stays in that video" in client.get(f"/app/tasks/{tid}").text
 
 
 def test_speaker_fix_moves_words_between_sentences_and_keeps_every_word(client):
@@ -686,3 +682,88 @@ def test_a_sent_message_shows_in_the_card_and_on_the_admin_sidebar(client, monke
     assert 'side-badge count">1<' in client.get("/app").text
     db.run("update messages set handled_at=?", db.now())
     assert "side-badge count" not in client.get("/app").text
+
+
+def test_phone_check_one_number_per_account_codes_expire_and_wrong_tries_count(client, tmp_path):
+    """Beta SMS: the code goes to the outbox; one verified phone per account; 5 wrong tries end a code (trust.py)."""
+    from dubbe.web import trust
+    uid, s = user("p@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    assert "country code" in client.post("/app/phone/send", data={"phone": "12"}).text
+    assert client.post("/app/phone/send", data={"phone": "010-1234-5678", "next": "/app/new"}).headers["location"].startswith("/app/phone?sent=1")
+    sms = sorted((tmp_path / "outbox").glob("*.sms.txt"))[-1].read_text(encoding="utf8")
+    code = re.search(r"code is (\d{6})", sms)[1]
+    assert "+821012345678" in sms
+    for _ in range(5):
+        assert "not right" in client.post("/app/phone/verify", data={"code": "000000" if code != "000000" else "111111"}).text
+    assert "Too many wrong tries" in client.post("/app/phone/verify", data={"code": code}).text
+    client.post("/app/phone/send", data={"phone": "+82 10 1234 5678"})
+    code = re.search(r"code is (\d{6})", sorted((tmp_path / "outbox").glob("*.sms.txt"))[-1].read_text(encoding="utf8"))[1]
+    r = client.post("/app/phone/verify", data={"code": code, "next": "/app/new"})
+    assert r.headers["location"] == "/app/new?m=phone-verified"
+    assert trust.verified(db.one("select * from users where id=?", uid))
+    _, s2 = user("p2@x.org")
+    client.cookies.set(auth.COOKIE, s2)
+    assert "already verifies another account" in client.post("/app/phone/send", data={"phone": "01012345678"}).text
+
+
+def test_words_and_scam_patterns_are_flagged_only_in_a_real_persons_voice(client):
+    from dubbe.web import trust
+    assert trust.check("Hello everyone, today we learn how voices travel.", "en") == []
+    assert trust.check("Send me the money now, call +82 10 1234 5678 or visit www.pay-me.top", "en") == \
+        ["link", "phone or account number", "money request"]
+    assert "swear word" in trust.check("what the fuck", "en")
+    assert trust.check("계좌로 송금해 주세요", "ko") == ["money request"]
+    assert trust.real_voice("clone:3") and trust.real_voice("video:S2") and not trust.real_voice("af_bella")
+    uid, _ = user("w@x.org")
+    p = {"id": 7, "owner_id": uid, "tgt": "en"}
+    data = {"speakers": {"S1": {"voice": "video:S1"}, "S2": {"voice": "af_bella"}},
+            "segments": [{"speaker": "S1", "tgt_text": "Wire the money to my bank account."},
+                         {"speaker": "S2", "tgt_text": "Wire the money to my bank account."}]}  # a preset: not checked
+    assert trust.flag_dub(p, data) == 1 and data["segments"][0]["word_flag"] and "word_flag" not in data["segments"][1]
+    assert db.one("select n from flags where kind='dub' and ref=7")["n"] == 1
+
+
+def test_evidence_is_kept_frozen_accounts_cannot_sign_in_and_admins_export_it(client, monkeypatch):
+    from dubbe.web import trust
+    uid, s = user("bad@x.org")
+    db.run("update users set phone='+821099999999', phone_verified_at=? where id=?", db.now(), uid)
+    u = db.one("select * from users where id=?", uid)
+    trust.log(u, "clone-speaker", "5:S1")
+    db.run("update evidence set created_at=? where id=1", db.now() - 91 * 86400)  # older than 90 days
+    trust.log(u, "download-video", "5")
+    assert [r["what"] for r in db.all_("select what from evidence")] == ["download-video"]  # the old entry went
+    aid, sa = user("admin@x.org")
+    monkeypatch.setattr(web.auth, "is_admin", lambda x: bool(x) and x["id"] == aid)
+    client.cookies.set(auth.COOKIE, sa)
+    client.post(f"/admin/users/{uid}/freeze")
+    assert db.one("select frozen_at from users where id=?", uid)["frozen_at"]
+    assert db.one("select count(*) n from sessions where user_id=?", uid)["n"] == 0  # signed out everywhere
+    assert client.post(f"/admin/users/{uid}/delete").headers["location"] == "/admin/users?m=frozen"  # evidence is kept
+    ev = client.get(f"/admin/users/{uid}/evidence")
+    assert ev.json()["account"]["phone"] == "+821099999999" and ev.json()["evidence"][0]["what"] == "download-video"
+    client.cookies.clear()
+    r = client.post("/signin", data={"email": "bad@x.org", "password": "long enough pw"})
+    assert r.status_code == 403 and "frozen" in r.text
+
+
+def test_dub_with_their_own_voices_needs_consent_and_a_verified_phone(client, monkeypatch, tmp_path):
+    import subprocess
+    from dubbe.web import clones
+    clip = tmp_path / "clip.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=64x64:rate=10",
+                    "-f", "lavfi", "-i", "sine=duration=2", "-shortest", str(clip)], check=True)
+    monkeypatch.setattr(clones, "enabled", lambda: True)
+    uid, s = user("own@x.org")
+    client.cookies.set(auth.COOKIE, s)
+    assert "Dub with their own voices" in client.get("/app/new").text
+    form = {"src": "ko", "tgt": "en", "rights": "1", "own_voices": "1"}
+    files = {"file": ("talk.mp4", clip.read_bytes(), "video/mp4")}
+    assert "agreed to have their voices cloned" in client.post("/app/new", data=form, files=files).text
+    assert "Verify your phone" in client.post("/app/new", data={**form, "clone_ok": "1"}, files=files).text
+    db.run("update users set phone='+821000000003', phone_verified_at=? where id=?", db.now(), uid)
+    r = client.post("/app/new", data={**form, "clone_ok": "1"}, files=files)
+    assert r.headers["location"].startswith("/app/jobs/")
+    assert db.one("select own_voices from projects")["own_voices"] == 1
+    assert db.one("select what from evidence")["what"] == "dub-upload"
+    assert "--until" in worker.command(db.one("select * from projects"), None, "speakers")

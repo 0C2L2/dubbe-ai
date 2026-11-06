@@ -26,6 +26,12 @@
 </section>
 
 <section class="set-row">
+  <div><h2>Phone</h2><p>Needed to clone a voice or dub with people's own voices: one verified number per account.</p></div>
+  <div>{% if user.phone_verified_at %}<p style="margin:0 0 10px"><span class="chip ok">verified</span> {{ user.phone[:3] ~ "*" * (user.phone | length - 7) ~ user.phone[-4:] }}</p>{% endif %}
+    <a href="/app/phone" role="button" class="secondary">{{ "Change the number" if user.phone_verified_at else "Verify a phone" }}</a></div>
+</section>
+
+<section class="set-row">
   <div><h2>Password</h2><p>At least 10 characters. Changing it signs you out everywhere.</p></div>
   <form method="post" action="/app/settings">
     <input type="hidden" name="action" value="password">
