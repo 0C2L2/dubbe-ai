@@ -672,3 +672,17 @@ def test_youtube_s_own_dub_comes_first_and_dubbe_dubs_only_when_asked(client, mo
     assert links.waiting(worker.folder(p["id"]))  # the original sound is downloaded again for the dub
     assert client.post("/app/new", data={**form, "tgt": "uz"}).headers["location"] == "/app/jobs/2"  # no Uzbek track: dubbed
     assert "already in" in client.post("/app/new", data={**form, "src": "en", "tgt": "ko"}).text  # it is Korean already
+
+
+def test_a_sent_message_shows_in_the_card_and_on_the_admin_sidebar(client, monkeypatch):
+    """The sent page confirms inside the card (no grey bar over an empty form); admins see how many messages are open."""
+    form = {"email": "a@x.org", "topic": "Support", "body": "Hello", "agree": "1"}
+    assert client.post("/contact", data=form).headers["location"] == "/contact?m=sent"
+    page = client.get("/contact?m=sent").text
+    assert "Message sent" in page and 'name="body"' not in page and "your message reached the team" not in page
+    uid, s = user("admin@x.org")
+    monkeypatch.setattr(web.auth, "is_admin", lambda u: bool(u))
+    client.cookies.set(auth.COOKIE, s)
+    assert 'side-badge count">1<' in client.get("/app").text
+    db.run("update messages set handled_at=?", db.now())
+    assert "side-badge count" not in client.get("/app").text

@@ -56,7 +56,7 @@
 </header>
 <main class="container">
 {% set m = MSG.get(request.query_params.get('m', '')) %}
-{% if m %}<p class="notice">{{ m }}</p>{% endif %}
+{% block notice %}{% if m %}<p class="notice">{{ m }}</p>{% endif %}{% endblock %}
 {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
 {% block main %}{% endblock %}
 </main>

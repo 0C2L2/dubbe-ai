@@ -2,7 +2,7 @@
 {% from "_parts.html" import icon %}
 {% macro item(href, ic, label, exact=False, badge="") -%}
 {%- set path = request.url.path -%}
-<a href="{{ href }}" class="{{ 'on' if (path == href if exact else path.startswith(href)) }}">{{ icon(ic) }}<span>{{ label }}</span>{% if badge %}<em class="side-badge">{{ badge }}</em>{% endif %}</a>
+<a href="{{ href }}" class="{{ 'on' if (path == href if exact else path.startswith(href)) }}">{{ icon(ic) }}<span>{{ label }}</span>{% if badge %}<em class="side-badge{{ ' count' if badge is number }}">{{ badge }}</em>{% endif %}</a>
 {%- endmacro %}
 {% block shell %}
 <div class="app">
@@ -49,7 +49,7 @@
       {{ item("/admin", "chart", "Overview", True) }}
       {{ item("/admin/users", "users", "Users") }}
       {{ item("/admin/jobs", "list", "Jobs") }}
-      {{ item("/admin/messages", "mail", "Messages") }}
+      {{ item("/admin/messages", "mail", "Messages", badge=open_msgs or "") }}
       {{ item("/admin/voices", "speak", "Voice clones") }}
       {{ item("/admin/evaluation", "shield", "Evaluation") }}
       {% endif %}

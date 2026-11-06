@@ -1099,3 +1099,13 @@ label.pick-pill { display: inline-flex; margin: 0; position: relative; cursor: p
 @keyframes fbar { 0% { transform: scaleX(0); opacity: 1; } 19% { transform: scaleX(1); opacity: 1; } 23%, 100% { transform: scaleX(1); opacity: 0; } }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; color: var(--ink-3); font-size: .92rem; }
 
+/* ---------- contact: sent; the admin's count of open messages ---------- */
+.side-badge.count { min-width: 20px; padding: 3px 6px; border-radius: 999px; background: var(--red); color: #fff; text-align: center;
+  font-size: .7rem; letter-spacing: 0; }
+.msg-sent { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 100%; padding: 12px 0; }
+.msg-sent-ico { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 22px; border-radius: 50%; color: #fff;
+  background: linear-gradient(135deg, var(--orange), var(--red) 55%, var(--violet)); }
+.msg-sent-ico svg { width: 26px; height: 26px; }
+.msg-sent h1 { margin: 0 0 10px; }
+.msg-sent p { color: var(--ink-3); margin: 0 0 28px; max-width: 34ch; }
+

@@ -126,6 +126,8 @@ def minutes_left(u) -> float:
 def page(request: Request, template: str, status: int = 200, **ctx):
     u = ctx.pop("user", None) or auth.current_user(request)
     extra = {"left": minutes_left(u)} if u else {}
+    if auth.is_admin(u):  # the sidebar shows how many contact messages wait for an answer
+        extra["open_msgs"] = db.one("select count(*) n from messages where handled_at is null")["n"]
     return templates.TemplateResponse(request, template, {"user": u, "admin": auth.is_admin(u), **extra, **ctx},
                                       status_code=status)
 
